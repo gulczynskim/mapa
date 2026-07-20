@@ -36,7 +36,7 @@ const VARIABLE_META = {
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "15plus", label: "15 lat i więcej" },
-      { key: "15_24", label: "15-24 lata" },
+      { key: "15_24", label: "15-24 lata", hasTotal: false }, // no combined-group total computed for this slice
     ],
     measures: [{ key: "default", label: "Wartość" }],
   },
@@ -57,7 +57,7 @@ const VARIABLE_META = {
     ageGroups: [{ key: "default", label: "Ósmoklasiści" }],
     measures: [
       { key: "mean", label: "Średnia" },
-      { key: "median", label: "Mediana" },
+      { key: "median", label: "Mediana", hasTotal: false }, // sub-group medians can't be correctly combined
     ],
   },
   e8_matematyka: {
@@ -76,7 +76,7 @@ const VARIABLE_META = {
     ageGroups: [{ key: "default", label: "Ósmoklasiści" }],
     measures: [
       { key: "mean", label: "Średnia" },
-      { key: "median", label: "Mediana" },
+      { key: "median", label: "Mediana", hasTotal: false }, // sub-group medians can't be correctly combined
     ],
   },
   e8_angielski: {
@@ -96,7 +96,7 @@ const VARIABLE_META = {
     ageGroups: [{ key: "default", label: "Ósmoklasiści" }],
     measures: [
       { key: "mean", label: "Średnia" },
-      { key: "median", label: "Mediana" },
+      { key: "median", label: "Mediana", hasTotal: false }, // sub-group medians can't be correctly combined
     ],
   },
 };

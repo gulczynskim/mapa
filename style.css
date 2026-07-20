@@ -85,12 +85,28 @@ select:disabled, .corr-axis select:disabled, .download-dims select:disabled {
   cursor: not-allowed;
 }
 
-.variable-description, .variable-source, .variable-access {
+.variable-details {
+  margin-top: 0.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+.variable-details summary {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.variable-details[open] summary { margin-bottom: 0.3rem; }
+
+.variable-description, .variable-availability, .variable-source, .variable-access {
   font-size: 0.76rem;
   color: var(--text-secondary);
   margin: 0.4rem 0 0;
   line-height: 1.4;
 }
+.variable-availability { color: var(--text-secondary); }
 .variable-source { color: var(--muted); font-style: italic; }
 .variable-access { color: var(--muted); font-size: 0.7rem; }
 
@@ -104,6 +120,10 @@ select:disabled, .corr-axis select:disabled, .download-dims select:disabled {
   background: var(--surface-1);
   color: var(--text-primary);
   cursor: pointer;
+}
+.view-buttons button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .view-buttons button.active {
   background: var(--text-primary);

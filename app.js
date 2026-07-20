@@ -19,16 +19,28 @@ const MISSING_COLOR = "#d9d8d2";
 // NOT a built-in judgment about which sex is disadvantaged, since that
 // depends on the variable (e.g. higher female unemployment is a disadvantage,
 // but a higher female share of liceum graduates isn't inherently one).
+// Each view optionally overrides "unit" (falls back to the variable's own
+// unit, e.g. "%") and "decimals" (display precision) -- lets ratio/share
+// views render sensibly (2 decimals, no unit for a bare ratio; 1 decimal
+// with a hardcoded "%" for a share) without scattering view-specific
+// checks through the formatting code.
 const VIEWS = {
-  total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t },
-  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m },
-  women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k },
-  diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => d.k - d.m, center: 0 },
+  total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t, decimals: 1 },
+  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m, decimals: 1 },
+  women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k, decimals: 1 },
+  diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => d.k - d.m, center: 0, decimals: 1 },
   // logScale: a ratio can never go negative, and 2x / 0.5x are equally far
   // from "equal" multiplicatively -- linear spread around center=1 would
   // let the color scale (and any tick derived from it) drift negative,
   // which is meaningless for a ratio. Symmetrize in log space instead.
-  ratio: { label: "Proporcja (K / M)", kind: "diverging", pick: (d) => d.k / d.m, center: 1, logScale: true },
+  ratio: { label: "Proporcja (K / M)", kind: "diverging", pick: (d) => d.k / d.m, center: 1, logScale: true, decimals: 2, unit: "" },
+  ratioInverse: { label: "Proporcja (M / K)", kind: "diverging", pick: (d) => d.m / d.k, center: 1, logScale: true, decimals: 2, unit: "" },
+  // Useful for compositional data (e.g. share of women among elected
+  // officials or students) where the natural "total" is a headcount, not a
+  // percentage -- these compute the share directly from k/m regardless of
+  // what the variable's own unit is.
+  shareWomen: { label: "% kobiet", kind: "sequential", pick: (d) => (d.k / (d.k + d.m)) * 100, decimals: 1, unit: "%" },
+  shareMen: { label: "% mężczyzn", kind: "sequential", pick: (d) => (d.m / (d.k + d.m)) * 100, decimals: 1, unit: "%" },
 };
 
 const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
@@ -36,7 +48,7 @@ const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
 let state = {
   variable: "unemployment",
   view: "total",
-  year: 2023,
+  year: null, // set to the most recent available year once data is loaded (see syncYearSlider)
   level: "powiat",
   ageGroup: "default",
   measure: "default",
@@ -50,6 +62,7 @@ let attributionControl = null;
 let currentSourceAttribution = null;
 let terytToLayer = {};
 let terytToName = {};
+let lastDomain = [];
 
 // The map's own attribution control shows the source for whichever variable
 // is currently selected (CKE for E8, PKW for election data once added, BDL
@@ -141,7 +154,7 @@ async function init() {
       terytToName[teryt] = name;
       layer.on({
         mouseover: (e) => highlight(e.target),
-        mouseout: () => geoLayer.resetStyle(),
+        mouseout: (e) => e.target.setStyle(baseStyleFor(mapValueFor(teryt), lastDomain)),
       });
       layer.bindTooltip("", { className: "powiat-tooltip", sticky: true });
     },
@@ -154,6 +167,7 @@ async function init() {
   await buildCorrelationSelectors();
   await restoreFromUrl();
   buildDimensionSelectors();
+  updateViewAvailability();
   buildYearSlider();
   updateMapAttribution();
   updateAll();
@@ -178,8 +192,8 @@ function buildDimensionSelectors() {
   state.measure = populateDimensionSelect(document.getElementById("measure-select"), meta.measures, state.measure);
 
   document.getElementById("level-select").onchange = (e) => { state.level = e.target.value; updateAll(); };
-  document.getElementById("agegroup-select").onchange = (e) => { state.ageGroup = e.target.value; updateAll(); };
-  document.getElementById("measure-select").onchange = (e) => { state.measure = e.target.value; updateAll(); };
+  document.getElementById("agegroup-select").onchange = (e) => { state.ageGroup = e.target.value; updateViewAvailability(); updateAll(); };
+  document.getElementById("measure-select").onchange = (e) => { state.measure = e.target.value; updateViewAvailability(); updateAll(); };
 }
 
 function availableYears(variable) {
@@ -295,6 +309,18 @@ function highlight(layer) {
   layer.bringToFront();
 }
 
+// The actual data-driven fill for a powiat -- used both when painting the
+// map and when restoring a layer after hover. NEVER use geoJSON's own
+// resetStyle() for that restoration: called with no argument it resets
+// EVERY layer in the group to the bare style() callback passed to
+// L.geoJSON, which never set fillColor -- Leaflet then falls back to the
+// border color (white) for the fill, turning the whole map blank. This bit
+// us for real: any mouseout was capable of whiting out the entire map, not
+// just the hovered polygon.
+function baseStyleFor(value, domain) {
+  return { fillColor: colorFor(value, domain), fillOpacity: 0.9, color: "#ffffff", weight: 0.6 };
+}
+
 // Polish locale throughout the UI: comma decimal separator, space thousands
 // (e.g. "1,5" not "1.5"; "10 000" not "10,000"). Never used for the CSV
 // export, which stays machine-readable with plain "." decimals.
@@ -304,18 +330,21 @@ function formatPl(n, maxFractionDigits) {
 
 function formatValue(v) {
   if (v === null) return "brak danych";
-  if (state.view === "ratio") return formatPl(v, 2);
-  return formatPl(v, 1) + " " + VARIABLE_META[state.variable].unit;
+  const view = VIEWS[state.view];
+  const unit = view.unit !== undefined ? view.unit : VARIABLE_META[state.variable].unit;
+  const formatted = formatPl(v, view.decimals);
+  return unit ? formatted + " " + unit : formatted;
 }
 
 function updateAll() {
   if (!geoLayer) return;
   const domain = currentDomain();
+  lastDomain = domain;
   geoLayer.eachLayer((layer) => {
     const teryt = layer.feature.properties.JPT_KOD_JE;
     const name = layer.feature.properties.JPT_NAZWA_;
     const value = mapValueFor(teryt);
-    layer.setStyle({ fillColor: colorFor(value, domain), fillOpacity: 0.9, color: "#ffffff", weight: 0.6 });
+    layer.setStyle(baseStyleFor(value, domain));
     layer.setTooltipContent(
       `<strong>${displayName(teryt, name)}</strong><br>${VIEWS[state.view].label}, ${state.year}: <span class="val">${formatValue(value)}</span>`
     );
@@ -326,7 +355,7 @@ function updateAll() {
 }
 
 function legendValueFormat(v) {
-  return state.view === "ratio" ? formatPl(v, 2) : formatPl(v, 1);
+  return formatPl(v, VIEWS[state.view].decimals);
 }
 
 // One tick per color boundary (N colors -> N+1 ticks), so every edge between
@@ -358,6 +387,20 @@ function updateMeta() {
   document.getElementById("variable-description").textContent = meta.meaning;
   document.getElementById("variable-source").textContent = "Źródło: " + meta.source;
   document.getElementById("variable-access").textContent = meta.accessNote;
+
+  const years = availableYears(state.variable).map(Number);
+  const yearsStr = years.length > 1 ? `${Math.min(...years)}-${Math.max(...years)}` : String(years[0] ?? "brak danych");
+  const levelsStr = meta.levels.map((o) => o.label).join(", ");
+  const ageGroupsStr = meta.ageGroups.map((o) => o.label).join(", ");
+  const lines = [
+    `Poziom agregacji: ${levelsStr}`,
+    `Lata: ${yearsStr}`,
+    `Grupa wieku: ${ageGroupsStr}`,
+  ];
+  if (meta.measures.length > 1) {
+    lines.push(`Miara: ${meta.measures.map((o) => o.label).join(", ")}`);
+  }
+  document.getElementById("variable-availability").textContent = lines.join(" · ");
 }
 
 function buildVariableSelect() {
@@ -387,6 +430,7 @@ function buildVariableSelect() {
     state.ageGroup = meta.ageGroups[0].key;
     state.measure = meta.measures[0].key;
     buildDimensionSelectors();
+    updateViewAvailability();
     syncYearSlider();
     updateMeta();
     updateMapAttribution();
@@ -397,16 +441,17 @@ function buildVariableSelect() {
 // Keeps the year slider's min/max in sync with whatever the current
 // variable actually covers (e.g. 2022-2025 for E8, a single fixed year for
 // labor force activity) instead of always showing the full 2003-2025 range
-// regardless of variable. Also snaps the current value to the closest
-// actually-available year if it fell outside the new range.
+// regardless of variable. Defaults to the most recent available year
+// whenever the current one isn't valid for this variable (including on
+// first load, where state.year starts unset).
 function syncYearSlider() {
   const years = availableYears(state.variable).map(Number);
   if (years.length === 0) return;
   const slider = document.getElementById("year-slider");
   slider.min = Math.min(...years);
   slider.max = Math.max(...years);
-  if (!years.includes(state.year)) {
-    state.year = years.reduce((closest, y) => (Math.abs(y - state.year) < Math.abs(closest - state.year) ? y : closest));
+  if (state.year === null || !years.includes(state.year)) {
+    state.year = Math.max(...years);
   }
   slider.value = state.year;
   document.getElementById("year-value").textContent = state.year;
@@ -418,14 +463,43 @@ function buildViewButtons() {
   for (const key in VIEWS) {
     const btn = document.createElement("button");
     btn.textContent = VIEWS[key].label;
+    btn.dataset.viewKey = key;
     btn.className = key === state.view ? "active" : "";
     btn.addEventListener("click", () => {
+      if (btn.disabled) return;
       state.view = key;
       [...container.children].forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       updateAll();
     });
     container.appendChild(btn);
+  }
+  updateViewAvailability();
+}
+
+// "Ogółem" reads d.t, which is deliberately null for combinations where a
+// combined-group total/median can't be correctly derived (E8's median
+// measure, labor force's 15-24 age group -- see hasTotal in variables.js).
+// Selecting it there silently shows "no data" everywhere with no obvious
+// cause, so disable the button and steer away from it instead.
+function hasTotalForCurrentSelection() {
+  const meta = VARIABLE_META[state.variable];
+  const ageGroupOpt = meta.ageGroups.find((o) => o.key === state.ageGroup);
+  const measureOpt = meta.measures.find((o) => o.key === state.measure);
+  return (ageGroupOpt?.hasTotal ?? true) && (measureOpt?.hasTotal ?? true);
+}
+
+function updateViewAvailability() {
+  const totalBtn = document.querySelector('#view-buttons button[data-view-key="total"]');
+  if (!totalBtn) return;
+  const ok = hasTotalForCurrentSelection();
+  totalBtn.disabled = !ok;
+  totalBtn.title = ok ? "" : "Ogółem niedostępne dla tej grupy wieku/miary (patrz opis zmiennej)";
+  if (!ok && state.view === "total") {
+    state.view = "women";
+    [...document.querySelectorAll("#view-buttons button")].forEach((b) =>
+      b.classList.toggle("active", b.dataset.viewKey === state.view)
+    );
   }
 }
 
