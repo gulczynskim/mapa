@@ -1,0 +1,795 @@
+// Prototype dashboard. Boundaries: powiat level only for now (levels/age
+// groups/measures are modeled per-variable in variables.js and the UI
+// enables/disables accordingly, ready for when more levels get wired in).
+
+const SEQUENTIAL_STEPS = ["#cde2fb", "#86b6ef", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+// Diverging: center is WHITE (no difference), poles are the blue/red pair.
+// Grey (MISSING_COLOR) is reserved exclusively for missing data so it's never
+// confused with "no difference between sexes".
+const DIVERGING_STEPS = [
+  "#2a78d6",
+  "color-mix(in oklch, #2a78d6 50%, #ffffff)",
+  "#ffffff",
+  "color-mix(in oklch, #e34948 50%, #ffffff)",
+  "#e34948",
+];
+const MISSING_COLOR = "#d9d8d2";
+
+// "Różnica" = kobiety - mężczyźni. Kept as a fixed, mechanical convention --
+// NOT a built-in judgment about which sex is disadvantaged, since that
+// depends on the variable (e.g. higher female unemployment is a disadvantage,
+// but a higher female share of liceum graduates isn't inherently one).
+const VIEWS = {
+  total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t },
+  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m },
+  women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k },
+  diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => d.k - d.m, center: 0 },
+  // logScale: a ratio can never go negative, and 2x / 0.5x are equally far
+  // from "equal" multiplicatively -- linear spread around center=1 would
+  // let the color scale (and any tick derived from it) drift negative,
+  // which is meaningless for a ratio. Symmetrize in log space instead.
+  ratio: { label: "Proporcja (K / M)", kind: "diverging", pick: (d) => d.k / d.m, center: 1, logScale: true },
+};
+
+const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
+
+let state = {
+  variable: "unemployment",
+  view: "total",
+  year: 2023,
+  level: "powiat",
+  ageGroup: "default",
+  measure: "default",
+};
+
+let loadedData = {}; // variable -> {teryt: {year: {"<ageGroup>__<measure>": {t,m,k}}}}
+let boundaries = null;
+let geoLayer = null;
+let map = null;
+let attributionControl = null;
+let currentSourceAttribution = null;
+let terytToLayer = {};
+let terytToName = {};
+
+// The map's own attribution control shows the source for whichever variable
+// is currently selected (CKE for E8, PKW for election data once added, BDL
+// GUS for the rest) -- not a fixed list of every source the site ever uses.
+function updateMapAttribution() {
+  if (!attributionControl) return;
+  if (currentSourceAttribution) attributionControl.removeAttribution(currentSourceAttribution);
+  currentSourceAttribution = "Dane: " + VARIABLE_META[state.variable].source;
+  attributionControl.addAttribution(currentSourceAttribution);
+}
+
+function sliceKey(ageGroup, measure) {
+  return `${ageGroup}__${measure}`;
+}
+
+function showLoading(msg) {
+  const el = document.getElementById("map-status");
+  el.textContent = msg;
+  el.style.display = "block";
+  el.classList.remove("error");
+}
+function hideLoading() {
+  document.getElementById("map-status").style.display = "none";
+}
+function showError(msg) {
+  const el = document.getElementById("map-status");
+  el.textContent = msg;
+  el.style.display = "block";
+  el.classList.add("error");
+}
+
+async function loadVariable(name) {
+  if (loadedData[name]) return loadedData[name];
+  const meta = VARIABLE_META[name];
+  const data = await fetch(meta.file).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  });
+  loadedData[name] = data;
+  return data;
+}
+
+async function init() {
+  if (location.protocol === "file:") {
+    showError(
+      "Ta strona nie zadziała otwarta bezpośrednio jako plik (file://) -- przeglądarki blokują " +
+      "wtedy wczytywanie danych. Uruchom lokalny serwer (np. \"python3 -m http.server\" w tym " +
+      "folderze) i otwórz http://localhost:8000, albo przeglądaj przez wdrożoną stronę."
+    );
+    return;
+  }
+  showLoading("Wczytywanie granic i danych...");
+  try {
+    const [boundariesData] = await Promise.all([
+      fetch("data/powiaty.json").then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
+      loadVariable(state.variable),
+    ]);
+    boundaries = boundariesData;
+  } catch (err) {
+    showError("Nie udało się wczytać danych. Spróbuj odświeżyć stronę. (" + err.message + ")");
+    return;
+  }
+  hideLoading();
+
+  // No basemap tile layer -- a real map service would always show slices of
+  // neighboring countries at the viewport edges. Plain background (set in
+  // CSS) plus the powiat polygons is the only way to guarantee nothing but
+  // Poland is ever visible.
+  map = L.map("map", {
+    zoomControl: true,
+    maxBounds: POLAND_BOUNDS.pad(0.05),
+    minZoom: 6,
+    maxZoom: 10,
+    attributionControl: false,
+  }).fitBounds(POLAND_BOUNDS);
+  attributionControl = L.control.attribution({ prefix: false }).addTo(map);
+  attributionControl.addAttribution('Mapa: <a href="https://mapa.michalgulczynski.pl">Michał Gulczyński</a>');
+  updateMapAttribution();
+
+  geoLayer = L.geoJSON(boundaries, {
+    style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.6 }),
+    onEachFeature: (feature, layer) => {
+      const teryt = feature.properties.JPT_KOD_JE;
+      const name = feature.properties.JPT_NAZWA_;
+      terytToLayer[teryt] = layer;
+      terytToName[teryt] = name;
+      layer.on({
+        mouseover: (e) => highlight(e.target),
+        mouseout: () => geoLayer.resetStyle(),
+      });
+      layer.bindTooltip("", { className: "powiat-tooltip", sticky: true });
+    },
+  }).addTo(map);
+
+  buildVariableSelect();
+  buildViewButtons();
+  buildSearch();
+  buildDownloadPanel();
+  await buildCorrelationSelectors();
+  await restoreFromUrl();
+  buildDimensionSelectors();
+  buildYearSlider();
+  updateMapAttribution();
+  updateAll();
+  updateMeta();
+}
+
+// --- Dimension selectors (level / age group / measure) ---
+// A single-option dimension still renders a selector, disabled, showing that
+// one value -- so the UI shape is consistent whether or not a variable
+// actually offers a choice for that dimension.
+function populateDimensionSelect(selectEl, options, selectedKey) {
+  selectEl.innerHTML = options.map((o) => `<option value="${o.key}">${o.label}</option>`).join("");
+  selectEl.value = options.some((o) => o.key === selectedKey) ? selectedKey : options[0].key;
+  selectEl.disabled = options.length <= 1;
+  return selectEl.value;
+}
+
+function buildDimensionSelectors() {
+  const meta = VARIABLE_META[state.variable];
+  state.level = populateDimensionSelect(document.getElementById("level-select"), meta.levels, state.level);
+  state.ageGroup = populateDimensionSelect(document.getElementById("agegroup-select"), meta.ageGroups, state.ageGroup);
+  state.measure = populateDimensionSelect(document.getElementById("measure-select"), meta.measures, state.measure);
+
+  document.getElementById("level-select").onchange = (e) => { state.level = e.target.value; updateAll(); };
+  document.getElementById("agegroup-select").onchange = (e) => { state.ageGroup = e.target.value; updateAll(); };
+  document.getElementById("measure-select").onchange = (e) => { state.measure = e.target.value; updateAll(); };
+}
+
+function availableYears(variable) {
+  const data = loadedData[variable] || {};
+  const years = new Set();
+  for (const teryt in data) {
+    for (const year in data[teryt]) years.add(year);
+  }
+  return [...years].sort();
+}
+
+async function populateCorrDimensions(prefix) {
+  const variable = document.getElementById(`corr-${prefix}-var`).value;
+  await loadVariable(variable);
+  const meta = VARIABLE_META[variable];
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-level`), meta.levels, meta.levels[0].key);
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-agegroup`), meta.ageGroups, meta.ageGroups[0].key);
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-measure`), meta.measures, meta.measures[0].key);
+
+  const years = availableYears(variable);
+  const yearSelect = document.getElementById(`corr-${prefix}-year`);
+  yearSelect.innerHTML = years.map((y) => `<option value="${y}">${y}</option>`).join("");
+  yearSelect.value = years[years.length - 1];
+}
+
+async function buildCorrelationSelectors() {
+  const keys = Object.keys(VARIABLE_META);
+  for (const prefix of ["x", "y"]) {
+    const select = document.getElementById(`corr-${prefix}-var`);
+    select.innerHTML = keys.map((k) => `<option value="${k}">${VARIABLE_META[k].label}</option>`).join("");
+    select.addEventListener("change", () => populateCorrDimensions(prefix));
+  }
+  document.getElementById("corr-y-var").value = keys[keys.length - 1];
+  await Promise.all([populateCorrDimensions("x"), populateCorrDimensions("y")]);
+}
+
+function valueFor(variable, teryt, year, ageGroup, measure) {
+  const series = loadedData[variable] && loadedData[variable][teryt];
+  if (!series) return null;
+  const yearData = series[String(year)];
+  if (!yearData) return null;
+  const slice = yearData[sliceKey(ageGroup, measure)];
+  if (!slice) return null;
+  const view = VIEWS[state.view];
+  const v = view.pick(slice);
+  return Number.isFinite(v) ? v : null;
+}
+
+function mapValueFor(teryt) {
+  return valueFor(state.variable, teryt, state.year, state.ageGroup, state.measure);
+}
+
+function currentDomain() {
+  const values = [];
+  const data = loadedData[state.variable] || {};
+  for (const teryt in data) {
+    const v = mapValueFor(teryt);
+    if (v !== null) values.push(v);
+  }
+  return values;
+}
+
+// logScale views (ratio) are symmetrized in log space -- 2x and 0.5x are
+// equally far from "equal", and a ratio can never go negative, so linear
+// spread around center=1 would be both lopsided and capable of producing
+// meaningless negative tick values.
+function divergingSpread(domain, view) {
+  const center = view.center ?? 0;
+  if (view.logScale) {
+    const logCenter = Math.log(center);
+    const logSpread = Math.max(...domain.map((v) => Math.abs(Math.log(v) - logCenter)), 1e-9);
+    return { center, logCenter, logSpread };
+  }
+  const spread = Math.max(...domain.map((v) => Math.abs(v - center)), 1e-9);
+  return { center, spread };
+}
+
+// The N+1 boundary values (original data units) between the N color
+// buckets -- shared by colorFor (to assign a color) and updateLegend (to
+// label exactly where each color starts/ends), so the two can never drift
+// apart the way they briefly did for the ratio view.
+function colorBoundaries(domain, view, steps) {
+  const n = steps.length;
+  if (view.kind === "sequential") {
+    const min = Math.min(...domain);
+    const max = Math.max(...domain);
+    return Array.from({ length: n + 1 }, (_, i) => min + (i / n) * (max - min));
+  }
+  const s = divergingSpread(domain, view);
+  const tBoundaries = Array.from({ length: n + 1 }, (_, i) => -1 + (i * 2) / n);
+  return view.logScale
+    ? tBoundaries.map((t) => Math.exp(s.logCenter + t * s.logSpread))
+    : tBoundaries.map((t) => s.center + t * s.spread);
+}
+
+function bucketIndex(value, boundaries) {
+  const n = boundaries.length - 1;
+  for (let i = 0; i < n; i++) {
+    if (value < boundaries[i + 1]) return i;
+  }
+  return n - 1;
+}
+
+function colorFor(value, domain) {
+  const view = VIEWS[state.view];
+  if (value === null) return MISSING_COLOR;
+  const steps = view.kind === "sequential" ? SEQUENTIAL_STEPS : DIVERGING_STEPS;
+  return steps[bucketIndex(value, colorBoundaries(domain, view, steps))];
+}
+
+function highlight(layer) {
+  layer.setStyle({ weight: 2, color: "#0b0b0b" });
+  layer.bringToFront();
+}
+
+// Polish locale throughout the UI: comma decimal separator, space thousands
+// (e.g. "1,5" not "1.5"; "10 000" not "10,000"). Never used for the CSV
+// export, which stays machine-readable with plain "." decimals.
+function formatPl(n, maxFractionDigits) {
+  return n.toLocaleString("pl-PL", { maximumFractionDigits: maxFractionDigits ?? 2, useGrouping: true });
+}
+
+function formatValue(v) {
+  if (v === null) return "brak danych";
+  if (state.view === "ratio") return formatPl(v, 2);
+  return formatPl(v, 1) + " " + VARIABLE_META[state.variable].unit;
+}
+
+function updateAll() {
+  if (!geoLayer) return;
+  const domain = currentDomain();
+  geoLayer.eachLayer((layer) => {
+    const teryt = layer.feature.properties.JPT_KOD_JE;
+    const name = layer.feature.properties.JPT_NAZWA_;
+    const value = mapValueFor(teryt);
+    layer.setStyle({ fillColor: colorFor(value, domain), fillOpacity: 0.9, color: "#ffffff", weight: 0.6 });
+    layer.setTooltipContent(
+      `<strong>${displayName(teryt, name)}</strong><br>${VIEWS[state.view].label}, ${state.year}: <span class="val">${formatValue(value)}</span>`
+    );
+  });
+  updateLegend(domain);
+  updateRankings(domain);
+  updateUrl();
+}
+
+function legendValueFormat(v) {
+  return state.view === "ratio" ? formatPl(v, 2) : formatPl(v, 1);
+}
+
+// One tick per color boundary (N colors -> N+1 ticks), so every edge between
+// two swatches has a visible number showing exactly where it falls -- not
+// just the overall min/max. Sign (diff) or position relative to 1 (ratio)
+// already conveys the M-vs-K direction, so bare numbers are enough.
+function updateLegend(domain) {
+  const view = VIEWS[state.view];
+  const steps = view.kind === "sequential" ? SEQUENTIAL_STEPS : DIVERGING_STEPS;
+  document.getElementById("legend-scale").innerHTML = steps.map((c) => `<span style="background:${c}"></span>`).join("");
+  const labelsEl = document.getElementById("legend-labels");
+  if (domain.length === 0) {
+    labelsEl.innerHTML = "";
+    return;
+  }
+  const boundaries = colorBoundaries(domain, view, steps);
+  const n = boundaries.length - 1;
+  labelsEl.innerHTML = boundaries
+    .map((v, i) => {
+      const pct = (i / n) * 100;
+      const pos = i === 0 ? "left:0" : i === n ? "right:0" : `left:${pct}%;transform:translateX(-50%)`;
+      return `<span style="${pos}">${legendValueFormat(v)}</span>`;
+    })
+    .join("");
+}
+
+function updateMeta() {
+  const meta = VARIABLE_META[state.variable];
+  document.getElementById("variable-description").textContent = meta.meaning;
+  document.getElementById("variable-source").textContent = "Źródło: " + meta.source;
+  document.getElementById("variable-access").textContent = meta.accessNote;
+}
+
+function buildVariableSelect() {
+  const select = document.getElementById("variable-select");
+  select.innerHTML = "";
+  for (const key in VARIABLE_META) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = VARIABLE_META[key].label;
+    select.appendChild(opt);
+  }
+  select.value = state.variable;
+  select.addEventListener("change", async () => {
+    state.variable = select.value;
+    showLoading("Wczytywanie danych...");
+    try {
+      await loadVariable(state.variable);
+    } catch (err) {
+      showError("Nie udało się wczytać danych: " + err.message);
+      return;
+    }
+    hideLoading();
+    // Reset to the new variable's default dimensions rather than keeping
+    // stale keys from the previous variable that might not exist here.
+    const meta = VARIABLE_META[state.variable];
+    state.level = meta.levels[0].key;
+    state.ageGroup = meta.ageGroups[0].key;
+    state.measure = meta.measures[0].key;
+    buildDimensionSelectors();
+    syncYearSlider();
+    updateMeta();
+    updateMapAttribution();
+    updateAll();
+  });
+}
+
+// Keeps the year slider's min/max in sync with whatever the current
+// variable actually covers (e.g. 2022-2025 for E8, a single fixed year for
+// labor force activity) instead of always showing the full 2003-2025 range
+// regardless of variable. Also snaps the current value to the closest
+// actually-available year if it fell outside the new range.
+function syncYearSlider() {
+  const years = availableYears(state.variable).map(Number);
+  if (years.length === 0) return;
+  const slider = document.getElementById("year-slider");
+  slider.min = Math.min(...years);
+  slider.max = Math.max(...years);
+  if (!years.includes(state.year)) {
+    state.year = years.reduce((closest, y) => (Math.abs(y - state.year) < Math.abs(closest - state.year) ? y : closest));
+  }
+  slider.value = state.year;
+  document.getElementById("year-value").textContent = state.year;
+}
+
+function buildViewButtons() {
+  const container = document.getElementById("view-buttons");
+  container.innerHTML = "";
+  for (const key in VIEWS) {
+    const btn = document.createElement("button");
+    btn.textContent = VIEWS[key].label;
+    btn.className = key === state.view ? "active" : "";
+    btn.addEventListener("click", () => {
+      state.view = key;
+      [...container.children].forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      updateAll();
+    });
+    container.appendChild(btn);
+  }
+}
+
+function buildYearSlider() {
+  const slider = document.getElementById("year-slider");
+  const label = document.getElementById("year-value");
+  syncYearSlider();
+  slider.addEventListener("input", () => {
+    state.year = Number(slider.value);
+    label.textContent = state.year;
+    updateAll();
+  });
+}
+
+function normalizePl(s) {
+  return s
+    .toLowerCase()
+    .replace(/ł/g, "l")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+// A handful of powiat names are legitimately reused across voivodeships (e.g.
+// "powiat opolski" exists in both woj. lubelskie and woj. opolskie -- real
+// Polish administrative geography, not a data bug). Disambiguate by
+// appending the voivodeship whenever a name isn't unique.
+const VOIVODESHIP_BY_CODE = {
+  "02": "dolnośląskie", "04": "kujawsko-pomorskie", "06": "lubelskie", "08": "lubuskie",
+  "10": "łódzkie", "12": "małopolskie", "14": "mazowieckie", "16": "opolskie",
+  "18": "podkarpackie", "20": "podlaskie", "22": "pomorskie", "24": "śląskie",
+  "26": "świętokrzyskie", "28": "warmińsko-mazurskie", "30": "wielkopolskie", "32": "zachodniopomorskie",
+};
+function displayName(teryt, name) {
+  const nameCount = Object.values(terytToName).filter((n) => n === name).length;
+  if (nameCount <= 1) return name;
+  return `${name} (${VOIVODESHIP_BY_CODE[teryt.slice(0, 2)] || teryt.slice(0, 2)})`;
+}
+
+function buildSearch() {
+  const input = document.getElementById("search-input");
+  const list = document.getElementById("search-results");
+  input.addEventListener("input", () => {
+    const q = normalizePl(input.value.trim());
+    list.innerHTML = "";
+    if (q.length < 2) return;
+    const matches = Object.entries(terytToName)
+      .filter(([, name]) => normalizePl(name).includes(q))
+      .slice(0, 8);
+    matches.forEach(([teryt, name]) => {
+      const item = document.createElement("li");
+      item.textContent = displayName(teryt, name);
+      item.addEventListener("click", () => {
+        const layer = terytToLayer[teryt];
+        map.fitBounds(layer.getBounds(), { maxZoom: 9 });
+        highlight(layer);
+        layer.openTooltip();
+        input.value = "";
+        list.innerHTML = "";
+      });
+      list.appendChild(item);
+    });
+  });
+}
+
+function updateRankings(domain) {
+  const rows = [];
+  const data = loadedData[state.variable] || {};
+  for (const teryt in data) {
+    const v = mapValueFor(teryt);
+    if (v !== null) rows.push({ teryt, name: displayName(teryt, terytToName[teryt] || teryt), value: v });
+  }
+  rows.sort((a, b) => b.value - a.value);
+
+  const top = rows.slice(0, 20);
+  const bottom = rows.slice(-20).reverse();
+
+  const render = (el, list) => {
+    el.innerHTML = list
+      .map((r) => `<li><span>${r.name}</span><span class="val">${formatValue(r.value)}</span></li>`)
+      .join("");
+  };
+  render(document.getElementById("ranking-top"), top);
+  render(document.getElementById("ranking-bottom"), bottom);
+}
+
+// --- Download panel ---
+function buildDownloadPanel() {
+  const container = document.getElementById("download-variables");
+  container.innerHTML = Object.keys(VARIABLE_META)
+    .map(
+      (key) =>
+        `<label class="download-var-item"><input type="checkbox" value="${key}" ${key === state.variable ? "checked" : ""}> ${VARIABLE_META[key].label}</label>`
+    )
+    .join("");
+
+  // Global selectors show the union of every variable's options, deduped by
+  // LABEL (not key) -- different variables reuse generic keys like "default"
+  // for their own single option with a different meaning each time (e.g.
+  // unemployment's "default" age group is "Wiek produkcyjny", E8's is
+  // "Ósmoklasiści"); deduping by key would collapse those into one bogus
+  // shared entry. The synthetic option's own "key" is just its label, since
+  // resolution below matches by label anyway.
+  const unionOf = (dim) => {
+    const labels = new Set();
+    for (const key in VARIABLE_META) {
+      for (const o of VARIABLE_META[key][dim]) labels.add(o.label);
+    }
+    return [...labels].map((label) => ({ key: label, label }));
+  };
+  populateDimensionSelect(document.getElementById("download-level"), unionOf("levels"), "Powiat");
+  populateDimensionSelect(document.getElementById("download-agegroup"), unionOf("ageGroups"), unionOf("ageGroups")[0].key);
+  populateDimensionSelect(document.getElementById("download-measure"), unionOf("measures"), unionOf("measures")[0].key);
+}
+
+function resolveDimension(variable, dim, chosenKey) {
+  const options = VARIABLE_META[variable][dim];
+  return options.some((o) => o.key === chosenKey) ? chosenKey : options[0].key;
+}
+
+// Download panel's selectors carry LABELS (see buildDownloadPanel), since
+// the global list is deduped by label across variables that use different
+// internal keys for their own single option. Resolve back to this
+// variable's own key by matching that label; fall back to its first option.
+function resolveDimensionByLabel(variable, dim, chosenLabel) {
+  const options = VARIABLE_META[variable][dim];
+  const match = options.find((o) => o.label === chosenLabel);
+  return match ? match.key : options[0].key;
+}
+
+function triggerCsvDownload(rows, filename) {
+  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadCsv() {
+  const variables = [...document.querySelectorAll(".download-variables input:checked")].map((cb) => cb.value);
+  if (variables.length === 0) {
+    showError("Wybierz co najmniej jedną zmienną do pobrania.");
+    return;
+  }
+  await Promise.all(variables.map(loadVariable));
+
+  const chosenAgeGroup = document.getElementById("download-agegroup").value;
+  const chosenMeasure = document.getElementById("download-measure").value;
+  const yearFrom = document.getElementById("download-year-from").value;
+  const yearTo = document.getElementById("download-year-to").value;
+
+  const rows = [["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"]];
+  for (const variable of variables) {
+    const data = loadedData[variable] || {};
+    const ageGroup = resolveDimensionByLabel(variable, "ageGroups", chosenAgeGroup);
+    const measure = resolveDimensionByLabel(variable, "measures", chosenMeasure);
+    const key = sliceKey(ageGroup, measure);
+    const ageGroupLabel = VARIABLE_META[variable].ageGroups.find((o) => o.key === ageGroup).label;
+    const measureLabel = VARIABLE_META[variable].measures.find((o) => o.key === measure).label;
+    const levelLabel = VARIABLE_META[variable].levels[0].label;
+
+    for (const teryt in data) {
+      const name = displayName(teryt, terytToName[teryt] || teryt);
+      for (const year in data[teryt]) {
+        const y = Number(year);
+        if (yearFrom && y < Number(yearFrom)) continue;
+        if (yearTo && y > Number(yearTo)) continue;
+        const d = data[teryt][year][key];
+        if (!d) continue;
+        rows.push([VARIABLE_META[variable].label, levelLabel, ageGroupLabel, measureLabel, teryt, name, year, d.k, d.m, d.t]);
+      }
+    }
+  }
+  triggerCsvDownload(rows, "dane_mapa.csv");
+}
+
+// --- URL state ---
+function updateUrl() {
+  const params = new URLSearchParams();
+  params.set("var", state.variable);
+  params.set("view", state.view);
+  params.set("year", state.year);
+  params.set("level", state.level);
+  params.set("agegroup", state.ageGroup);
+  params.set("measure", state.measure);
+  history.replaceState(null, "", "?" + params.toString());
+}
+async function restoreFromUrl() {
+  const params = new URLSearchParams(location.search);
+  if (params.has("var") && VARIABLE_META[params.get("var")]) state.variable = params.get("var");
+  // The initial Promise.all in init() only loaded the default variable's
+  // data -- if the URL points at a different one, it was never fetched.
+  try {
+    await loadVariable(state.variable);
+  } catch (err) {
+    showError("Nie udało się wczytać danych z linku: " + err.message);
+    return;
+  }
+
+  if (params.has("view") && VIEWS[params.get("view")]) state.view = params.get("view");
+  if (params.has("year")) state.year = Number(params.get("year"));
+  if (params.has("level")) state.level = resolveDimension(state.variable, "levels", params.get("level"));
+  if (params.has("agegroup")) state.ageGroup = resolveDimension(state.variable, "ageGroups", params.get("agegroup"));
+  if (params.has("measure")) state.measure = resolveDimension(state.variable, "measures", params.get("measure"));
+
+  document.getElementById("variable-select").value = state.variable;
+  [...document.querySelectorAll("#view-buttons button")].forEach((b) => {
+    b.classList.toggle("active", b.textContent === VIEWS[state.view].label);
+  });
+}
+
+// --- Correlation tool ---
+function pearson(xs, ys) {
+  const n = xs.length;
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0, denX = 0, denY = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - meanX;
+    const dy = ys[i] - meanY;
+    num += dx * dy;
+    denX += dx * dx;
+    denY += dy * dy;
+  }
+  return num / Math.sqrt(denX * denY);
+}
+
+function axisConfig(prefix) {
+  return {
+    variable: document.getElementById(`corr-${prefix}-var`).value,
+    level: document.getElementById(`corr-${prefix}-level`).value,
+    ageGroup: document.getElementById(`corr-${prefix}-agegroup`).value,
+    measure: document.getElementById(`corr-${prefix}-measure`).value,
+    year: document.getElementById(`corr-${prefix}-year`).value,
+    sex: document.getElementById(`corr-${prefix}-sex`).value,
+    log: document.getElementById(`corr-${prefix}-log`).checked,
+  };
+}
+
+function axisValue(cfg, teryt) {
+  const series = loadedData[cfg.variable] && loadedData[cfg.variable][teryt];
+  const yearData = series && series[cfg.year];
+  const slice = yearData && yearData[sliceKey(cfg.ageGroup, cfg.measure)];
+  if (!slice) return null;
+  let v = slice[cfg.sex];
+  if (!Number.isFinite(v)) return null;
+  if (cfg.log) {
+    if (v <= 0) return null; // log10 undefined for non-positive values
+    v = Math.log10(v);
+  }
+  return v;
+}
+
+function axisLabel(cfg) {
+  const sexLabel = { t: "Ogółem", m: "Mężczyźni", k: "Kobiety" }[cfg.sex];
+  const meta = VARIABLE_META[cfg.variable];
+  const ageGroupLabel = meta.ageGroups.find((o) => o.key === cfg.ageGroup).label;
+  const measureLabel = meta.measures.find((o) => o.key === cfg.measure).label;
+  const extra = [ageGroupLabel, measureLabel].filter((l) => l !== "Wartość" && l !== "Ósmoklasiści" && l !== "Wiek produkcyjny");
+  const extraStr = extra.length ? ` [${extra.join(", ")}]` : "";
+  return `${cfg.log ? "log₁₀ " : ""}${meta.label}${extraStr} (${sexLabel}, ${cfg.year})`;
+}
+
+async function runCorrelation() {
+  const cfgX = axisConfig("x");
+  const cfgY = axisConfig("y");
+  await Promise.all([loadVariable(cfgX.variable), loadVariable(cfgY.variable)]);
+
+  const allTeryts = new Set([
+    ...Object.keys(loadedData[cfgX.variable] || {}),
+    ...Object.keys(loadedData[cfgY.variable] || {}),
+  ]);
+  const points = [];
+  for (const teryt of allTeryts) {
+    const x = axisValue(cfgX, teryt);
+    const y = axisValue(cfgY, teryt);
+    if (x !== null && y !== null) points.push({ x, y, name: displayName(teryt, terytToName[teryt] || teryt) });
+  }
+
+  renderScatter(points, axisLabel(cfgX), axisLabel(cfgY), cfgX.log, cfgY.log);
+  const coeffEl = document.getElementById("corr-coefficient");
+  if (points.length < 2) {
+    coeffEl.textContent = "Za mało wspólnych danych dla tej kombinacji, żeby policzyć korelację.";
+    return;
+  }
+  const r = pearson(points.map((p) => p.x), points.map((p) => p.y));
+  coeffEl.textContent = `Korelacja Pearsona: r = ${formatPl(r, 3)} (n = ${points.length})`;
+}
+
+// Ticks for a linear axis: ~5 evenly spaced steps. For a log10 axis (values
+// already log10-transformed upstream), ticks land on integer powers of 10
+// within range, labeled with the back-transformed value (10, 100, 1 000...).
+function computeTicks(min, max, isLog) {
+  if (isLog) {
+    const lo = Math.floor(min);
+    const hi = Math.ceil(max);
+    const ticks = [];
+    for (let p = lo; p <= hi; p++) {
+      ticks.push({ pos: p, label: formatPl(Math.pow(10, p)) });
+    }
+    return ticks;
+  }
+  const steps = 4;
+  const ticks = [];
+  for (let i = 0; i <= steps; i++) {
+    const v = min + ((max - min) * i) / steps;
+    ticks.push({ pos: v, label: formatPl(Number(v.toFixed(1))) });
+  }
+  return ticks;
+}
+
+function renderScatter(points, labelX, labelY, isLogX, isLogY) {
+  const svg = document.getElementById("corr-svg");
+  const W = 520, H = 380, padL = 60, padB = 50, padT = 16, padR = 16;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const sx = (v) => padL + ((v - minX) / (maxX - minX || 1)) * (W - padL - padR);
+  const sy = (v) => H - padB - ((v - minY) / (maxY - minY || 1)) * (H - padT - padB);
+
+  const dots = points
+    .map((p) => `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="3.5" fill="#2a78d6" fill-opacity="0.65"><title>${p.name}: ${formatPl(p.x)}, ${formatPl(p.y)}</title></circle>`)
+    .join("");
+
+  const xTicks = computeTicks(minX, maxX, isLogX);
+  const yTicks = computeTicks(minY, maxY, isLogY);
+  // Tick text/marks use --text-secondary, not --muted -- muted is calibrated
+  // for de-emphasized UI chrome, not for numbers someone actually needs to
+  // read off a chart. Confirmed by eye in dark mode: --muted (#898781 on
+  // both themes) was legible by contrast-ratio math but genuinely hard to
+  // read in practice at 9px; --text-secondary is much lighter in dark mode
+  // (#c3c2b7) and reads clearly.
+  const xTickSvg = xTicks
+    .map((t) => {
+      const px = sx(t.pos);
+      return `<line x1="${px}" y1="${H - padB}" x2="${px}" y2="${H - padB + 4}" stroke="var(--text-secondary)" />
+              <text x="${px}" y="${H - padB + 16}" text-anchor="middle" font-size="10" fill="var(--text-secondary)">${t.label}</text>`;
+    })
+    .join("");
+  const yTickSvg = yTicks
+    .map((t) => {
+      const py = sy(t.pos);
+      return `<line x1="${padL - 4}" y1="${py}" x2="${padL}" y2="${py}" stroke="var(--text-secondary)" />
+              <text x="${padL - 8}" y="${py + 3}" text-anchor="end" font-size="10" fill="var(--text-secondary)">${t.label}</text>`;
+    })
+    .join("");
+
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = `
+    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--hairline)" />
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="var(--hairline)" />
+    ${xTickSvg}
+    ${yTickSvg}
+    <text x="${(padL + W - padR) / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">${labelX}</text>
+    <text x="14" y="${(padT + H - padB) / 2}" text-anchor="middle" font-size="11" fill="var(--text-secondary)" transform="rotate(-90 14 ${(padT + H - padB) / 2})">${labelY}</text>
+    ${dots}
+  `;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("download-btn").addEventListener("click", downloadCsv);
+  document.getElementById("corr-run").addEventListener("click", runCorrelation);
+  init();
+});

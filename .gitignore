@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.DS_Store
+.env
+data_raw/
+data/CKE_E8/

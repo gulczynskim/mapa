@@ -3,42 +3,176 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mapa</title>
-<style>
-  :root {
-    color-scheme: light dark;
-  }
-  body {
-    margin: 0;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: #f7f5f2;
-    color: #1a1a1a;
-    text-align: center;
-    padding: 2rem;
-    box-sizing: border-box;
-  }
-  @media (prefers-color-scheme: dark) {
-    body { background: #16181c; color: #eaeaea; }
-  }
-  h1 {
-    font-size: 1.8rem;
-    margin-bottom: 0.5rem;
-  }
-  p {
-    font-size: 1.05rem;
-    opacity: 0.75;
-    max-width: 32rem;
-  }
-</style>
+<title>Interaktywna Mapa Nierówności Płci</title>
+<meta name="description" content="Interaktywna mapa Polski z danymi z podziałem na płeć -- powiaty, wybór roku, zmiennej i sposobu porównania.">
+<meta property="og:title" content="Interaktywna Mapa Nierówności Płci">
+<meta property="og:description" content="Interaktywna mapa Polski z danymi z podziałem na płeć -- powiaty, wybór roku, zmiennej i sposobu porównania.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mapa.michalgulczynski.pl">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗺️</text></svg>">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div>
-    <h1>Mapa</h1>
-    <p>Strona w budowie.</p>
+  <header>
+    <h1>Interaktywna Mapa Nierówności Płci</h1>
+    <p>Prototyp: dane wg powiatów i płci (BDL GUS). Kolejne zmienne i poziomy (gminy, podregiony) w budowie.</p>
+  </header>
+
+  <div class="layout">
+    <aside class="controls">
+      <div class="control-group">
+        <label for="variable-select">Zmienna</label>
+        <select id="variable-select"></select>
+        <p id="variable-description" class="variable-description"></p>
+        <p id="variable-source" class="variable-source"></p>
+        <p id="variable-access" class="variable-access"></p>
+      </div>
+
+      <div class="control-group">
+        <label for="level-select">Poziom agregacji</label>
+        <select id="level-select"></select>
+      </div>
+
+      <div class="control-group">
+        <label for="agegroup-select">Grupa wieku</label>
+        <select id="agegroup-select"></select>
+      </div>
+
+      <div class="control-group">
+        <label for="measure-select">Miara</label>
+        <select id="measure-select"></select>
+      </div>
+
+      <div class="control-group">
+        <label>Widok</label>
+        <div id="view-buttons" class="view-buttons"></div>
+      </div>
+
+      <div class="control-group">
+        <label>Rok: <span id="year-value"></span></label>
+        <input type="range" id="year-slider" />
+      </div>
+
+      <div class="control-group">
+        <label>Legenda</label>
+        <div class="legend">
+          <div id="legend-scale" class="legend-scale"></div>
+          <div id="legend-labels" class="legend-labels"></div>
+        </div>
+      </div>
+
+      <p class="source-note">
+        Granice administracyjne: Geoportal.gov.pl
+        (via github.com/waszkiewiczja/GeoJSON-Polska-Wojewodztwa-Powiaty-Gminy, domena publiczna).
+      </p>
+    </aside>
+
+    <div class="map-wrap">
+      <div id="map-status" class="map-status"></div>
+      <div id="map"></div>
+    </div>
   </div>
+
+  <main class="below-map">
+    <section class="panel">
+      <h2>Szukaj gminy / powiatu / podregionu</h2>
+      <input type="text" id="search-input" placeholder="Wpisz nazwę" class="search-input" />
+      <p class="corr-note">Na razie działa tylko wyszukiwanie powiatów -- gminy i podregiony pojawią się, gdy te poziomy będą dostępne w danych.</p>
+      <ul id="search-results" class="search-results"></ul>
+    </section>
+
+    <section class="panel rankings-panel">
+      <h2>Rankingi</h2>
+      <div class="rankings-columns">
+        <div>
+          <h3>Najwyższe 20</h3>
+          <ol id="ranking-top" class="ranking-list"></ol>
+        </div>
+        <div>
+          <h3>Najniższe 20</h3>
+          <ol id="ranking-bottom" class="ranking-list"></ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Korelacja zmiennych</h2>
+      <p class="corr-note">Możesz porównać dowolne dwie kombinacje zmienna/rok/płeć -- np. tę samą
+        zmienną w dwóch latach, albo kobiety vs. mężczyźni dla tej samej zmiennej.</p>
+      <div class="corr-axes">
+        <fieldset class="corr-axis">
+          <legend>Oś X</legend>
+          <label>Zmienna <select id="corr-x-var"></select></label>
+          <label>Poziom <select id="corr-x-level"></select></label>
+          <label>Grupa wieku <select id="corr-x-agegroup"></select></label>
+          <label>Miara <select id="corr-x-measure"></select></label>
+          <label>Rok <select id="corr-x-year"></select></label>
+          <label>Płeć <select id="corr-x-sex">
+            <option value="t">Ogółem</option>
+            <option value="m">Mężczyźni</option>
+            <option value="k">Kobiety</option>
+          </select></label>
+          <label class="corr-log"><input type="checkbox" id="corr-x-log" /> log&#8321;&#8320; (logarytm dziesiętny)</label>
+        </fieldset>
+        <fieldset class="corr-axis">
+          <legend>Oś Y</legend>
+          <label>Zmienna <select id="corr-y-var"></select></label>
+          <label>Poziom <select id="corr-y-level"></select></label>
+          <label>Grupa wieku <select id="corr-y-agegroup"></select></label>
+          <label>Miara <select id="corr-y-measure"></select></label>
+          <label>Rok <select id="corr-y-year"></select></label>
+          <label>Płeć <select id="corr-y-sex">
+            <option value="t">Ogółem</option>
+            <option value="m">Mężczyźni</option>
+            <option value="k">Kobiety</option>
+          </select></label>
+          <label class="corr-log"><input type="checkbox" id="corr-y-log" /> log&#8321;&#8320; (logarytm dziesiętny)</label>
+        </fieldset>
+      </div>
+      <button id="corr-run" class="action-btn corr-run-btn">Porównaj</button>
+      <p id="corr-coefficient" class="corr-coefficient"></p>
+      <svg id="corr-svg" class="corr-svg"></svg>
+    </section>
+
+    <section class="panel">
+      <h2>Pobierz dane</h2>
+      <p class="corr-note">Wybierz zmienne i zakres lat, które mają się znaleźć w pliku CSV. Poziom/grupa
+        wieku/miara stosowane są tam, gdzie dana zmienna je obsługuje -- w przeciwnym razie użyta
+        zostanie jedyna dostępna dla niej wartość.</p>
+      <div id="download-variables" class="download-variables"></div>
+      <div class="download-dims">
+        <label>Poziom <select id="download-level"></select></label>
+        <label>Grupa wieku <select id="download-agegroup"></select></label>
+        <label>Miara <select id="download-measure"></select></label>
+      </div>
+      <div class="download-years">
+        <label>Rok od <input type="number" id="download-year-from" /></label>
+        <label>Rok do <input type="number" id="download-year-to" /></label>
+      </div>
+      <button id="download-btn" class="action-btn">Pobierz CSV</button>
+    </section>
+
+    <section class="panel">
+      <h2>O projekcie</h2>
+      <p>Mapa powstaje jako narzędzie do eksploracji nierówności między kobietami i mężczyznami w Polsce
+         na poziomie powiatów. Dane pochodzą z Banku Danych Lokalnych GUS oraz innych źródeł publicznych.
+         Część zmiennych dostępna jest wyłącznie dla wybranych poziomów agregacji (powiaty/gminy/podregiony)
+         -- ograniczenie wynika z tego, co faktycznie publikuje GUS.</p>
+      <p class="contact-note">Jeśli masz sugestie albo coś nie działa,
+        <a href="https://github.com/gulczynskim/mapa/issues">skontaktuj się z autorem</a>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Mapa: Michał Gulczyński &middot; <a href="https://github.com/gulczynskim/mapa">kod źródłowy</a></p>
+  </footer>
+
+  <script data-goatcounter="https://gulczynski.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
+
+  <script src="variables.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
