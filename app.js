@@ -2,15 +2,21 @@
 // groups/measures are modeled per-variable in variables.js and the UI
 // enables/disables accordingly, ready for when more levels get wired in).
 
-const SEQUENTIAL_STEPS = ["#cde2fb", "#86b6ef", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+// 8 buckets for magnitude views (per user request for finer resolution than
+// the earlier 6) -- evenly spaced steps from the validated blue ramp.
+const SEQUENTIAL_STEPS = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#1c5cab", "#184f95", "#0d366b"];
 // Diverging: center is WHITE (no difference), poles are the blue/red pair.
-// Grey (MISSING_COLOR) is reserved exclusively for missing data so it's never
-// confused with "no difference between sexes".
+// 7 buckets (3 per arm + center) -- a diverging scale needs an odd count so
+// white stays exactly at the center. Grey (MISSING_COLOR) is reserved
+// exclusively for missing data so it's never confused with "no difference
+// between sexes".
 const DIVERGING_STEPS = [
   "#2a78d6",
-  "color-mix(in oklch, #2a78d6 50%, #ffffff)",
+  "color-mix(in oklch, #2a78d6 63%, #ffffff)",
+  "color-mix(in oklch, #2a78d6 30%, #ffffff)",
   "#ffffff",
-  "color-mix(in oklch, #e34948 50%, #ffffff)",
+  "color-mix(in oklch, #e34948 30%, #ffffff)",
+  "color-mix(in oklch, #e34948 63%, #ffffff)",
   "#e34948",
 ];
 const MISSING_COLOR = "#d9d8d2";
@@ -25,9 +31,9 @@ const MISSING_COLOR = "#d9d8d2";
 // with a hardcoded "%" for a share) without scattering view-specific
 // checks through the formatting code.
 const VIEWS = {
-  total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t, decimals: 1 },
-  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m, decimals: 1 },
   women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k, decimals: 1 },
+  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m, decimals: 1 },
+  total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t, decimals: 1 },
   diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => d.k - d.m, center: 0, decimals: 1 },
   // logScale: a ratio can never go negative, and 2x / 0.5x are equally far
   // from "equal" multiplicatively -- linear spread around center=1 would
@@ -154,11 +160,27 @@ async function init() {
       terytToName[teryt] = name;
       layer.on({
         mouseover: (e) => highlight(e.target),
-        mouseout: (e) => e.target.setStyle(baseStyleFor(mapValueFor(teryt), lastDomain)),
+        // Explicit closeTooltip: with sticky tooltips some browsers/embedded
+        // views don't reliably deliver the internal event Leaflet uses to
+        // hide them, leaving the box stuck on screen after the cursor leaves.
+        mouseout: (e) => {
+          e.target.setStyle(baseStyleFor(mapValueFor(teryt), lastDomain));
+          e.target.closeTooltip();
+        },
       });
       layer.bindTooltip("", { className: "powiat-tooltip", sticky: true });
     },
   }).addTo(map);
+
+  // Safety net for any highlight or tooltip that outlives its hover (missed
+  // mouseout, or the persistent highlight left by a search jump): clicking
+  // anywhere on the map repaints every layer and closes all tooltips.
+  map.on("click", () => {
+    geoLayer.eachLayer((layer) => {
+      layer.setStyle(baseStyleFor(mapValueFor(layer.feature.properties.JPT_KOD_JE), lastDomain));
+      layer.closeTooltip();
+    });
+  });
 
   buildVariableSelect();
   buildViewButtons();
@@ -595,38 +617,34 @@ function buildDownloadPanel() {
     )
     .join("");
 
-  // Global selectors show the union of every variable's options, deduped by
-  // LABEL (not key) -- different variables reuse generic keys like "default"
-  // for their own single option with a different meaning each time (e.g.
-  // unemployment's "default" age group is "Wiek produkcyjny", E8's is
-  // "Ósmoklasiści"); deduping by key would collapse those into one bogus
-  // shared entry. The synthetic option's own "key" is just its label, since
-  // resolution below matches by label anyway.
-  const unionOf = (dim) => {
+  // Each dimension is an expandable checkbox list showing the union of every
+  // variable's options, deduped by LABEL (not key) -- different variables
+  // reuse generic keys like "default" for their own single option with a
+  // different meaning each time (e.g. unemployment's "default" age group is
+  // "Wiek produkcyjny", E8's is "Ósmoklasiści"). Everything starts checked;
+  // at export time each variable keeps only the checked labels it actually
+  // supports (falling back to its first option if none match).
+  const unionLabels = (dim) => {
     const labels = new Set();
     for (const key in VARIABLE_META) {
       for (const o of VARIABLE_META[key][dim]) labels.add(o.label);
     }
-    return [...labels].map((label) => ({ key: label, label }));
+    return [...labels];
   };
-  populateDimensionSelect(document.getElementById("download-level"), unionOf("levels"), "Powiat");
-  populateDimensionSelect(document.getElementById("download-agegroup"), unionOf("ageGroups"), unionOf("ageGroups")[0].key);
-  populateDimensionSelect(document.getElementById("download-measure"), unionOf("measures"), unionOf("measures")[0].key);
+  for (const [id, dim] of [["download-level", "levels"], ["download-agegroup", "ageGroups"], ["download-measure", "measures"]]) {
+    document.getElementById(id).innerHTML = unionLabels(dim)
+      .map((label) => `<label class="dim-option"><input type="checkbox" value="${label}" checked> ${label}</label>`)
+      .join("");
+  }
+}
+
+function checkedLabels(containerId) {
+  return [...document.querySelectorAll(`#${containerId} input:checked`)].map((cb) => cb.value);
 }
 
 function resolveDimension(variable, dim, chosenKey) {
   const options = VARIABLE_META[variable][dim];
   return options.some((o) => o.key === chosenKey) ? chosenKey : options[0].key;
-}
-
-// Download panel's selectors carry LABELS (see buildDownloadPanel), since
-// the global list is deduped by label across variables that use different
-// internal keys for their own single option. Resolve back to this
-// variable's own key by matching that label; fall back to its first option.
-function resolveDimensionByLabel(variable, dim, chosenLabel) {
-  const options = VARIABLE_META[variable][dim];
-  const match = options.find((o) => o.label === chosenLabel);
-  return match ? match.key : options[0].key;
 }
 
 function triggerCsvDownload(rows, filename) {
@@ -648,30 +666,39 @@ async function downloadCsv() {
   }
   await Promise.all(variables.map(loadVariable));
 
-  const chosenAgeGroup = document.getElementById("download-agegroup").value;
-  const chosenMeasure = document.getElementById("download-measure").value;
+  const chosenAgeGroups = checkedLabels("download-agegroup");
+  const chosenMeasures = checkedLabels("download-measure");
   const yearFrom = document.getElementById("download-year-from").value;
   const yearTo = document.getElementById("download-year-to").value;
+
+  // A variable exports every checked (age group x measure) combination it
+  // actually has; if none of the checked labels apply to it, fall back to
+  // its first option so checking e.g. only "Mediana" doesn't silently drop
+  // variables that have no median.
+  const matching = (options, chosen) => {
+    const hits = options.filter((o) => chosen.includes(o.label));
+    return hits.length ? hits : [options[0]];
+  };
 
   const rows = [["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"]];
   for (const variable of variables) {
     const data = loadedData[variable] || {};
-    const ageGroup = resolveDimensionByLabel(variable, "ageGroups", chosenAgeGroup);
-    const measure = resolveDimensionByLabel(variable, "measures", chosenMeasure);
-    const key = sliceKey(ageGroup, measure);
-    const ageGroupLabel = VARIABLE_META[variable].ageGroups.find((o) => o.key === ageGroup).label;
-    const measureLabel = VARIABLE_META[variable].measures.find((o) => o.key === measure).label;
-    const levelLabel = VARIABLE_META[variable].levels[0].label;
-
-    for (const teryt in data) {
-      const name = displayName(teryt, terytToName[teryt] || teryt);
-      for (const year in data[teryt]) {
-        const y = Number(year);
-        if (yearFrom && y < Number(yearFrom)) continue;
-        if (yearTo && y > Number(yearTo)) continue;
-        const d = data[teryt][year][key];
-        if (!d) continue;
-        rows.push([VARIABLE_META[variable].label, levelLabel, ageGroupLabel, measureLabel, teryt, name, year, d.k, d.m, d.t]);
+    const meta = VARIABLE_META[variable];
+    const levelLabel = meta.levels[0].label;
+    for (const ageGroupOpt of matching(meta.ageGroups, chosenAgeGroups)) {
+      for (const measureOpt of matching(meta.measures, chosenMeasures)) {
+        const key = sliceKey(ageGroupOpt.key, measureOpt.key);
+        for (const teryt in data) {
+          const name = displayName(teryt, terytToName[teryt] || teryt);
+          for (const year in data[teryt]) {
+            const y = Number(year);
+            if (yearFrom && y < Number(yearFrom)) continue;
+            if (yearTo && y > Number(yearTo)) continue;
+            const d = data[teryt][year][key];
+            if (!d) continue;
+            rows.push([meta.label, levelLabel, ageGroupOpt.label, measureOpt.label, teryt, name, year, d.k, d.m, d.t]);
+          }
+        }
       }
     }
   }

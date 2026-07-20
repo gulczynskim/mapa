@@ -141,14 +141,23 @@
 
     <section class="panel">
       <h2>Pobierz dane</h2>
-      <p class="corr-note">Wybierz zmienne i zakres lat, które mają się znaleźć w pliku CSV. Poziom/grupa
-        wieku/miara stosowane są tam, gdzie dana zmienna je obsługuje -- w przeciwnym razie użyta
-        zostanie jedyna dostępna dla niej wartość.</p>
+      <p class="corr-note">Wybierz zmienne, zakres lat oraz poziomy/grupy wieku/miary, które mają się
+        znaleźć w pliku CSV (można zaznaczyć wiele opcji). Kombinacje niedostępne dla danej zmiennej
+        są pomijane; jeśli żadna z zaznaczonych opcji nie pasuje, użyta zostanie domyślna.</p>
       <div id="download-variables" class="download-variables"></div>
       <div class="download-dims">
-        <label>Poziom <select id="download-level"></select></label>
-        <label>Grupa wieku <select id="download-agegroup"></select></label>
-        <label>Miara <select id="download-measure"></select></label>
+        <details class="download-dim">
+          <summary>Poziom</summary>
+          <div id="download-level" class="dim-options"></div>
+        </details>
+        <details class="download-dim">
+          <summary>Grupa wieku</summary>
+          <div id="download-agegroup" class="dim-options"></div>
+        </details>
+        <details class="download-dim">
+          <summary>Miara</summary>
+          <div id="download-measure" class="dim-options"></div>
+        </details>
       </div>
       <div class="download-years">
         <label>Rok od <input type="number" id="download-year-from" /></label>

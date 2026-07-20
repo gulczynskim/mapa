@@ -55,8 +55,13 @@ header p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--text-secondary);
 }
 
 .controls {
-  width: 280px;
+  /* Wider on large screens (up to 420px), never below 300px on desktop;
+     height pinned to the map row so the sidebar scrolls internally instead
+     of stretching the page. */
+  width: clamp(300px, 26vw, 420px);
   flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
   padding: 1rem;
   border-right: 1px solid var(--hairline);
   background: var(--surface-1);
@@ -294,19 +299,38 @@ input[type="range"] { width: 100%; }
   gap: 1rem;
   margin-bottom: 0.9rem;
 }
-.download-dims label, .download-years label {
+.download-years label {
   font-size: 0.8rem;
   color: var(--text-secondary);
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
 }
-.download-dims select {
-  padding: 0.35rem;
-  border-radius: 6px;
+.download-dim {
   border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
   background: var(--page);
-  color: var(--text-primary);
+  min-width: 150px;
+}
+.download-dim summary {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.dim-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+.dim-option {
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 .download-years input {
   width: 90px;
@@ -331,7 +355,7 @@ footer a { color: inherit; }
 
 @media (max-width: 720px) {
   .layout { flex-direction: column; height: auto; }
-  .controls { width: 100%; border-right: none; border-bottom: 1px solid var(--hairline); }
+  .controls { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--hairline); }
   .map-wrap { height: 60vh; }
   .rankings-columns { grid-template-columns: 1fr; }
   .corr-axes { grid-template-columns: 1fr; }
