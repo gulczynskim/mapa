@@ -514,10 +514,27 @@ function hasTotalForCurrentSelection() {
 function updateViewAvailability() {
   const totalBtn = document.querySelector('#view-buttons button[data-view-key="total"]');
   if (!totalBtn) return;
-  const ok = hasTotalForCurrentSelection();
-  totalBtn.disabled = !ok;
-  totalBtn.title = ok ? "" : "Ogółem niedostępne dla tej grupy wieku/miary (patrz opis zmiennej)";
-  if (!ok && state.view === "total") {
+  const meta = VARIABLE_META[state.variable];
+
+  const totalOk = hasTotalForCurrentSelection();
+  totalBtn.disabled = !totalOk;
+  totalBtn.title = totalOk ? "" : "Ogółem niedostępne dla tej grupy wieku/miary (patrz opis zmiennej)";
+
+  // % kobiet / % mężczyzn compute k/(k+m) -- only meaningful when k and m
+  // are COUNTS (people, pupils, votes), not rates or scores. Adding two
+  // unemployment rates and dividing tells you nothing, so these views stay
+  // disabled unless the variable opts in with sharesMeaningful: true.
+  const sharesOk = meta.sharesMeaningful === true;
+  for (const key of ["shareWomen", "shareMen"]) {
+    const btn = document.querySelector(`#view-buttons button[data-view-key="${key}"]`);
+    if (!btn) continue;
+    btn.disabled = !sharesOk;
+    btn.title = sharesOk ? "" : "Dostępne tylko dla zmiennych liczebnościowych (np. liczba uczniów), nie dla wskaźników i wyników";
+  }
+
+  const currentBlocked =
+    (!totalOk && state.view === "total") || (!sharesOk && (state.view === "shareWomen" || state.view === "shareMen"));
+  if (currentBlocked) {
     state.view = "women";
     [...document.querySelectorAll("#view-buttons button")].forEach((b) =>
       b.classList.toggle("active", b.dataset.viewKey === state.view)

@@ -5,6 +5,15 @@
 // dimension is a list of {key, label}; a single-entry list still renders a
 // (disabled) selector showing that one value, so the UI shape stays
 // consistent whether or not a variable actually offers a choice.
+//
+// Optional flags:
+//   sharesMeaningful: true -- enables the "% kobiet" / "% mężczyzn" views,
+//     which compute k/(k+m). Only set this on COUNT variables (pupils,
+//     population, votes, elected officials), never on rates/scores, where
+//     that arithmetic is meaningless. None of the current variables qualify;
+//     future ones like liceum pupil counts or population 25-34 will.
+//   hasTotal: false (on an ageGroup/measure option) -- marks slices whose
+//     combined-sexes total can't be derived; disables "Ogółem" there.
 const VARIABLE_META = {
   unemployment: {
     label: "Bezrobocie rejestrowane",
