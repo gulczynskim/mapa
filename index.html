@@ -16,7 +16,7 @@
 <body>
   <header>
     <h1>Interaktywna Mapa Nierówności Płci</h1>
-    <p>Prototyp: dane wg powiatów i płci (BDL GUS). Kolejne zmienne i poziomy (gminy, podregiony) w budowie.</p>
+    <p>Prototyp: dane z podziałem na płeć dla powiatów, gmin i podregionów (BDL GUS, CKE). Kolejne zmienne w budowie.</p>
     <p class="author-link"><a href="https://michalgulczynski.pl">O autorze i dane kontaktowe</a></p>
   </header>
 
@@ -45,7 +45,7 @@
       </div>
 
       <div class="control-group">
-        <label for="agegroup-select">Grupa wieku</label>
+        <label for="agegroup-select" id="agegroup-label">Grupa wieku</label>
         <select id="agegroup-select"></select>
       </div>
 
@@ -93,7 +93,7 @@
     <section class="panel">
       <h2>Szukaj gminy / powiatu / podregionu</h2>
       <input type="text" id="search-input" placeholder="Wpisz nazwę" class="search-input" />
-      <p class="corr-note">Na razie działa tylko wyszukiwanie powiatów -- gminy i podregiony pojawią się, gdy te poziomy będą dostępne w danych.</p>
+      <p class="corr-note">Szuka w obrębie poziomu agregacji aktualnie wybranej zmiennej (powiat, gmina lub podregion).</p>
       <ul id="search-results" class="search-results"></ul>
     </section>
 
@@ -180,7 +180,7 @@
     <section class="panel">
       <h2>O projekcie</h2>
       <p>Mapa powstaje jako narzędzie do eksploracji nierówności między kobietami i mężczyznami w Polsce
-         na poziomie powiatów. Dane pochodzą z Banku Danych Lokalnych GUS oraz innych źródeł publicznych.
+         na poziomie powiatów, gmin i podregionów. Dane pochodzą z Banku Danych Lokalnych GUS oraz innych źródeł publicznych.
          Część zmiennych dostępna jest wyłącznie dla wybranych poziomów agregacji (powiaty/gminy/podregiony)
          -- ograniczenie wynika z tego, co faktycznie publikuje GUS.</p>
       <p class="contact-note">Jeśli masz sugestie albo coś nie działa,

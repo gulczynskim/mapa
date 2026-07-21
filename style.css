@@ -204,7 +204,7 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .legend-labels span { position: absolute; top: 0; white-space: nowrap; }
 
-.leaflet-tooltip.powiat-tooltip {
+.leaflet-tooltip.region-tooltip {
   background: var(--surface-1);
   color: var(--text-primary);
   border: 1px solid var(--border);
@@ -212,7 +212,7 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
   font-size: 0.8rem;
   padding: 0.35rem 0.55rem;
 }
-.leaflet-tooltip.powiat-tooltip .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+.leaflet-tooltip.region-tooltip .val { font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .source-note { font-size: 0.72rem; color: var(--muted); margin-top: 1.5rem; line-height: 1.4; }
 

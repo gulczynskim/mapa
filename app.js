@@ -1,6 +1,13 @@
-// Prototype dashboard. Boundaries: powiat level only for now (levels/age
-// groups/measures are modeled per-variable in variables.js and the UI
-// enables/disables accordingly, ready for when more levels get wired in).
+// Prototype dashboard. Boundaries exist for powiat/gmina/podregion (levels/
+// age groups/measures are modeled per-variable in variables.js and the UI
+// enables/disables accordingly); each variable's data is only fetched at
+// ONE of those levels, so the map swaps its boundary layer whenever the
+// selected variable's level differs from what's currently rendered.
+const BOUNDARY_FILES = {
+  powiat: "data/powiaty.json",
+  gmina: "data/gminy.json",
+  podregion: "data/podregiony.json",
+};
 
 // 8 buckets for magnitude views (per user request for finer resolution than
 // the earlier 6) -- evenly spaced steps from the validated blue ramp.
@@ -51,7 +58,7 @@ const VIEWS = {
 
 const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
 
-const COLOR_SCALES = { quantile: "Liniowa (kwantyle)", log: "Logarytmiczna" };
+const COLOR_SCALES = { linear: "Liniowa (równe przedziały)", log: "Logarytmiczna", quantile: "Kwantyle" };
 
 let state = {
   variable: "unemployment",
@@ -60,11 +67,12 @@ let state = {
   level: "powiat",
   ageGroup: "default",
   measure: "default",
-  colorScale: "quantile",
+  colorScale: "linear",
 };
 
 let loadedData = {}; // variable -> {teryt: {year: {"<ageGroup>__<measure>": {t,m,k}}}}
-let boundaries = null;
+let loadedBoundaries = {}; // level -> GeoJSON, fetched lazily and cached
+let currentLevel = null; // level actually rendered on the map right now
 let geoLayer = null;
 let map = null;
 let attributionControl = null;
@@ -148,6 +156,64 @@ function setDefaultView() {
   map.setView(POLAND_BOUNDS.getCenter(), tightZoom + map.options.zoomSnap, { animate: false });
 }
 
+// Builds the Leaflet layer for one level's boundary GeoJSON and swaps it
+// onto the map, replacing whatever was there before. Pulled out of init()
+// so switching variables across levels (e.g. powiat unemployment -> gmina
+// radni) can rebuild the same layer instead of only ever creating it once.
+function renderBoundaries(data) {
+  if (geoLayer) map.removeLayer(geoLayer);
+  // Fresh per level: a stale teryt from the previous level would either not
+  // exist here (search/rankings silently show nothing for it) or, worse,
+  // collide with an unrelated region that happens to share the same code.
+  terytToLayer = {};
+  terytToName = {};
+  geoLayer = L.geoJSON(data, {
+    style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.6 }),
+    onEachFeature: (feature, layer) => {
+      const teryt = feature.properties.JPT_KOD_JE;
+      const name = feature.properties.JPT_NAZWA_;
+      terytToLayer[teryt] = layer;
+      terytToName[teryt] = name;
+      layer.on({
+        mouseover: (e) => highlight(e.target),
+        // Explicit closeTooltip: with sticky tooltips some browsers/embedded
+        // views don't reliably deliver the internal event Leaflet uses to
+        // hide them, leaving the box stuck on screen after the cursor leaves.
+        mouseout: (e) => {
+          e.target.setStyle(baseStyleFor(mapValueFor(teryt), lastDomain));
+          e.target.closeTooltip();
+        },
+      });
+      layer.bindTooltip("", { className: "region-tooltip", sticky: true });
+    },
+  }).addTo(map);
+}
+
+// Fetches (and caches) a level's boundary GeoJSON without touching the map
+// -- used both by ensureLevel below and by init(), which needs the data
+// loaded before the map object even exists.
+async function loadBoundaries(level) {
+  if (!loadedBoundaries[level]) {
+    loadedBoundaries[level] = await fetch(BOUNDARY_FILES[level]).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    });
+  }
+  return loadedBoundaries[level];
+}
+
+// Loads a level's boundaries and renders them if that level isn't already
+// the one on screen. Clears any in-progress search, since its results
+// reference layers from whichever level was active before.
+async function ensureLevel(level) {
+  if (level === currentLevel) return;
+  const data = await loadBoundaries(level);
+  renderBoundaries(data);
+  currentLevel = level;
+  document.getElementById("search-input").value = "";
+  document.getElementById("search-results").innerHTML = "";
+}
+
 async function init() {
   if (location.protocol === "file:") {
     showError(
@@ -159,14 +225,10 @@ async function init() {
   }
   showLoading("Wczytywanie granic i danych...");
   try {
-    const [boundariesData] = await Promise.all([
-      fetch("data/powiaty.json").then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      }),
+    await Promise.all([
+      loadBoundaries(VARIABLE_META[state.variable].levels[0].key),
       loadVariable(state.variable),
     ]);
-    boundaries = boundariesData;
   } catch (err) {
     showError("Nie udało się wczytać danych. Spróbuj odświeżyć stronę. (" + err.message + ")");
     return;
@@ -175,9 +237,9 @@ async function init() {
 
   // No basemap tile layer -- a real map service would always show slices of
   // neighboring countries at the viewport edges. Plain background (set in
-  // CSS) plus the powiat polygons is the only way to guarantee nothing but
+  // CSS) plus the region polygons is the only way to guarantee nothing but
   // Poland is ever visible.
-  // zoomSnap/zoomDelta of 0.25 (instead of Leaflet's default whole-level
+  // zoomSnap/zoomDelta of 0.1 (instead of Leaflet's default whole-level
   // steps) make the +/- buttons and the initial fit change size gradually --
   // a single "+" click no longer jumps from "fits with margin" to "too big".
   map = L.map("map", {
@@ -208,26 +270,8 @@ async function init() {
   });
   map.addControl(new ResetViewControl());
 
-  geoLayer = L.geoJSON(boundaries, {
-    style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.6 }),
-    onEachFeature: (feature, layer) => {
-      const teryt = feature.properties.JPT_KOD_JE;
-      const name = feature.properties.JPT_NAZWA_;
-      terytToLayer[teryt] = layer;
-      terytToName[teryt] = name;
-      layer.on({
-        mouseover: (e) => highlight(e.target),
-        // Explicit closeTooltip: with sticky tooltips some browsers/embedded
-        // views don't reliably deliver the internal event Leaflet uses to
-        // hide them, leaving the box stuck on screen after the cursor leaves.
-        mouseout: (e) => {
-          e.target.setStyle(baseStyleFor(mapValueFor(teryt), lastDomain));
-          e.target.closeTooltip();
-        },
-      });
-      layer.bindTooltip("", { className: "powiat-tooltip", sticky: true });
-    },
-  }).addTo(map);
+  renderBoundaries(loadedBoundaries[VARIABLE_META[state.variable].levels[0].key]);
+  currentLevel = VARIABLE_META[state.variable].levels[0].key;
 
   // Safety net for any highlight or tooltip that outlives its hover (missed
   // mouseout, or the persistent highlight left by a search jump): clicking
@@ -268,6 +312,12 @@ function populateDimensionSelect(selectEl, options, selectedKey) {
 
 function buildDimensionSelectors() {
   const meta = VARIABLE_META[state.variable];
+  // Most variables' second dimension really is an age group, but a few
+  // (e.g. PKD economic section) use the same {key,label} list shape for
+  // something else entirely -- agegroupLabel lets those override the
+  // sidebar's label instead of showing "Grupa wieku" next to a list of
+  // industry sections.
+  document.getElementById("agegroup-label").textContent = meta.agegroupLabel || "Grupa wieku";
   state.level = populateDimensionSelect(document.getElementById("level-select"), meta.levels, state.level);
   state.ageGroup = populateDimensionSelect(document.getElementById("agegroup-select"), meta.ageGroups, state.ageGroup);
   state.measure = populateDimensionSelect(document.getElementById("measure-select"), meta.measures, state.measure);
@@ -348,12 +398,22 @@ function quantile(sortedAsc, p) {
   return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
 }
 
-// Sequential, "quantile" mode (default): boundaries sit at the i/n
-// percentile of the actual data, so each bucket gets roughly equal COUNT of
-// powiats regardless of how the raw values are distributed. This is what
-// fixes variables with a few extreme outliers (e.g. a couple of counties
-// with a huge wage gap): the bulk of ordinary counties still gets spread
-// across the full color range instead of piling into one bucket.
+// Sequential, "linear" mode (default): plain equal-WIDTH bins between min
+// and max. Simple and intuitive, but a few extreme outliers stretch the
+// whole range and crowd everyone else into one or two buckets -- that's what
+// the quantile and log modes below exist to fix.
+function linearBoundariesSequential(domain, n) {
+  const min = Math.min(...domain);
+  const max = Math.max(...domain);
+  return Array.from({ length: n + 1 }, (_, i) => min + (i / n) * (max - min));
+}
+
+// Sequential, "quantile" mode: boundaries sit at the i/n percentile of the
+// actual data, so each bucket gets roughly equal COUNT of powiats regardless
+// of how the raw values are distributed. This is what fixes variables with a
+// few extreme outliers (e.g. a couple of counties with a huge wage gap): the
+// bulk of ordinary counties still gets spread across the full color range
+// instead of piling into one bucket.
 function quantileBoundariesSequential(domain, n) {
   const sorted = [...domain].sort((a, b) => a - b);
   return Array.from({ length: n + 1 }, (_, i) => quantile(sorted, i / n));
@@ -372,12 +432,23 @@ function logBoundariesSequential(domain, n) {
   return Array.from({ length: n + 1 }, (_, i) => Math.exp(lnMin + (i / n) * (lnMax - lnMin)));
 }
 
-// Diverging, "quantile" mode (default): each arm (below/above center) gets
-// its own quantile boundaries, computed independently from that arm's own
-// distribution. Unlike a single global "biggest distance from center"
-// spread, one extreme outlier on one side no longer stretches every other
-// county (on either side) into the pale near-center buckets -- exactly the
-// "map is almost entirely grey/white" problem reported for the wage gap.
+// Diverging, "linear" mode (default): a single symmetric spread around
+// center, sized by whichever value is furthest from it. One extreme outlier
+// on either side stretches the whole scale and crowds everyone else into the
+// pale near-center buckets -- e.g. it's what made the wage-gap "Różnica"
+// view look almost entirely white (88% of counties landed in one bucket).
+function linearBoundariesDiverging(domain, view, n) {
+  const center = view.center ?? 0;
+  const spread = Math.max(...domain.map((v) => Math.abs(v - center)), 1e-9);
+  const tBoundaries = Array.from({ length: n + 1 }, (_, i) => -1 + (i * 2) / n);
+  return tBoundaries.map((t) => center + t * spread);
+}
+
+// Diverging, "quantile" mode: each arm (below/above center) gets its own
+// quantile boundaries, computed independently from that arm's own
+// distribution. Unlike linear mode's single global "biggest distance from
+// center" spread, one extreme outlier on one side no longer stretches every
+// other county (on either side) into the pale near-center buckets.
 function quantileBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
   const half = (n + 1) / 2; // n is always odd (a diverging palette needs a true center bucket)
@@ -420,9 +491,13 @@ function logBoundariesDiverging(domain, view, n) {
 function colorBoundaries(domain, view, steps) {
   const n = steps.length;
   if (view.kind === "sequential") {
-    return state.colorScale === "log" ? logBoundariesSequential(domain, n) : quantileBoundariesSequential(domain, n);
+    if (state.colorScale === "log") return logBoundariesSequential(domain, n);
+    if (state.colorScale === "quantile") return quantileBoundariesSequential(domain, n);
+    return linearBoundariesSequential(domain, n);
   }
-  return state.colorScale === "log" ? logBoundariesDiverging(domain, view, n) : quantileBoundariesDiverging(domain, view, n);
+  if (state.colorScale === "log") return logBoundariesDiverging(domain, view, n);
+  if (state.colorScale === "quantile") return quantileBoundariesDiverging(domain, view, n);
+  return linearBoundariesDiverging(domain, view, n);
 }
 
 function bucketIndex(value, boundaries) {
@@ -556,19 +631,31 @@ let variableRequestSeq = 0;
 async function selectVariable(requested) {
   const seq = ++variableRequestSeq;
   showLoading("Wczytywanie danych...");
+  const meta = VARIABLE_META[requested];
   try {
-    await loadVariable(requested);
+    // loadBoundaries only fetches+caches -- it doesn't touch the map, so it's
+    // safe to run even if this call ends up superseded. Only actually
+    // switching the rendered layer (below) needs the seq guard.
+    await Promise.all([loadVariable(requested), loadBoundaries(meta.levels[0].key)]);
   } catch (err) {
     if (seq !== variableRequestSeq) return; // superseded by a newer selection
     showError("Nie udało się wczytać danych: " + err.message);
     return;
   }
   if (seq !== variableRequestSeq) return; // superseded by a newer selection
+  // Switch the map's boundary layer only if this variable actually needs a
+  // different level -- guarded by seq too, so a slower, now-stale call can
+  // never clobber a newer call's already-rendered level.
+  if (meta.levels[0].key !== currentLevel) {
+    renderBoundaries(loadedBoundaries[meta.levels[0].key]);
+    currentLevel = meta.levels[0].key;
+    document.getElementById("search-input").value = "";
+    document.getElementById("search-results").innerHTML = "";
+  }
   state.variable = requested;
   hideLoading();
   // Reset to the new variable's default dimensions rather than keeping
   // stale keys from the previous variable that might not exist here.
-  const meta = VARIABLE_META[state.variable];
   state.level = meta.levels[0].key;
   state.ageGroup = meta.ageGroups[0].key;
   state.measure = meta.measures[0].key;
@@ -935,9 +1022,14 @@ async function restoreFromUrl() {
   const params = new URLSearchParams(location.search);
   if (params.has("var") && VARIABLE_META[params.get("var")]) state.variable = params.get("var");
   // The initial Promise.all in init() only loaded the default variable's
-  // data -- if the URL points at a different one, it was never fetched.
+  // data (and its boundary level) -- if the URL points at a different
+  // variable, both its data and (possibly) a different boundary level were
+  // never fetched.
   try {
-    await loadVariable(state.variable);
+    await Promise.all([
+      loadVariable(state.variable),
+      ensureLevel(VARIABLE_META[state.variable].levels[0].key),
+    ]);
   } catch (err) {
     showError("Nie udało się wczytać danych z linku: " + err.message);
     return;

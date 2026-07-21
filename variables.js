@@ -116,6 +116,21 @@ const VARIABLE_META = {
     measures: [{ key: "default", label: "Wartość" }],
     sharesMeaningful: true,
   },
+  radni_gminy: {
+    label: "Radni gminy",
+    unit: "osób",
+    topic: "polityka",
+    file: "data/radni_gminy.json",
+    meaning: "Liczba radnych w radach gmin, wg płci.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Kody zmiennych BDL: 6 (ogółem), 7 (mężczyźni), 8 (kobiety) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "gmina", label: "Gmina" }],
+    ageGroups: [{ key: "default", label: "Wszyscy radni" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
   liceum: {
     label: "Uczniowie i absolwenci liceów",
     unit: "osób",
@@ -196,5 +211,70 @@ const VARIABLE_META = {
       { key: "mean", label: "Średnia" },
       { key: "median", label: "Mediana", hasTotal: false }, // sub-group medians can't be correctly combined
     ],
+  },
+  pkd_zatrudnienie: {
+    label: "Pracujący wg sekcji PKD",
+    unit: "osób",
+    topic: "rynek_pracy",
+    file: "data/pkd_zatrudnienie.json",
+    agegroupLabel: "Sekcja PKD",
+    meaning:
+      "Liczba pracujących wg sekcji PKD (Polska Klasyfikacja Działalności) i płci, stan na " +
+      "styczeń. Surowe dane sekcja po sekcji -- bez wyliczonego wskaźnika segregacji zawodowej " +
+      "(np. indeksu Duncana), którego formuła nie jest jeszcze ustalona.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Temat BDL P4283, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "ogolem", label: "Wszystkie sekcje" },
+      { key: "A", label: "A - Rolnictwo, leśnictwo, łowiectwo i rybactwo" },
+      { key: "B", label: "B - Górnictwo i wydobywanie" },
+      { key: "C", label: "C - Przetwórstwo przemysłowe" },
+      { key: "D", label: "D - Wytwarzanie i zaopatrywanie w energię elektryczną, gaz, wodę" },
+      { key: "E", label: "E - Dostawa wody; gospodarowanie ściekami i odpadami" },
+      { key: "F", label: "F - Budownictwo" },
+      { key: "G", label: "G - Handel hurtowy i detaliczny; naprawa pojazdów" },
+      { key: "H", label: "H - Transport i gospodarka magazynowa" },
+      { key: "I", label: "I - Zakwaterowanie i gastronomia" },
+      { key: "J", label: "J - Informacja i komunikacja" },
+      { key: "K", label: "K - Działalność finansowa i ubezpieczeniowa" },
+      { key: "L", label: "L - Obsługa rynku nieruchomości" },
+      { key: "M", label: "M - Działalność profesjonalna, naukowa i techniczna" },
+      { key: "N", label: "N - Usługi administrowania i działalność wspierająca" },
+      { key: "O", label: "O - Administracja publiczna i obrona narodowa" },
+      { key: "P", label: "P - Edukacja" },
+      { key: "Q", label: "Q - Opieka zdrowotna i pomoc społeczna" },
+      { key: "R", label: "R - Kultura, rozrywka i rekreacja" },
+      { key: "S", label: "S - Pozostała działalność usługowa" },
+    ],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  life_expectancy: {
+    label: "Przeciętne dalsze trwanie życia",
+    unit: "lat",
+    topic: "ludnosc",
+    file: "data/life_expectancy.json",
+    agegroupLabel: "Wiek",
+    meaning:
+      "Oczekiwana liczba lat dalszego życia od danego wieku, wg płci. Dostępne tylko dla " +
+      "podregionów -- BDL nie publikuje tego wskaźnika dla powiatów ani gmin. Brak wartości " +
+      "\"ogółem\": BDL publikuje to wyłącznie osobno dla mężczyzn i kobiet, a uśrednienie dwóch " +
+      "oczekiwanych długości życia bez ważenia liczebnością byłoby błędne tak samo, jak przy " +
+      "medianie egzaminu ósmoklasisty.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Temat BDL P2730, poziom podregion -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "podregion", label: "Podregion" }],
+    ageGroups: [
+      { key: "0", label: "Od urodzenia", hasTotal: false },
+      { key: "15", label: "Od 15 lat", hasTotal: false },
+      { key: "30", label: "Od 30 lat", hasTotal: false },
+      { key: "45", label: "Od 45 lat", hasTotal: false },
+      { key: "60", label: "Od 60 lat", hasTotal: false },
+      { key: "65", label: "Od 65 lat", hasTotal: false },
+    ],
+    measures: [{ key: "default", label: "Wartość" }],
   },
 };
