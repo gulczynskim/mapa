@@ -21,6 +21,7 @@ const TOPICS = {
   edukacja: "Edukacja",
   polityka: "Polityka",
   ludnosc: "Ludność",
+  zdrowie: "Zdrowie",
 };
 
 const VARIABLE_META = {
@@ -254,7 +255,7 @@ const VARIABLE_META = {
   life_expectancy: {
     label: "Przeciętne dalsze trwanie życia",
     unit: "lat",
-    topic: "ludnosc",
+    topic: "zdrowie",
     file: "data/life_expectancy.json",
     agegroupLabel: "Wiek",
     meaning:

@@ -48,6 +48,20 @@ header {
 }
 header h1 { margin: 0 0 0.7rem; font-size: 1.65rem; }
 header p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--text-secondary); }
+header .author-name { margin-top: 0.6rem; }
+/* Fixed (not theme-linked) dark chip so the white text stays legible
+   whether the page is in light or dark mode -- var(--surface-1) alone
+   flips to near-white in light mode, which would make literal white text
+   disappear. */
+header .author-name span {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: #2b2b29;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+}
 header .author-link { margin-top: 0.5rem; font-size: 0.8rem; }
 header .author-link a { color: var(--text-secondary); }
 

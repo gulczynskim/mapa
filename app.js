@@ -350,14 +350,39 @@ async function populateCorrDimensions(prefix) {
   yearSelect.value = years[years.length - 1];
 }
 
+// Zmienna is filtered by Temat, mirroring the map's own Temat -> Zmienna
+// controls -- independent per axis, so X and Y can browse different topics.
+function populateCorrVariableOptions(prefix, topic) {
+  const select = document.getElementById(`corr-${prefix}-var`);
+  const keys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].topic === topic);
+  select.innerHTML = keys.map((k) => `<option value="${k}">${VARIABLE_META[k].label}</option>`).join("");
+}
+
 async function buildCorrelationSelectors() {
-  const keys = Object.keys(VARIABLE_META);
+  const topics = topicsInUse();
   for (const prefix of ["x", "y"]) {
-    const select = document.getElementById(`corr-${prefix}-var`);
-    select.innerHTML = keys.map((k) => `<option value="${k}">${VARIABLE_META[k].label}</option>`).join("");
-    select.addEventListener("change", () => populateCorrDimensions(prefix));
+    const topicSelect = document.getElementById(`corr-${prefix}-topic`);
+    topicSelect.innerHTML = topics.map((t) => `<option value="${t}">${TOPICS[t]}</option>`).join("");
+    topicSelect.addEventListener("change", () => {
+      populateCorrVariableOptions(prefix, topicSelect.value);
+      populateCorrDimensions(prefix);
+    });
+    document.getElementById(`corr-${prefix}-var`).addEventListener("change", () => populateCorrDimensions(prefix));
   }
-  document.getElementById("corr-y-var").value = keys[keys.length - 1];
+
+  // Default: X on the first topic/variable, Y on the last -- keeps the
+  // historical "compare two different variables by default" behavior
+  // instead of starting the tool comparing a variable against itself.
+  const firstTopic = topics[0];
+  document.getElementById("corr-x-topic").value = firstTopic;
+  populateCorrVariableOptions("x", firstTopic);
+
+  const lastTopic = topics[topics.length - 1];
+  document.getElementById("corr-y-topic").value = lastTopic;
+  populateCorrVariableOptions("y", lastTopic);
+  const yKeys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].topic === lastTopic);
+  document.getElementById("corr-y-var").value = yKeys[yKeys.length - 1];
+
   await Promise.all([populateCorrDimensions("x"), populateCorrDimensions("y")]);
 }
 
@@ -704,17 +729,33 @@ function buildVariableSelect() {
 // regardless of variable. Defaults to the most recent available year
 // whenever the current one isn't valid for this variable (including on
 // first load, where state.year starts unset).
+//
+// The track spans literal min..max, not one evenly-spaced step per year, so
+// a gap between available years (e.g. a series that resumes after a break:
+// ...2014, 2018, 2024) takes proportionally more of the track than a
+// one-year gap -- see buildYearSlider's 'input' handler, which snaps
+// wherever the thumb gets dragged onto the nearest ACTUAL year.
 function syncYearSlider() {
   const years = availableYears(state.variable).map(Number);
   if (years.length === 0) return;
   const slider = document.getElementById("year-slider");
-  slider.min = Math.min(...years);
-  slider.max = Math.max(...years);
-  slider.disabled = years.length <= 1;
   if (state.year === null || !years.includes(state.year)) {
     state.year = Math.max(...years);
   }
-  slider.value = state.year;
+  if (years.length === 1) {
+    // min/max/value all equal would leave the native thumb position
+    // browser-dependent -- give the track real span and park the value
+    // dead center instead, for a consistent, obviously-disabled look.
+    slider.min = 0;
+    slider.max = 2;
+    slider.value = 1;
+  } else {
+    slider.min = Math.min(...years);
+    slider.max = Math.max(...years);
+    slider.step = "any";
+    slider.value = state.year;
+  }
+  slider.disabled = years.length <= 1;
   document.getElementById("year-value").textContent = state.year;
 }
 
@@ -803,7 +844,11 @@ function buildYearSlider() {
   const label = document.getElementById("year-value");
   syncYearSlider();
   slider.addEventListener("input", () => {
-    state.year = Number(slider.value);
+    const years = availableYears(state.variable).map(Number);
+    const raw = Number(slider.value);
+    const nearest = years.reduce((a, b) => (Math.abs(b - raw) < Math.abs(a - raw) ? b : a));
+    state.year = nearest;
+    slider.value = nearest; // snap the visible thumb, not just the stored state
     label.textContent = state.year;
     updateAll();
   });
