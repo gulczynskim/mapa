@@ -51,6 +51,8 @@ const VIEWS = {
 
 const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
 
+const COLOR_SCALES = { quantile: "Liniowa (kwantyle)", log: "Logarytmiczna" };
+
 let state = {
   variable: "unemployment",
   view: "total",
@@ -58,6 +60,7 @@ let state = {
   level: "powiat",
   ageGroup: "default",
   measure: "default",
+  colorScale: "quantile",
 };
 
 let loadedData = {}; // variable -> {teryt: {year: {"<ageGroup>__<measure>": {t,m,k}}}}
@@ -111,6 +114,40 @@ async function loadVariable(name) {
   return data;
 }
 
+// Plain fitBounds leaves a lot of empty margin on this layout: the sidebar
+// makes the map viewport much wider than Poland's Mercator-projected shape
+// (nearly square, since latitude is stretched relative to longitude at this
+// latitude), so height is always the binding constraint and there's a lot of
+// unused width. There's no way to fill that width without zooming in past
+// the tight vertical fit -- any further zoom necessarily crops a bit of the
+// north/south extremes. One zoomSnap step in is a deliberately mild version
+// of that trade-off (a few percent off the Baltic coast/Tatra tips, verified
+// visually), not the aggressive crop a bigger bump would cause.
+//
+// {animate: false} is required, not a style choice: Leaflet's CSS-transition
+// zoom animation doesn't reliably finish in some automated/headless browser
+// contexts, silently leaving `_zoom` at its pre-call value forever (found
+// while testing this very function -- setView appeared to do nothing at all).
+function setDefaultView() {
+  // invalidateSize is required, not defensive: Leaflet caches the container
+  // size at construction time, and on this layout the sidebar/map are still
+  // reflowing when init() runs, so the cached size can be stale (seen for
+  // real: fitBounds silently collapsed to a single point). Cheap no-op if
+  // the size hadn't actually changed.
+  map.invalidateSize();
+  const tightZoom = map.getBoundsZoom(POLAND_BOUNDS, false);
+  // A fixed minZoom (6, tuned against a wide desktop viewport) turned out to
+  // silently clip the map on narrow/tall mobile screens: Poland's tight fit
+  // there needs a LOWER zoom (its Mercator shape is roughly square, so a
+  // narrow viewport is width-bound), and the fixed floor prevented reaching
+  // it, cropping ~20% off the east/west edges by default -- found by testing
+  // the mobile viewport directly, not visible on desktop. Deriving minZoom
+  // from the actual tight fit keeps a similar "don't zoom out too far" floor
+  // on any screen shape without ever fighting the fit itself.
+  map.setMinZoom(Math.min(6, tightZoom - 0.5));
+  map.setView(POLAND_BOUNDS.getCenter(), tightZoom + map.options.zoomSnap, { animate: false });
+}
+
 async function init() {
   if (location.protocol === "file:") {
     showError(
@@ -140,16 +177,36 @@ async function init() {
   // neighboring countries at the viewport edges. Plain background (set in
   // CSS) plus the powiat polygons is the only way to guarantee nothing but
   // Poland is ever visible.
+  // zoomSnap/zoomDelta of 0.25 (instead of Leaflet's default whole-level
+  // steps) make the +/- buttons and the initial fit change size gradually --
+  // a single "+" click no longer jumps from "fits with margin" to "too big".
   map = L.map("map", {
     zoomControl: true,
-    maxBounds: POLAND_BOUNDS.pad(0.05),
+    maxBounds: POLAND_BOUNDS.pad(0.08),
     minZoom: 6,
-    maxZoom: 10,
+    maxZoom: 10.5,
+    zoomSnap: 0.1,
+    zoomDelta: 0.1,
     attributionControl: false,
-  }).fitBounds(POLAND_BOUNDS);
+  });
+  setDefaultView();
   attributionControl = L.control.attribution({ prefix: false }).addTo(map);
   attributionControl.addAttribution('Mapa: <a href="https://mapa.michalgulczynski.pl">Michał Gulczyński</a>');
   updateMapAttribution();
+
+  const ResetViewControl = L.Control.extend({
+    options: { position: "topleft" },
+    onAdd: () => {
+      const btn = L.DomUtil.create("button", "leaflet-bar map-reset-btn");
+      btn.type = "button";
+      btn.title = "Przywróć domyślny widok";
+      btn.textContent = "100%";
+      L.DomEvent.disableClickPropagation(btn);
+      btn.addEventListener("click", setDefaultView);
+      return btn;
+    },
+  });
+  map.addControl(new ResetViewControl());
 
   geoLayer = L.geoJSON(boundaries, {
     style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.6 }),
@@ -189,6 +246,7 @@ async function init() {
   buildDownloadPanel();
   await buildCorrelationSelectors();
   await restoreFromUrl();
+  buildScaleButtons();
   buildDimensionSelectors();
   updateViewAvailability();
   buildYearSlider();
@@ -279,19 +337,80 @@ function currentDomain() {
   return values;
 }
 
-// logScale views (ratio) are symmetrized in log space -- 2x and 0.5x are
-// equally far from "equal", and a ratio can never go negative, so linear
-// spread around center=1 would be both lopsided and capable of producing
-// meaningless negative tick values.
-function divergingSpread(domain, view) {
+// Linear interpolation between the two nearest ranks -- the standard
+// "quantile" estimator (same one R's type-7 / numpy's default use).
+function quantile(sortedAsc, p) {
+  if (sortedAsc.length === 1) return sortedAsc[0];
+  const idx = p * (sortedAsc.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sortedAsc[lo];
+  return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
+}
+
+// Sequential, "quantile" mode (default): boundaries sit at the i/n
+// percentile of the actual data, so each bucket gets roughly equal COUNT of
+// powiats regardless of how the raw values are distributed. This is what
+// fixes variables with a few extreme outliers (e.g. a couple of counties
+// with a huge wage gap): the bulk of ordinary counties still gets spread
+// across the full color range instead of piling into one bucket.
+function quantileBoundariesSequential(domain, n) {
+  const sorted = [...domain].sort((a, b) => a - b);
+  return Array.from({ length: n + 1 }, (_, i) => quantile(sorted, i / n));
+}
+
+// Sequential, "log" mode: equal-WIDTH buckets in log space, i.e. equal
+// RATIO per bucket rather than equal count. Values <= 0 have no logarithm --
+// clamped to a tiny positive epsilon so they still land in the lowest
+// bucket instead of breaking the scale.
+function logBoundariesSequential(domain, n) {
+  const safe = (v) => Math.max(v, 1e-6);
+  const positive = domain.filter((v) => v > 0);
+  const base = (positive.length ? positive : domain).map(safe);
+  const lnMin = Math.log(Math.min(...base));
+  const lnMax = Math.log(Math.max(...base));
+  return Array.from({ length: n + 1 }, (_, i) => Math.exp(lnMin + (i / n) * (lnMax - lnMin)));
+}
+
+// Diverging, "quantile" mode (default): each arm (below/above center) gets
+// its own quantile boundaries, computed independently from that arm's own
+// distribution. Unlike a single global "biggest distance from center"
+// spread, one extreme outlier on one side no longer stretches every other
+// county (on either side) into the pale near-center buckets -- exactly the
+// "map is almost entirely grey/white" problem reported for the wage gap.
+function quantileBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
+  const half = (n + 1) / 2; // n is always odd (a diverging palette needs a true center bucket)
+  const below = domain.filter((v) => v < center).map((v) => center - v).sort((a, b) => a - b);
+  const above = domain.filter((v) => v >= center).map((v) => v - center).sort((a, b) => a - b);
+  const sideDistances = (dists) =>
+    dists.length === 0
+      ? Array.from({ length: half }, () => 0)
+      : Array.from({ length: half }, (_, j) => quantile(dists, (j + 1) / half));
+
+  const left = sideDistances(below).reverse().map((d) => center - d); // ascending: center-maxDist .. center-minDist
+  const right = sideDistances(above).map((d) => center + d); // ascending: center+minDist .. center+maxDist
+  return [...left, ...right];
+}
+
+// Diverging, "log" mode: ratio-style views (center > 0, e.g. K/M) keep the
+// original multiplicative symmetry -- 2x and 0.5x land equally far from
+// center, which only holds in log space. Difference-style views (center =
+// 0) use a "symlog" transform (sign-preserving log1p of the distance from
+// center) instead of a plain log, since a plain log is undefined at/below
+// zero and a raw difference can be zero or negative.
+function logBoundariesDiverging(domain, view, n) {
+  const center = view.center ?? 0;
+  const tBoundaries = Array.from({ length: n + 1 }, (_, i) => -1 + (i * 2) / n);
   if (view.logScale) {
     const logCenter = Math.log(center);
     const logSpread = Math.max(...domain.map((v) => Math.abs(Math.log(v) - logCenter)), 1e-9);
-    return { center, logCenter, logSpread };
+    return tBoundaries.map((t) => Math.exp(logCenter + t * logSpread));
   }
-  const spread = Math.max(...domain.map((v) => Math.abs(v - center)), 1e-9);
-  return { center, spread };
+  const symlog = (v) => Math.sign(v - center) * Math.log1p(Math.abs(v - center));
+  const invSymlog = (t) => center + Math.sign(t) * Math.expm1(Math.abs(t));
+  const spread = Math.max(...domain.map((v) => Math.abs(symlog(v))), 1e-9);
+  return tBoundaries.map((t) => invSymlog(t * spread));
 }
 
 // The N+1 boundary values (original data units) between the N color
@@ -301,15 +420,9 @@ function divergingSpread(domain, view) {
 function colorBoundaries(domain, view, steps) {
   const n = steps.length;
   if (view.kind === "sequential") {
-    const min = Math.min(...domain);
-    const max = Math.max(...domain);
-    return Array.from({ length: n + 1 }, (_, i) => min + (i / n) * (max - min));
+    return state.colorScale === "log" ? logBoundariesSequential(domain, n) : quantileBoundariesSequential(domain, n);
   }
-  const s = divergingSpread(domain, view);
-  const tBoundaries = Array.from({ length: n + 1 }, (_, i) => -1 + (i * 2) / n);
-  return view.logScale
-    ? tBoundaries.map((t) => Math.exp(s.logCenter + t * s.logSpread))
-    : tBoundaries.map((t) => s.center + t * s.spread);
+  return state.colorScale === "log" ? logBoundariesDiverging(domain, view, n) : quantileBoundariesDiverging(domain, view, n);
 }
 
 function bucketIndex(value, boundaries) {
@@ -345,9 +458,15 @@ function baseStyleFor(value, domain) {
 }
 
 // Polish locale throughout the UI: comma decimal separator, space thousands
-// (e.g. "1,5" not "1.5"; "10 000" not "10,000"). Never used for the CSV
-// export, which stays machine-readable with plain "." decimals.
+// (e.g. "1,5" not "1.5"; "10 000" not "10,000") -- EXCEPT at four digits and
+// above, where both the separator and decimals are dropped ("10000" not
+// "10 000,0"): a space-grouped decimal reads as cluttered at that magnitude
+// (wages, headcounts) and the extra precision isn't meaningful there. Never
+// used for the CSV export, which stays machine-readable with plain "." decimals.
 function formatPl(n, maxFractionDigits) {
+  if (Math.abs(n) >= 1000) {
+    return n.toLocaleString("pl-PL", { maximumFractionDigits: 0, useGrouping: false });
+  }
   return n.toLocaleString("pl-PL", { maximumFractionDigits: maxFractionDigits ?? 2, useGrouping: true });
 }
 
@@ -530,6 +649,23 @@ function buildViewButtons() {
     container.appendChild(btn);
   }
   updateViewAvailability();
+}
+
+function buildScaleButtons() {
+  const container = document.getElementById("scale-buttons");
+  container.innerHTML = "";
+  for (const key in COLOR_SCALES) {
+    const btn = document.createElement("button");
+    btn.textContent = COLOR_SCALES[key];
+    btn.className = key === state.colorScale ? "active" : "";
+    btn.addEventListener("click", () => {
+      state.colorScale = key;
+      [...container.children].forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      updateAll();
+    });
+    container.appendChild(btn);
+  }
 }
 
 // "Ogółem" reads d.t, which is deliberately null for combinations where a
@@ -792,6 +928,7 @@ function updateUrl() {
   params.set("level", state.level);
   params.set("agegroup", state.ageGroup);
   params.set("measure", state.measure);
+  params.set("scale", state.colorScale);
   history.replaceState(null, "", "?" + params.toString());
 }
 async function restoreFromUrl() {
@@ -811,6 +948,7 @@ async function restoreFromUrl() {
   if (params.has("level")) state.level = resolveDimension(state.variable, "levels", params.get("level"));
   if (params.has("agegroup")) state.ageGroup = resolveDimension(state.variable, "ageGroups", params.get("agegroup"));
   if (params.has("measure")) state.measure = resolveDimension(state.variable, "measures", params.get("measure"));
+  if (params.has("scale") && COLOR_SCALES[params.get("scale")]) state.colorScale = params.get("scale");
 
   // The variable-select's options are topic-filtered -- if the URL points
   // at a variable outside the default topic, its key wouldn't even be a

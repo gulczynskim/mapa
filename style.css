@@ -41,31 +41,31 @@ body {
 }
 
 header {
-  padding: 0.9rem 1.25rem;
+  padding: 1.4rem 1.25rem;
   border-bottom: 1px solid var(--hairline);
   background: var(--surface-1);
+  text-align: center;
 }
-header h1 { margin: 0; font-size: 1.15rem; }
+header h1 { margin: 0 0 0.7rem; font-size: 1.65rem; }
 header p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--text-secondary); }
+header .author-link { margin-top: 0.5rem; font-size: 0.8rem; }
+header .author-link a { color: var(--text-secondary); }
 
 .layout {
   display: flex;
-  height: 78vh;
-  min-height: 420px;
+  align-items: flex-start;
 }
 
 .controls {
-  /* Wider on large screens (up to 420px), never below 300px on desktop;
-     height pinned to the map row so the sidebar scrolls internally instead
-     of stretching the page. */
+  /* Wider on large screens (up to 420px), never below 300px on desktop.
+     Height grows with its own content -- no internal scrolling -- while the
+     map keeps a fixed viewport-relative height (set on .map-wrap) so a long
+     sidebar doesn't shrink the map. */
   width: clamp(300px, 26vw, 420px);
   flex-shrink: 0;
-  height: 100%;
-  min-height: 0;
   padding: 1rem;
   border-right: 1px solid var(--hairline);
   background: var(--surface-1);
-  overflow-y: auto;
 }
 
 .control-group { margin-bottom: 1.4rem; }
@@ -151,8 +151,24 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
   cursor: pointer;
 }
 
-.map-wrap { position: relative; flex: 1; min-width: 0; }
+.map-wrap { position: relative; flex: 1; min-width: 0; height: 78vh; min-height: 420px; }
 #map { height: 100%; width: 100%; background: var(--page); }
+
+.map-reset-btn {
+  width: auto;
+  padding: 0 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 26px;
+  height: 26px;
+  text-align: center;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: none;
+  display: block;
+  cursor: pointer;
+}
+.map-reset-btn:hover { background: var(--page); }
 
 .map-status {
   display: none;
@@ -355,9 +371,18 @@ footer {
 footer a { color: inherit; }
 
 @media (max-width: 720px) {
-  .layout { flex-direction: column; height: auto; }
+  /* align-items: flex-start (set for desktop's row layout, so the sidebar
+     can grow taller than the map without stretching it) is a CROSS-axis
+     property -- in this column layout the cross axis is horizontal, so the
+     same value collapses both children to their shrink-to-fit width unless
+     overridden back to stretch. */
+  .layout { flex-direction: column; height: auto; align-items: stretch; }
   .controls { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--hairline); }
-  .map-wrap { height: 60vh; }
+  /* flex: none overrides the base rule's "flex: 1" (flex-basis: 0%), which
+     would otherwise ignore this explicit height entirely and size the row
+     purely by flex-grow -- collapsing to 0 height, since .layout's own
+     height is "auto" here and has no extra space to distribute. */
+  .map-wrap { height: 60vh; flex: none; }
   .rankings-columns { grid-template-columns: 1fr; }
   .corr-axes { grid-template-columns: 1fr; }
 }
