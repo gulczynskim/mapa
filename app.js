@@ -79,6 +79,7 @@ let attributionControl = null;
 let currentSourceAttribution = null;
 let terytToLayer = {};
 let terytToName = {};
+let nameCounts = {}; // name -> how many teryts share it, precomputed per level (see renderBoundaries)
 let lastDomain = [];
 
 // The map's own attribution control shows the source for whichever variable
@@ -175,7 +176,14 @@ function renderBoundaries(data) {
       terytToLayer[teryt] = layer;
       terytToName[teryt] = name;
       layer.on({
-        mouseover: (e) => highlight(e.target),
+        // Tooltip content is built lazily here, on actual hover, not for
+        // every layer on every updateAll() -- at gmina scale (2479 layers)
+        // eagerly rebuilding every tooltip's HTML on every year-slider tick
+        // was a real, measured cost for something almost never shown.
+        mouseover: (e) => {
+          highlight(e.target);
+          setTooltipContent(e.target, teryt, name);
+        },
         // Explicit closeTooltip: with sticky tooltips some browsers/embedded
         // views don't reliably deliver the internal event Leaflet uses to
         // hide them, leaving the box stuck on screen after the cursor leaves.
@@ -187,6 +195,13 @@ function renderBoundaries(data) {
       layer.bindTooltip("", { className: "region-tooltip", sticky: true });
     },
   }).addTo(map);
+
+  // Precomputed once per level instead of inside displayName() -- that used
+  // to re-scan every single name for every single layer it was asked about,
+  // an O(n^2) cost (~6 million comparisons at gmina scale) that was the
+  // dominant cost of every updateAll() call.
+  nameCounts = {};
+  for (const n of Object.values(terytToName)) nameCounts[n] = (nameCounts[n] || 0) + 1;
 }
 
 // Fetches (and caches) a level's boundary GeoJSON without touching the map
@@ -250,6 +265,12 @@ async function init() {
     zoomSnap: 0.1,
     zoomDelta: 0.1,
     attributionControl: false,
+    // SVG (Leaflet's default) gives every polygon its own DOM node, so
+    // restyling all of them on a data change means that many individual DOM
+    // writes -- measured at ~95ms for gmina's 2479 polygons, the dominant
+    // cost of every year-slider tick. Canvas draws the whole layer in one
+    // paint pass instead of touching per-polygon DOM nodes.
+    preferCanvas: true,
   });
   setDefaultView();
   attributionControl = L.control.attribution({ prefix: false }).addTo(map);
@@ -711,14 +732,15 @@ function updateAll() {
   if (!geoLayer) return;
   const domain = currentDomain();
   lastDomain = domain;
+  // Tooltip content is NOT rebuilt here -- see setTooltipContent, built
+  // lazily on hover instead. At gmina scale this loop is already the most
+  // expensive per-frame cost (2479 style recalcs); doing 2479 unnecessary
+  // string-builds and DOM writes for tooltips nobody is currently looking
+  // at made it measurably worse.
   geoLayer.eachLayer((layer) => {
     const teryt = layer.feature.properties.JPT_KOD_JE;
-    const name = layer.feature.properties.JPT_NAZWA_;
     const value = mapValueFor(teryt);
     layer.setStyle(baseStyleFor(value, domain));
-    layer.setTooltipContent(
-      `<strong>${displayName(teryt, name)}</strong><br>${VIEWS[state.view].label}, ${state.year}: <span class="val">${formatValue(value)}</span>`
-    );
   });
   updateLegend(domain);
   updateRankings(domain);
@@ -978,6 +1000,14 @@ function buildYearSlider() {
   const slider = document.getElementById("year-slider");
   const label = document.getElementById("year-value");
   syncYearSlider();
+  // Dragging fires 'input' far faster than updateAll() can keep up with at
+  // gmina scale (2479 polygons restyled + rankings re-sorted per call) --
+  // without this, a drag queues up dozens of full re-renders that keep
+  // running long after the pointer has already moved on, reading as a
+  // freeze. Coalescing to one updateAll() per animation frame keeps the
+  // thumb/label snappy (those stay untouched, they're cheap) while capping
+  // the expensive part to what the screen can actually show anyway.
+  let updatePending = false;
   slider.addEventListener("input", () => {
     const years = availableYears(state.variable, state.ageGroup, state.measure).map(Number);
     const raw = Number(slider.value);
@@ -985,7 +1015,13 @@ function buildYearSlider() {
     state.year = nearest;
     slider.value = nearest; // snap the visible thumb, not just the stored state
     label.textContent = state.year;
-    updateAll();
+    if (!updatePending) {
+      updatePending = true;
+      requestAnimationFrame(() => {
+        updatePending = false;
+        updateAll();
+      });
+    }
   });
 }
 
@@ -1008,9 +1044,17 @@ const VOIVODESHIP_BY_CODE = {
   "26": "świętokrzyskie", "28": "warmińsko-mazurskie", "30": "wielkopolskie", "32": "zachodniopomorskie",
 };
 function displayName(teryt, name) {
-  const nameCount = Object.values(terytToName).filter((n) => n === name).length;
-  if (nameCount <= 1) return name;
+  if ((nameCounts[name] || 0) <= 1) return name;
   return `${name} (${VOIVODESHIP_BY_CODE[teryt.slice(0, 2)] || teryt.slice(0, 2)})`;
+}
+
+// Shared by the mouseover handler and the search-result jump -- both need
+// the tooltip's HTML set immediately before it can actually be shown.
+function setTooltipContent(layer, teryt, name) {
+  const value = mapValueFor(teryt);
+  layer.setTooltipContent(
+    `<strong>${displayName(teryt, name)}</strong><br>${VIEWS[state.view].label}, ${state.year}: <span class="val">${formatValue(value)}</span>`
+  );
 }
 
 function buildSearch() {
@@ -1030,6 +1074,7 @@ function buildSearch() {
         const layer = terytToLayer[teryt];
         map.fitBounds(layer.getBounds(), { maxZoom: 9 });
         highlight(layer);
+        setTooltipContent(layer, teryt, name); // bypasses mouseover, so needs it set explicitly
         layer.openTooltip();
         input.value = "";
         list.innerHTML = "";
