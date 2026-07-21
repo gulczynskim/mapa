@@ -18,7 +18,7 @@
     <h1>Interaktywna Mapa Nierówności Płci</h1>
     <p>Prototyp: dane z podziałem na płeć dla powiatów, gmin i podregionów (BDL GUS, CKE). Kolejne zmienne w budowie.</p>
     <p class="author-name"><span>Michał Gulczyński</span></p>
-    <p class="author-link"><a href="https://michalgulczynski.pl">O autorze i dane kontaktowe</a></p>
+    <p class="author-link"><a href="http://michalgulczynski.pl">O autorze i dane kontaktowe</a></p>
   </header>
 
   <div class="layout">
@@ -114,8 +114,9 @@
 
     <section class="panel">
       <h2>Korelacja zmiennych</h2>
-      <p class="corr-note">Możesz porównać dowolne dwie kombinacje zmienna/rok/płeć -- np. tę samą
-        zmienną w dwóch latach, albo kobiety vs. mężczyźni dla tej samej zmiennej.</p>
+      <p class="corr-note">Możesz porównać dowolne dwie kombinacje zmienna/rok/widok -- np. tę samą
+        zmienną w dwóch latach, kobiety vs. mężczyźni, albo którąś z map nierówności (różnica, proporcja,
+        % udziału). Obie osie muszą być na tym samym poziomie agregacji (powiat/gmina/podregion).</p>
       <div class="corr-axes">
         <fieldset class="corr-axis">
           <legend>Oś X</legend>
@@ -125,11 +126,7 @@
           <label>Grupa wieku <select id="corr-x-agegroup"></select></label>
           <label>Miara <select id="corr-x-measure"></select></label>
           <label>Rok <select id="corr-x-year"></select></label>
-          <label>Płeć <select id="corr-x-sex">
-            <option value="t">Ogółem</option>
-            <option value="m">Mężczyźni</option>
-            <option value="k">Kobiety</option>
-          </select></label>
+          <label>Widok <select id="corr-x-view"></select></label>
           <label class="corr-log"><input type="checkbox" id="corr-x-log" /> log&#8321;&#8320; (logarytm dziesiętny)</label>
         </fieldset>
         <fieldset class="corr-axis">
@@ -140,11 +137,7 @@
           <label>Grupa wieku <select id="corr-y-agegroup"></select></label>
           <label>Miara <select id="corr-y-measure"></select></label>
           <label>Rok <select id="corr-y-year"></select></label>
-          <label>Płeć <select id="corr-y-sex">
-            <option value="t">Ogółem</option>
-            <option value="m">Mężczyźni</option>
-            <option value="k">Kobiety</option>
-          </select></label>
+          <label>Widok <select id="corr-y-view"></select></label>
           <label class="corr-log"><input type="checkbox" id="corr-y-log" /> log&#8321;&#8320; (logarytm dziesiętny)</label>
         </fieldset>
       </div>

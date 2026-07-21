@@ -323,65 +323,174 @@ function buildDimensionSelectors() {
   state.measure = populateDimensionSelect(document.getElementById("measure-select"), meta.measures, state.measure);
 
   document.getElementById("level-select").onchange = (e) => { state.level = e.target.value; updateAll(); };
-  document.getElementById("agegroup-select").onchange = (e) => { state.ageGroup = e.target.value; updateViewAvailability(); updateAll(); };
-  document.getElementById("measure-select").onchange = (e) => { state.measure = e.target.value; updateViewAvailability(); updateAll(); };
+  // ageGroup/measure changing can change which years actually have data for
+  // this specific slice (not just which years the variable has ANY data
+  // for) -- resync the slider so it can never land on a year that's empty
+  // for the newly chosen combination.
+  document.getElementById("agegroup-select").onchange = (e) => { state.ageGroup = e.target.value; syncYearSlider(); updateViewAvailability(); updateAll(); };
+  document.getElementById("measure-select").onchange = (e) => { state.measure = e.target.value; syncYearSlider(); updateViewAvailability(); updateAll(); };
 }
 
-function availableYears(variable) {
+// ageGroup/measure are optional: pass them to restrict to years where that
+// EXACT slice has data, not just any slice of the variable. Needed because
+// a variable's ageGroup/measure combinations aren't guaranteed to all cover
+// the same years (none currently diverge, but nothing enforces that they
+// can't -- e.g. a newly-added age threshold could start later than others).
+function availableYears(variable, ageGroup, measure) {
   const data = loadedData[variable] || {};
+  const key = ageGroup !== undefined && measure !== undefined ? sliceKey(ageGroup, measure) : null;
   const years = new Set();
   for (const teryt in data) {
-    for (const year in data[teryt]) years.add(year);
+    for (const year in data[teryt]) {
+      if (key === null || data[teryt][year][key]) years.add(year);
+    }
   }
   return [...years].sort();
 }
 
-async function populateCorrDimensions(prefix) {
+// Years restricted to this axis's CURRENT ageGroup+measure slice, same
+// reasoning as the map's own syncYearSlider -- a year with no data for
+// this exact combination shouldn't be pickable at all.
+function refreshCorrYears(prefix) {
   const variable = document.getElementById(`corr-${prefix}-var`).value;
-  await loadVariable(variable);
-  const meta = VARIABLE_META[variable];
-  populateDimensionSelect(document.getElementById(`corr-${prefix}-level`), meta.levels, meta.levels[0].key);
-  populateDimensionSelect(document.getElementById(`corr-${prefix}-agegroup`), meta.ageGroups, meta.ageGroups[0].key);
-  populateDimensionSelect(document.getElementById(`corr-${prefix}-measure`), meta.measures, meta.measures[0].key);
-
-  const years = availableYears(variable);
+  if (!variable) return;
+  const ageGroup = document.getElementById(`corr-${prefix}-agegroup`).value;
+  const measure = document.getElementById(`corr-${prefix}-measure`).value;
+  const years = availableYears(variable, ageGroup, measure);
   const yearSelect = document.getElementById(`corr-${prefix}-year`);
   yearSelect.innerHTML = years.map((y) => `<option value="${y}">${y}</option>`).join("");
   yearSelect.value = years[years.length - 1];
 }
 
-// Zmienna is filtered by Temat, mirroring the map's own Temat -> Zmienna
-// controls -- independent per axis, so X and Y can browse different topics.
-function populateCorrVariableOptions(prefix, topic) {
-  const select = document.getElementById(`corr-${prefix}-var`);
-  const keys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].topic === topic);
-  select.innerHTML = keys.map((k) => `<option value="${k}">${VARIABLE_META[k].label}</option>`).join("");
+// "Widok" mirrors the map's own view buttons (Kobiety/Mężczyźni/Ogółem/
+// Różnica/Proporcja/% udziału) instead of a bare Ogółem/M/K triad -- lets
+// the correlation tool compare e.g. one variable's K/M gap against another
+// variable's raw rate. Gated the same way the map gates its view buttons:
+// Ogółem only where this ageGroup+measure actually has a combined value,
+// shares only for count-type variables. Rebuilt whenever variable/ageGroup/
+// measure changes for this axis, since hasTotal can vary within one
+// variable (e.g. E8 mean vs median).
+function populateCorrViewOptions(prefix) {
+  const variable = document.getElementById(`corr-${prefix}-var`).value;
+  if (!variable) return;
+  const meta = VARIABLE_META[variable];
+  const ageGroup = document.getElementById(`corr-${prefix}-agegroup`).value;
+  const measure = document.getElementById(`corr-${prefix}-measure`).value;
+  const totalOk = hasTotalFor(meta, ageGroup, measure);
+  const sharesOk = meta.sharesMeaningful === true;
+
+  const keys = Object.keys(VIEWS).filter((key) => {
+    if (key === "total") return totalOk;
+    if (key === "shareWomen" || key === "shareMen") return sharesOk;
+    return true;
+  });
+
+  const select = document.getElementById(`corr-${prefix}-view`);
+  const keep = keys.includes(select.value) ? select.value : "women";
+  select.innerHTML = keys.map((k) => `<option value="${k}">${VIEWS[k].label}</option>`).join("");
+  select.value = keep;
+}
+
+async function populateCorrDimensions(prefix) {
+  const variable = document.getElementById(`corr-${prefix}-var`).value;
+  if (!variable) return; // this axis's current Temat has no variable compatible with corrLevel
+  await loadVariable(variable);
+  const meta = VARIABLE_META[variable];
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-level`), meta.levels, meta.levels[0].key);
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-agegroup`), meta.ageGroups, meta.ageGroups[0].key);
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-measure`), meta.measures, meta.measures[0].key);
+  refreshCorrYears(prefix);
+  populateCorrViewOptions(prefix);
+}
+
+function levelOf(variableKey) {
+  return VARIABLE_META[variableKey].levels[0].key;
+}
+
+// Both correlation axes must share a level: two variables from different
+// levels can never actually correlate (a 4-digit powiat TERYT and a
+// 7-digit gmina TERYT are never equal strings), which used to fail
+// silently at runtime as "too little data" with no indication why.
+// corrLevel locks to whichever axis's variable was picked most recently.
+//
+// Temat dropdowns always list every topic, on both axes, unconditionally --
+// only the Zmienna list within a topic is filtered to corrLevel. Trying to
+// also hide/filter Temat itself created a real bug: whichever axis wasn't
+// just edited could get its Temat options silently narrowed, so the next
+// time THAT axis was used as the "driver" it would still be filtered by a
+// stale corrLevel and could crash picking an option that no longer existed
+// for it. A plain empty Zmienna list (still connected to a full Temat list)
+// is a simpler, honestly-empty state instead: it says "nothing in this
+// topic matches the other axis right now" without ever removing choices
+// the user might come back to.
+let corrLevel = null;
+
+function corrVariablesFor(topic) {
+  return Object.keys(VARIABLE_META).filter(
+    (k) => VARIABLE_META[k].topic === topic && (corrLevel === null || levelOf(k) === corrLevel)
+  );
+}
+
+// Rebuilds one axis's Zmienna list for its CURRENT Temat, filtered to
+// corrLevel. Returns whether anything was available, so callers can skip
+// locking onto an empty selection instead of crashing on it.
+function refreshCorrVariableOptions(prefix) {
+  const topic = document.getElementById(`corr-${prefix}-topic`).value;
+  const varSelect = document.getElementById(`corr-${prefix}-var`);
+  const vars = corrVariablesFor(topic);
+  const keep = vars.includes(varSelect.value) ? varSelect.value : vars[0];
+  varSelect.innerHTML = vars.map((k) => `<option value="${k}">${VARIABLE_META[k].label}</option>`).join("");
+  if (vars.length > 0) varSelect.value = keep;
+  return vars.length > 0;
+}
+
+// Landing point for "this axis's variable is now settled" -- whether that
+// came from picking a Zmienna directly or picking a Temat (which reseeds
+// Zmienna to that topic's first compatible option). Locks corrLevel to
+// match, then re-filters the OTHER axis's Zmienna list so the pair can
+// never end up on two different levels.
+async function handleCorrVariableChange(prefix) {
+  const value = document.getElementById(`corr-${prefix}-var`).value;
+  if (!value) return; // this axis's current topic has no compatible variable -- nothing to lock onto
+  corrLevel = levelOf(value);
+  refreshCorrVariableOptions(prefix === "x" ? "y" : "x");
+  await Promise.all([populateCorrDimensions("x"), populateCorrDimensions("y")]);
 }
 
 async function buildCorrelationSelectors() {
-  const topics = topicsInUse();
+  const allTopics = topicsInUse();
   for (const prefix of ["x", "y"]) {
     const topicSelect = document.getElementById(`corr-${prefix}-topic`);
-    topicSelect.innerHTML = topics.map((t) => `<option value="${t}">${TOPICS[t]}</option>`).join("");
+    topicSelect.innerHTML = allTopics.map((t) => `<option value="${t}">${TOPICS[t]}</option>`).join("");
     topicSelect.addEventListener("change", () => {
-      populateCorrVariableOptions(prefix, topicSelect.value);
-      populateCorrDimensions(prefix);
+      if (refreshCorrVariableOptions(prefix)) handleCorrVariableChange(prefix);
     });
-    document.getElementById(`corr-${prefix}-var`).addEventListener("change", () => populateCorrDimensions(prefix));
+    document.getElementById(`corr-${prefix}-var`).addEventListener("change", () => handleCorrVariableChange(prefix));
+    document.getElementById(`corr-${prefix}-agegroup`).addEventListener("change", () => { refreshCorrYears(prefix); populateCorrViewOptions(prefix); });
+    document.getElementById(`corr-${prefix}-measure`).addEventListener("change", () => { refreshCorrYears(prefix); populateCorrViewOptions(prefix); });
   }
 
-  // Default: X on the first topic/variable, Y on the last -- keeps the
-  // historical "compare two different variables by default" behavior
-  // instead of starting the tool comparing a variable against itself.
-  const firstTopic = topics[0];
-  document.getElementById("corr-x-topic").value = firstTopic;
-  populateCorrVariableOptions("x", firstTopic);
+  // Seed X freely (first topic/variable overall, with corrLevel still
+  // null so nothing is filtered yet), which locks corrLevel; then seed Y
+  // constrained to that level, preferring its LAST topic and LAST
+  // compatible variable in it so the pair starts on two different
+  // variables rather than comparing one against itself. If Y's default
+  // topic (last overall) happens to have no compatible variable, fall
+  // back to X's own topic, which is guaranteed non-empty.
+  const xTopic = allTopics[0];
+  document.getElementById("corr-x-topic").value = xTopic;
+  refreshCorrVariableOptions("x");
+  corrLevel = levelOf(document.getElementById("corr-x-var").value);
 
-  const lastTopic = topics[topics.length - 1];
-  document.getElementById("corr-y-topic").value = lastTopic;
-  populateCorrVariableOptions("y", lastTopic);
-  const yKeys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].topic === lastTopic);
-  document.getElementById("corr-y-var").value = yKeys[yKeys.length - 1];
+  const yTopic = allTopics[allTopics.length - 1];
+  document.getElementById("corr-y-topic").value = yTopic;
+  if (!refreshCorrVariableOptions("y")) {
+    document.getElementById("corr-y-topic").value = xTopic;
+    refreshCorrVariableOptions("y");
+  }
+  const yVarSelect = document.getElementById("corr-y-var");
+  const yVars = [...yVarSelect.options].map((o) => o.value);
+  yVarSelect.value = yVars[yVars.length - 1];
 
   await Promise.all([populateCorrDimensions("x"), populateCorrDimensions("y")]);
 }
@@ -402,9 +511,29 @@ function mapValueFor(teryt) {
   return valueFor(state.variable, teryt, state.year, state.ageGroup, state.measure);
 }
 
+// Most variables scale their color domain to ONLY the currently-shown
+// year -- e.g. unemployment's map highlights that year's relative spread
+// among powiats, which is the point (2003's rates were structurally
+// different from 2025's). Life expectancy is the opposite case: it barely
+// moves year to year, and rescaling the palette to each year's narrow
+// slice would make small noise look dramatic while making the same color
+// mean a different value depending which year happens to be selected.
+// fixedScaleAcrossYears opts a variable out of the per-year default,
+// pooling every available year (for the current sex/ageGroup/measure) into
+// one domain instead, so scrubbing the year slider recolors polygons
+// without ever renormalizing the scale itself.
 function currentDomain() {
   const values = [];
   const data = loadedData[state.variable] || {};
+  if (VARIABLE_META[state.variable].fixedScaleAcrossYears) {
+    for (const teryt in data) {
+      for (const year in data[teryt]) {
+        const v = valueFor(state.variable, teryt, year, state.ageGroup, state.measure);
+        if (v !== null) values.push(v);
+      }
+    }
+    return values;
+  }
   for (const teryt in data) {
     const v = mapValueFor(teryt);
     if (v !== null) values.push(v);
@@ -736,7 +865,7 @@ function buildVariableSelect() {
 // one-year gap -- see buildYearSlider's 'input' handler, which snaps
 // wherever the thumb gets dragged onto the nearest ACTUAL year.
 function syncYearSlider() {
-  const years = availableYears(state.variable).map(Number);
+  const years = availableYears(state.variable, state.ageGroup, state.measure).map(Number);
   if (years.length === 0) return;
   const slider = document.getElementById("year-slider");
   if (state.year === null || !years.includes(state.year)) {
@@ -801,11 +930,17 @@ function buildScaleButtons() {
 // measure, labor force's 15-24 age group -- see hasTotal in variables.js).
 // Selecting it there silently shows "no data" everywhere with no obvious
 // cause, so disable the button and steer away from it instead.
-function hasTotalForCurrentSelection() {
-  const meta = VARIABLE_META[state.variable];
-  const ageGroupOpt = meta.ageGroups.find((o) => o.key === state.ageGroup);
-  const measureOpt = meta.measures.find((o) => o.key === state.measure);
+// Pulled out as a pure function (not just reading `state`) so the
+// correlation tool can ask the same question per-axis, independent of
+// whatever's currently on the map.
+function hasTotalFor(meta, ageGroup, measure) {
+  const ageGroupOpt = meta.ageGroups.find((o) => o.key === ageGroup);
+  const measureOpt = meta.measures.find((o) => o.key === measure);
   return (ageGroupOpt?.hasTotal ?? true) && (measureOpt?.hasTotal ?? true);
+}
+
+function hasTotalForCurrentSelection() {
+  return hasTotalFor(VARIABLE_META[state.variable], state.ageGroup, state.measure);
 }
 
 function updateViewAvailability() {
@@ -844,7 +979,7 @@ function buildYearSlider() {
   const label = document.getElementById("year-value");
   syncYearSlider();
   slider.addEventListener("input", () => {
-    const years = availableYears(state.variable).map(Number);
+    const years = availableYears(state.variable, state.ageGroup, state.measure).map(Number);
     const raw = Number(slider.value);
     const nearest = years.reduce((a, b) => (Math.abs(b - raw) < Math.abs(a - raw) ? b : a));
     state.year = nearest;
@@ -1123,17 +1258,20 @@ function axisConfig(prefix) {
     ageGroup: document.getElementById(`corr-${prefix}-agegroup`).value,
     measure: document.getElementById(`corr-${prefix}-measure`).value,
     year: document.getElementById(`corr-${prefix}-year`).value,
-    sex: document.getElementById(`corr-${prefix}-sex`).value,
+    view: document.getElementById(`corr-${prefix}-view`).value,
     log: document.getElementById(`corr-${prefix}-log`).checked,
   };
 }
 
+// Reuses the map's own VIEWS.pick() -- so "Widok" here offers exactly what
+// the map's view buttons offer (Kobiety/Mężczyźni/Ogółem plus the
+// inequality views: Różnica, Proporcja, % udziału), not just a raw sex.
 function axisValue(cfg, teryt) {
   const series = loadedData[cfg.variable] && loadedData[cfg.variable][teryt];
   const yearData = series && series[cfg.year];
   const slice = yearData && yearData[sliceKey(cfg.ageGroup, cfg.measure)];
   if (!slice) return null;
-  let v = slice[cfg.sex];
+  let v = VIEWS[cfg.view].pick(slice);
   if (!Number.isFinite(v)) return null;
   if (cfg.log) {
     if (v <= 0) return null; // log10 undefined for non-positive values
@@ -1143,13 +1281,13 @@ function axisValue(cfg, teryt) {
 }
 
 function axisLabel(cfg) {
-  const sexLabel = { t: "Ogółem", m: "Mężczyźni", k: "Kobiety" }[cfg.sex];
+  const viewLabel = VIEWS[cfg.view].label;
   const meta = VARIABLE_META[cfg.variable];
   const ageGroupLabel = meta.ageGroups.find((o) => o.key === cfg.ageGroup).label;
   const measureLabel = meta.measures.find((o) => o.key === cfg.measure).label;
   const extra = [ageGroupLabel, measureLabel].filter((l) => l !== "Wartość" && l !== "Ósmoklasiści" && l !== "Wiek produkcyjny");
   const extraStr = extra.length ? ` [${extra.join(", ")}]` : "";
-  return `${cfg.log ? "log₁₀ " : ""}${meta.label}${extraStr} (${sexLabel}, ${cfg.year})`;
+  return `${cfg.log ? "log₁₀ " : ""}${meta.label}${extraStr} (${viewLabel}, ${cfg.year})`;
 }
 
 async function runCorrelation() {

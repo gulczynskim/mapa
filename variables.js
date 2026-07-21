@@ -277,5 +277,9 @@ const VARIABLE_META = {
       { key: "65", label: "Od 65 lat", hasTotal: false },
     ],
     measures: [{ key: "default", label: "Wartość" }],
+    // Barely changes year to year -- see currentDomain()'s comment in
+    // app.js. Pools all years into one color scale per sex/age instead of
+    // rescaling to each year's narrow spread.
+    fixedScaleAcrossYears: true,
   },
 };
