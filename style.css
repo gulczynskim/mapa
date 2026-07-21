@@ -138,6 +138,7 @@ select:disabled, .corr-axis select:disabled, .download-dims select:disabled {
 
 #year-value { font-variant-numeric: tabular-nums; font-weight: 600; }
 input[type="range"] { width: 100%; }
+input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .action-btn {
   width: 100%;

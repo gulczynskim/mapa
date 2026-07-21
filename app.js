@@ -182,6 +182,7 @@ async function init() {
     });
   });
 
+  buildTopicSelect();
   buildVariableSelect();
   buildViewButtons();
   buildSearch();
@@ -425,50 +426,70 @@ function updateMeta() {
   document.getElementById("variable-availability").textContent = lines.join(" · ");
 }
 
-function buildVariableSelect() {
-  const select = document.getElementById("variable-select");
-  select.innerHTML = "";
-  for (const key in VARIABLE_META) {
-    const opt = document.createElement("option");
-    opt.value = key;
-    opt.textContent = VARIABLE_META[key].label;
-    select.appendChild(opt);
-  }
-  select.value = state.variable;
-  // Guards against overlapping selections: if the variable changes again
-  // (e.g. arrow-keying quickly through the dropdown) before an in-flight
-  // loadVariable() resolves, the earlier call's continuation must not be
-  // allowed to overwrite state with its now-stale target. Found for real:
-  // rapid automated switching left the UI on an entirely different variable
-  // than the one actually selected, with a URL/state mismatch to match.
-  let variableRequestSeq = 0;
-  select.addEventListener("change", async () => {
-    const seq = ++variableRequestSeq;
-    const requested = select.value;
-    showLoading("Wczytywanie danych...");
-    try {
-      await loadVariable(requested);
-    } catch (err) {
-      if (seq !== variableRequestSeq) return; // superseded by a newer selection
-      showError("Nie udało się wczytać danych: " + err.message);
-      return;
-    }
+// Guards against overlapping selections: if the variable changes again (e.g.
+// picking a new Temat right after a slow Zmienna switch) before an in-flight
+// loadVariable() resolves, the earlier call's continuation must not be
+// allowed to overwrite state with its now-stale target. Found for real:
+// rapid automated switching left the UI on an entirely different variable
+// than the one actually selected, with a URL/state mismatch to match.
+let variableRequestSeq = 0;
+
+async function selectVariable(requested) {
+  const seq = ++variableRequestSeq;
+  showLoading("Wczytywanie danych...");
+  try {
+    await loadVariable(requested);
+  } catch (err) {
     if (seq !== variableRequestSeq) return; // superseded by a newer selection
-    state.variable = requested;
-    hideLoading();
-    // Reset to the new variable's default dimensions rather than keeping
-    // stale keys from the previous variable that might not exist here.
-    const meta = VARIABLE_META[state.variable];
-    state.level = meta.levels[0].key;
-    state.ageGroup = meta.ageGroups[0].key;
-    state.measure = meta.measures[0].key;
-    buildDimensionSelectors();
-    updateViewAvailability();
-    syncYearSlider();
-    updateMeta();
-    updateMapAttribution();
-    updateAll();
+    showError("Nie udało się wczytać danych: " + err.message);
+    return;
+  }
+  if (seq !== variableRequestSeq) return; // superseded by a newer selection
+  state.variable = requested;
+  hideLoading();
+  // Reset to the new variable's default dimensions rather than keeping
+  // stale keys from the previous variable that might not exist here.
+  const meta = VARIABLE_META[state.variable];
+  state.level = meta.levels[0].key;
+  state.ageGroup = meta.ageGroups[0].key;
+  state.measure = meta.measures[0].key;
+  document.getElementById("topic-select").value = meta.topic;
+  populateVariableOptions(meta.topic);
+  document.getElementById("variable-select").value = state.variable;
+  buildDimensionSelectors();
+  updateViewAvailability();
+  syncYearSlider();
+  updateMeta();
+  updateMapAttribution();
+  updateAll();
+}
+
+function topicsInUse() {
+  return [...new Set(Object.values(VARIABLE_META).map((v) => v.topic))];
+}
+
+function populateVariableOptions(topic) {
+  const select = document.getElementById("variable-select");
+  const keys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].topic === topic);
+  select.innerHTML = keys.map((k) => `<option value="${k}">${VARIABLE_META[k].label}</option>`).join("");
+}
+
+function buildTopicSelect() {
+  const select = document.getElementById("topic-select");
+  select.innerHTML = topicsInUse().map((t) => `<option value="${t}">${TOPICS[t]}</option>`).join("");
+  select.value = VARIABLE_META[state.variable].topic;
+  select.addEventListener("change", () => {
+    populateVariableOptions(select.value);
+    const firstVar = Object.keys(VARIABLE_META).find((k) => VARIABLE_META[k].topic === select.value);
+    selectVariable(firstVar);
   });
+}
+
+function buildVariableSelect() {
+  populateVariableOptions(VARIABLE_META[state.variable].topic);
+  const select = document.getElementById("variable-select");
+  select.value = state.variable;
+  select.addEventListener("change", () => selectVariable(select.value));
 }
 
 // Keeps the year slider's min/max in sync with whatever the current
@@ -483,6 +504,7 @@ function syncYearSlider() {
   const slider = document.getElementById("year-slider");
   slider.min = Math.min(...years);
   slider.max = Math.max(...years);
+  slider.disabled = years.length <= 1;
   if (state.year === null || !years.includes(state.year)) {
     state.year = Math.max(...years);
   }
@@ -636,32 +658,60 @@ function updateRankings(domain) {
 }
 
 // --- Download panel ---
+// Variable selection is two nested expandable lists (Temat -> Zmienna),
+// mirroring the map's own Temat/Zmienna controls but independent of them --
+// this is its own multi-select, not tied to whatever's on the map. The
+// current map variable's topic starts open and its variable pre-checked;
+// everything else starts collapsed and unchecked.
 function buildDownloadPanel() {
   const container = document.getElementById("download-variables");
-  container.innerHTML = Object.keys(VARIABLE_META)
-    .map(
-      (key) =>
-        `<label class="download-var-item"><input type="checkbox" value="${key}" ${key === state.variable ? "checked" : ""}> ${VARIABLE_META[key].label}</label>`
-    )
+  const currentTopic = VARIABLE_META[state.variable].topic;
+  container.innerHTML = topicsInUse()
+    .map((topic) => {
+      const keys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].topic === topic);
+      const items = keys
+        .map(
+          (key) =>
+            `<label class="download-var-item"><input type="checkbox" value="${key}" ${key === state.variable ? "checked" : ""}> ${VARIABLE_META[key].label}</label>`
+        )
+        .join("");
+      return `<details class="download-dim"${topic === currentTopic ? " open" : ""}><summary>${TOPICS[topic]}</summary><div class="dim-options">${items}</div></details>`;
+    })
     .join("");
 
-  // Each dimension is an expandable checkbox list showing the union of every
-  // variable's options, deduped by LABEL (not key) -- different variables
-  // reuse generic keys like "default" for their own single option with a
-  // different meaning each time (e.g. unemployment's "default" age group is
-  // "Wiek produkcyjny", E8's is "Ósmoklasiści"). Everything starts checked;
-  // at export time each variable keeps only the checked labels it actually
-  // supports (falling back to its first option if none match).
-  const unionLabels = (dim) => {
+  container.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener("change", updateDownloadDimensionOptions);
+  });
+  updateDownloadDimensionOptions();
+}
+
+// The Poziom/Grupa wieku/Miara lists only show options that at least one
+// CHECKED variable actually has -- e.g. checking only "Radni powiatu" hides
+// "Ósmoklasiści"/"Średnia"/"Mediana" entirely rather than leaving them
+// visible but pointless. Falls back to the full union when nothing is
+// checked yet (first build), and preserves whatever was already
+// checked/unchecked for labels that remain available across a rebuild.
+function updateDownloadDimensionOptions() {
+  const checkedVars = [...document.querySelectorAll("#download-variables input:checked")].map((cb) => cb.value);
+  const relevantVars = checkedVars.length ? checkedVars : Object.keys(VARIABLE_META);
+
+  const unionLabelsFor = (dim) => {
     const labels = new Set();
-    for (const key in VARIABLE_META) {
+    for (const key of relevantVars) {
       for (const o of VARIABLE_META[key][dim]) labels.add(o.label);
     }
     return [...labels];
   };
+
   for (const [id, dim] of [["download-level", "levels"], ["download-agegroup", "ageGroups"], ["download-measure", "measures"]]) {
-    document.getElementById(id).innerHTML = unionLabels(dim)
-      .map((label) => `<label class="dim-option"><input type="checkbox" value="${label}" checked> ${label}</label>`)
+    const container = document.getElementById(id);
+    const previouslyChecked = new Set(checkedLabels(id));
+    const labels = unionLabelsFor(dim);
+    container.innerHTML = labels
+      .map((label) => {
+        const isChecked = previouslyChecked.size === 0 || previouslyChecked.has(label);
+        return `<label class="dim-option"><input type="checkbox" value="${label}" ${isChecked ? "checked" : ""}> ${label}</label>`;
+      })
       .join("");
   }
 }
@@ -762,6 +812,13 @@ async function restoreFromUrl() {
   if (params.has("agegroup")) state.ageGroup = resolveDimension(state.variable, "ageGroups", params.get("agegroup"));
   if (params.has("measure")) state.measure = resolveDimension(state.variable, "measures", params.get("measure"));
 
+  // The variable-select's options are topic-filtered -- if the URL points
+  // at a variable outside the default topic, its key wouldn't even be a
+  // valid <option> yet, and a bare `.value = state.variable` would fail
+  // silently. Repopulate for the right topic first.
+  const topic = VARIABLE_META[state.variable].topic;
+  document.getElementById("topic-select").value = topic;
+  populateVariableOptions(topic);
   document.getElementById("variable-select").value = state.variable;
   [...document.querySelectorAll("#view-buttons button")].forEach((b) => {
     b.classList.toggle("active", b.textContent === VIEWS[state.view].label);

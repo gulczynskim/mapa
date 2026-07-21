@@ -14,10 +14,20 @@
 //     future ones like liceum pupil counts or population 25-34 will.
 //   hasTotal: false (on an ageGroup/measure option) -- marks slices whose
 //     combined-sexes total can't be derived; disables "Ogółem" there.
+//   topic: one of the TOPICS keys below -- groups the variable under
+//     "Temat" in both the map controls and the download panel.
+const TOPICS = {
+  rynek_pracy: "Rynek pracy",
+  edukacja: "Edukacja",
+  polityka: "Polityka",
+  ludnosc: "Ludność",
+};
+
 const VARIABLE_META = {
   unemployment: {
     label: "Bezrobocie rejestrowane",
     unit: "%",
+    topic: "rynek_pracy",
     file: "data/unemployment.json",
     meaning:
       "Stopa bezrobocia rejestrowanego -- odsetek osób bezrobotnych zarejestrowanych w " +
@@ -31,8 +41,9 @@ const VARIABLE_META = {
     measures: [{ key: "default", label: "Wartość" }],
   },
   labor_force_activity: {
-    label: "Aktywność zawodowa",
+    label: "Aktywność zawodowa (NSP)",
     unit: "%",
+    topic: "rynek_pracy",
     file: "data/labor_force_activity.json",
     meaning:
       "Współczynnik aktywności zawodowej -- odsetek osób aktywnych zawodowo (pracujących " +
@@ -52,6 +63,7 @@ const VARIABLE_META = {
   e8_polski: {
     label: "Egzamin ósmoklasisty -- język polski",
     unit: "%",
+    topic: "edukacja",
     file: "data/e8_polski.json",
     meaning:
       "Wynik procentowy z egzaminu ósmoklasisty z języka polskiego, wg powiatu zamieszkania " +
@@ -72,6 +84,7 @@ const VARIABLE_META = {
   e8_matematyka: {
     label: "Egzamin ósmoklasisty -- matematyka",
     unit: "%",
+    topic: "edukacja",
     file: "data/e8_matematyka.json",
     meaning:
       "Wynik procentowy z egzaminu ósmoklasisty z matematyki, wg powiatu zamieszkania szkoły. " +
@@ -91,6 +104,7 @@ const VARIABLE_META = {
   radni_powiatu: {
     label: "Radni powiatu",
     unit: "osób",
+    topic: "polityka",
     file: "data/radni_powiatu.json",
     meaning: "Liczba radnych w radach powiatów, wg płci.",
     source: "Bank Danych Lokalnych GUS",
@@ -105,6 +119,7 @@ const VARIABLE_META = {
   liceum: {
     label: "Uczniowie i absolwenci liceów",
     unit: "osób",
+    topic: "edukacja",
     file: "data/liceum.json",
     meaning:
       "Liczba uczniów i absolwentów liceów ogólnokształcących dla młodzieży (bez szkół " +
@@ -122,8 +137,9 @@ const VARIABLE_META = {
     sharesMeaningful: true,
   },
   population_25_34: {
-    label: "Ludność 25-34 lata",
+    label: "Ludność 25-34 lata (NSP)",
     unit: "osób",
+    topic: "ludnosc",
     file: "data/population_25_34.json",
     meaning:
       "Liczba ludności w wieku 25-34 lata (suma grup 25-29 i 30-34), wg płci -- przybliżony " +
@@ -142,6 +158,7 @@ const VARIABLE_META = {
   wages: {
     label: "Wynagrodzenia",
     unit: "zł",
+    topic: "rynek_pracy",
     file: "data/wages.json",
     meaning:
       "Przeciętne miesięczne wynagrodzenie brutto wg płci i miejsca zamieszkania (nie miejsca " +
@@ -162,6 +179,7 @@ const VARIABLE_META = {
   e8_angielski: {
     label: "Egzamin ósmoklasisty -- język angielski",
     unit: "%",
+    topic: "edukacja",
     file: "data/e8_angielski.json",
     meaning:
       "Wynik procentowy z egzaminu ósmoklasisty z języka angielskiego, wg powiatu zamieszkania " +
