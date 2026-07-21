@@ -316,7 +316,9 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem 1.2rem;
-  margin-bottom: 0.9rem;
+  margin-bottom: 1.4rem;
+  padding-bottom: 1.4rem;
+  border-bottom: 1px solid var(--hairline);
 }
 .download-var-item {
   font-size: 0.85rem;

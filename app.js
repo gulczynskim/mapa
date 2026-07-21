@@ -11,7 +11,29 @@ const BOUNDARY_FILES = {
 
 // 8 buckets for magnitude views (per user request for finer resolution than
 // the earlier 6) -- evenly spaced steps from the validated blue ramp.
-const SEQUENTIAL_STEPS = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#1c5cab", "#184f95", "#0d366b"];
+// Kept as the "Mężczyźni" hue -- see SEQUENTIAL_STEPS_RED below, its "Kobiety"
+// counterpart. Same blue/red pair as the diverging scale's two poles, so a
+// county's color means the same sex whether you're looking at a sequential
+// or a diverging view.
+const SEQUENTIAL_STEPS_BLUE = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#1c5cab", "#184f95", "#0d366b"];
+// Built the same way the diverging red pole already was (color-mix in oklch
+// from the same #e34948 anchor) rather than hand-picked hex, so it's the
+// same hue family as DIVERGING_STEPS' red end -- "more women = darker red"
+// reads as the same red whether the view is Kobiety or Proporcja/Różnica.
+const SEQUENTIAL_STEPS_RED = [
+  "color-mix(in oklch, #e34948 10%, #ffffff)",
+  "color-mix(in oklch, #e34948 25%, #ffffff)",
+  "color-mix(in oklch, #e34948 40%, #ffffff)",
+  "color-mix(in oklch, #e34948 58%, #ffffff)",
+  "color-mix(in oklch, #e34948 75%, #ffffff)",
+  "color-mix(in oklch, #e34948 90%, #ffffff)",
+  "#e34948",
+  "color-mix(in oklch, #e34948 82%, #000000)",
+];
+// "Ogółem" isn't sex-specific, so it deliberately does NOT use either the
+// red or blue hue -- reusing one of those would visually claim the map is
+// about one sex when it's the combined total.
+const SEQUENTIAL_STEPS_NEUTRAL = ["#e4e2da", "#cac7ba", "#b1ad9c", "#98937e", "#7c775f", "#645f49", "#4c4834", "#332f1f"];
 // Diverging: center is WHITE (no difference), poles are the blue/red pair.
 // 7 buckets (3 per arm + center) -- a diverging scale needs an odd count so
 // white stays exactly at the center. Grey (MISSING_COLOR) is reserved
@@ -37,9 +59,14 @@ const MISSING_COLOR = "#d9d8d2";
 // views render sensibly (2 decimals, no unit for a bare ratio; 1 decimal
 // with a hardcoded "%" for a share) without scattering view-specific
 // checks through the formatting code.
+// sexColor picks which sequential ramp a view renders with (see
+// SEQUENTIAL_STEPS_RED/BLUE/NEUTRAL above) -- "k" is always red, "m" is
+// always blue, regardless of variable, so the same hue always means the
+// same sex across every variable on the site. Diverging views encode both
+// sexes in one scale instead (see reverseDiverging below).
 const VIEWS = {
-  women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k, decimals: 1 },
-  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m, decimals: 1 },
+  women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k, decimals: 1, sexColor: "k" },
+  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m, decimals: 1, sexColor: "m" },
   total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t, decimals: 1 },
   diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => d.k - d.m, center: 0, decimals: 1 },
   // logScale: a ratio can never go negative, and 2x / 0.5x are equally far
@@ -47,13 +74,19 @@ const VIEWS = {
   // let the color scale (and any tick derived from it) drift negative,
   // which is meaningless for a ratio. Symmetrize in log space instead.
   ratio: { label: "Proporcja (K / M)", kind: "diverging", pick: (d) => d.k / d.m, center: 1, logScale: true, decimals: 2, unit: "" },
-  ratioInverse: { label: "Proporcja (M / K)", kind: "diverging", pick: (d) => d.m / d.k, center: 1, logScale: true, decimals: 2, unit: "" },
+  // reverseDiverging: DIVERGING_STEPS always runs blue(low)->red(high) by
+  // raw position. That's correct for "diff" (K-M > 0 means more women =
+  // red, natural ordering) and "ratio" (K/M > 1 also means more women =
+  // red), but M/K > 1 means more MEN -- which should be blue, not red. Flip
+  // which end of the ramp gets used so a county where men dominate is
+  // always blue here too, never red just because the raw ratio is "high".
+  ratioInverse: { label: "Proporcja (M / K)", kind: "diverging", pick: (d) => d.m / d.k, center: 1, logScale: true, decimals: 2, unit: "", reverseDiverging: true },
   // Useful for compositional data (e.g. share of women among elected
   // officials or students) where the natural "total" is a headcount, not a
   // percentage -- these compute the share directly from k/m regardless of
   // what the variable's own unit is.
-  shareWomen: { label: "% kobiet", kind: "sequential", pick: (d) => (d.k / (d.k + d.m)) * 100, decimals: 1, unit: "%" },
-  shareMen: { label: "% mężczyzn", kind: "sequential", pick: (d) => (d.m / (d.k + d.m)) * 100, decimals: 1, unit: "%" },
+  shareWomen: { label: "% kobiet", kind: "sequential", pick: (d) => (d.k / (d.k + d.m)) * 100, decimals: 1, unit: "%", sexColor: "k" },
+  shareMen: { label: "% mężczyzn", kind: "sequential", pick: (d) => (d.m / (d.k + d.m)) * 100, decimals: 1, unit: "%", sexColor: "m" },
 };
 
 const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
@@ -273,7 +306,11 @@ async function init() {
     preferCanvas: true,
   });
   setDefaultView();
-  attributionControl = L.control.attribution({ prefix: false }).addTo(map);
+  // prefix:false was removing Leaflet's own "Leaflet" credit link entirely.
+  // Not a license requirement (Leaflet is BSD-2-Clause, which doesn't mandate
+  // on-screen attribution) but it's the project's own explicitly-requested
+  // convention, and free to keep.
+  attributionControl = L.control.attribution().addTo(map);
   attributionControl.addAttribution('Mapa: <a href="https://mapa.michalgulczynski.pl">Michał Gulczyński</a>');
   updateMapAttribution();
 
@@ -447,9 +484,7 @@ function levelOf(variableKey) {
 let corrLevel = null;
 
 function corrVariablesFor(topic) {
-  return Object.keys(VARIABLE_META).filter(
-    (k) => VARIABLE_META[k].topic === topic && (corrLevel === null || levelOf(k) === corrLevel)
-  );
+  return variablesInTopic(topic).filter((k) => corrLevel === null || levelOf(k) === corrLevel);
 }
 
 // Rebuilds one axis's Zmienna list for its CURRENT Temat, filtered to
@@ -683,10 +718,23 @@ function bucketIndex(value, boundaries) {
   return n - 1;
 }
 
+// Single source of truth for "which color ramp, in which order, does this
+// view use" -- colorFor (map fill) and updateLegend (swatches + labels)
+// both call this, so the two can never drift apart the way they briefly
+// did for the ratio view in an earlier pass.
+function stepsForView(view) {
+  if (view.kind === "sequential") {
+    if (view.sexColor === "k") return SEQUENTIAL_STEPS_RED;
+    if (view.sexColor === "m") return SEQUENTIAL_STEPS_BLUE;
+    return SEQUENTIAL_STEPS_NEUTRAL;
+  }
+  return view.reverseDiverging ? [...DIVERGING_STEPS].reverse() : DIVERGING_STEPS;
+}
+
 function colorFor(value, domain) {
   const view = VIEWS[state.view];
   if (value === null) return MISSING_COLOR;
-  const steps = view.kind === "sequential" ? SEQUENTIAL_STEPS : DIVERGING_STEPS;
+  const steps = stepsForView(view);
   return steps[bucketIndex(value, colorBoundaries(domain, view, steps))];
 }
 
@@ -757,7 +805,7 @@ function legendValueFormat(v) {
 // already conveys the M-vs-K direction, so bare numbers are enough.
 function updateLegend(domain) {
   const view = VIEWS[state.view];
-  const steps = view.kind === "sequential" ? SEQUENTIAL_STEPS : DIVERGING_STEPS;
+  const steps = stepsForView(view);
   document.getElementById("legend-scale").innerHTML = steps.map((c) => `<span style="background:${c}"></span>`).join("");
   const labelsEl = document.getElementById("legend-labels");
   if (domain.length === 0) {
@@ -846,13 +894,27 @@ async function selectVariable(requested) {
   updateAll();
 }
 
+// Polish collation (ą/ć/ł/ń/ó/ś/ź/ż sort where a Pole expects them, not by
+// raw code point) -- used everywhere a topic or variable list is built, so
+// "Temat" and "Zmienna" are alphabetical in every panel (map sidebar,
+// download panel, correlation tool), not just insertion order.
+const PL_COLLATOR = new Intl.Collator("pl");
+
 function topicsInUse() {
-  return [...new Set(Object.values(VARIABLE_META).map((v) => v.topic))];
+  return [...new Set(Object.values(VARIABLE_META).map((v) => v.topic))].sort((a, b) =>
+    PL_COLLATOR.compare(TOPICS[a], TOPICS[b])
+  );
+}
+
+function variablesInTopic(topic) {
+  return Object.keys(VARIABLE_META)
+    .filter((k) => VARIABLE_META[k].topic === topic)
+    .sort((a, b) => PL_COLLATOR.compare(VARIABLE_META[a].label, VARIABLE_META[b].label));
 }
 
 function populateVariableOptions(topic) {
   const select = document.getElementById("variable-select");
-  const keys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].topic === topic);
+  const keys = variablesInTopic(topic);
   select.innerHTML = keys.map((k) => `<option value="${k}">${VARIABLE_META[k].label}</option>`).join("");
 }
 
@@ -1116,7 +1178,7 @@ function buildDownloadPanel() {
   const currentTopic = VARIABLE_META[state.variable].topic;
   container.innerHTML = topicsInUse()
     .map((topic) => {
-      const keys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].topic === topic);
+      const keys = variablesInTopic(topic);
       const items = keys
         .map(
           (key) =>

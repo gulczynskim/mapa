@@ -23,7 +23,6 @@ const TOPICS = {
   ludnosc: "Ludność",
   zdrowie: "Zdrowie",
   rolnictwo: "Rolnictwo",
-  kultura_sport: "Kultura i sport",
 };
 
 const VARIABLE_META = {
@@ -109,11 +108,16 @@ const VARIABLE_META = {
     unit: "osób",
     topic: "polityka",
     file: "data/radni_powiatu.json",
-    meaning: "Liczba radnych w radach powiatów, wg płci.",
+    meaning:
+      "Liczba radnych w radach powiatów, wg płci. Dla miast na prawach powiatu (Kraków, Warszawa " +
+      "itd.) BDL sam w sobie raportuje 0 -- te miasta nie mają osobnej rady powiatu, ich rada " +
+      "miasta pełni obie funkcje naraz, ale jest liczona wyłącznie pod radami gmin. Podstawiono tu " +
+      "wartość z \"Radni gminy\" dla tych 66 miast zamiast mylącego zera.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Kody zmiennych BDL: 3094 (ogółem), 3095 (mężczyźni), 3096 (kobiety) -- " +
-      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}. Miasta na prawach powiatu podstawione " +
+      "z tematu P1312 (radni gminy) -- zob. etl/patch_city_powiats.py.",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Wszyscy radni" }],
     measures: [{ key: "default", label: "Wartość" }],
@@ -475,7 +479,7 @@ const VARIABLE_META = {
   kluby_sportowe: {
     label: "Ćwiczący w klubach sportowych",
     unit: "osób",
-    topic: "kultura_sport",
+    topic: "zdrowie",
     file: "data/kluby_sportowe.json",
     meaning: "Liczba ćwiczących w klubach sportowych (łącznie z klubami wyznaniowymi i UKS), wg płci.",
     source: "Bank Danych Lokalnych GUS",
@@ -552,33 +556,15 @@ const VARIABLE_META = {
     sharesMeaningful: true,
   },
   ludnosc_roczniki_nsp: {
-    label: "Ludność ogółem (NSP, wariant roczników)",
+    label: "Ludność ogółem (NSP)",
     unit: "osób",
     topic: "ludnosc",
     file: "data/ludnosc_roczniki_nsp.json",
     meaning:
       "Ludność rezydująca ogółem, wg płci, z tematu BDL który udostępnia też podział na pojedyncze " +
-      "roczniki wieku (0,1,2...) -- tu wgrany wyłącznie wariant \"ogółem\" (poza podziałem na " +
-      "roczniki). Ten sam ludnościowy fakt (populacja wg płci) jest już dostępny jako \"Ludność w " +
-      "tysiącach\" w temacie Gęstość zaludnienia, z bieżącej ewidencji rocznej zamiast jednorazowego " +
-      "spisu -- te dwie zmienne prawdopodobnie się pokrywają.",
+      "roczniki wieku (0,1,2...) -- tu wgrany wyłącznie wariant \"ogółem\" (poza podziałem na roczniki).",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
     accessNote: "Temat BDL P4254, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
-    levels: [{ key: "powiat", label: "Powiat" }],
-    ageGroups: [{ key: "default", label: "Ogółem" }],
-    measures: [{ key: "default", label: "Wartość" }],
-    sharesMeaningful: true,
-  },
-  population_thousands: {
-    label: "Ludność w tysiącach",
-    unit: "tys. osób",
-    topic: "ludnosc",
-    file: "data/population_thousands.json",
-    meaning: "Liczba ludności (w tysiącach), wg płci.",
-    source: "Bank Danych Lokalnych GUS",
-    accessNote:
-      "Kody zmiennych BDL: 1645341 (ogółem), 1645343 (kobiety), 1645344 (mężczyźni), temat P2425 -- " +
-      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [{ key: "default", label: "Wartość" }],
@@ -599,7 +585,7 @@ const VARIABLE_META = {
   dochody_powiat: {
     label: "Dochody na 1 mieszkańca (powiat)",
     unit: "zł",
-    topic: "ludnosc",
+    topic: "rynek_pracy",
     file: "data/dochody_powiat.json",
     meaning: "Dochody budżetu powiatu na 1 mieszkańca. BDL nie publikuje tego wskaźnika w podziale na płeć.",
     source: "Bank Danych Lokalnych GUS",
@@ -611,7 +597,7 @@ const VARIABLE_META = {
   dochody_gmina: {
     label: "Dochody na 1 mieszkańca (gmina)",
     unit: "zł",
-    topic: "ludnosc",
+    topic: "rynek_pracy",
     file: "data/dochody_gmina.json",
     meaning:
       "Dochody budżetu gminy na 1 mieszkańca -- wszystkie typy gmin łącznie, w tym miasta na prawach " +
