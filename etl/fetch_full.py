@@ -10,11 +10,11 @@ and expanding either would pull in a lot of unrelated dimensions. Only their
 level coverage is expanded (still using the curated field list), pending the
 segregation-index-formula decision before going further.
 
-CAVEAT: unit_id_to_teryt() is only validated for level=5 (powiat, 100% match
-confirmed against boundary data). For level=4 (podregion) and level=6
-(gmina) the same slicing is applied as a best effort but NOT yet verified --
-raw unit_id/unit_name are kept in every output file specifically so the
-teryt derivation can be fixed later without re-fetching from the API.
+Level-aware TERYT: unit_id_to_teryt() takes a level argument now (fixed
+2026-07-21, validated against real gmina TERYT via boundary data -- see its
+docstring). Podregion (level=4) still uses the powiat-width slice as a best
+effort and hasn't been separately verified; raw unit_id/unit_name are kept
+in every output file so it can be corrected later without re-fetching.
 """
 
 import os
@@ -54,7 +54,7 @@ def fetch_and_save(group_name, entries):
     if df.empty:
         print(f"  no data for {group_name}")
         return
-    df["teryt"] = df["unit_id"].apply(unit_id_to_teryt)
+    df["teryt"] = df.apply(lambda r: unit_id_to_teryt(r["unit_id"], level=r["level"]), axis=1)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     for level, level_df in df.groupby("level"):

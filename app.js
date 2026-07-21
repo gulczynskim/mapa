@@ -435,15 +435,26 @@ function buildVariableSelect() {
     select.appendChild(opt);
   }
   select.value = state.variable;
+  // Guards against overlapping selections: if the variable changes again
+  // (e.g. arrow-keying quickly through the dropdown) before an in-flight
+  // loadVariable() resolves, the earlier call's continuation must not be
+  // allowed to overwrite state with its now-stale target. Found for real:
+  // rapid automated switching left the UI on an entirely different variable
+  // than the one actually selected, with a URL/state mismatch to match.
+  let variableRequestSeq = 0;
   select.addEventListener("change", async () => {
-    state.variable = select.value;
+    const seq = ++variableRequestSeq;
+    const requested = select.value;
     showLoading("Wczytywanie danych...");
     try {
-      await loadVariable(state.variable);
+      await loadVariable(requested);
     } catch (err) {
+      if (seq !== variableRequestSeq) return; // superseded by a newer selection
       showError("Nie udało się wczytać danych: " + err.message);
       return;
     }
+    if (seq !== variableRequestSeq) return; // superseded by a newer selection
+    state.variable = requested;
     hideLoading();
     // Reset to the new variable's default dimensions rather than keeping
     // stale keys from the previous variable that might not exist here.

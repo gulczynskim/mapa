@@ -88,6 +88,77 @@ const VARIABLE_META = {
       { key: "median", label: "Mediana", hasTotal: false }, // sub-group medians can't be correctly combined
     ],
   },
+  radni_powiatu: {
+    label: "Radni powiatu",
+    unit: "osób",
+    file: "data/radni_powiatu.json",
+    meaning: "Liczba radnych w radach powiatów, wg płci.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Kody zmiennych BDL: 3094 (ogółem), 3095 (mężczyźni), 3096 (kobiety) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Wszyscy radni" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  liceum: {
+    label: "Uczniowie i absolwenci liceów",
+    unit: "osób",
+    file: "data/liceum.json",
+    meaning:
+      "Liczba uczniów i absolwentów liceów ogólnokształcących dla młodzieży (bez szkół " +
+      "specjalnych), wg płci.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Kody zmiennych BDL: uczniowie 270621 (mężczyźni) / 270655 (kobiety), absolwenci " +
+      "270638 (mężczyźni) / 270602 (kobiety) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Młodzież licealna" }],
+    measures: [
+      { key: "uczniowie", label: "Uczniowie" },
+      { key: "absolwenci", label: "Absolwenci" },
+    ],
+    sharesMeaningful: true,
+  },
+  population_25_34: {
+    label: "Ludność 25-34 lata",
+    unit: "osób",
+    file: "data/population_25_34.json",
+    meaning:
+      "Liczba ludności w wieku 25-34 lata (suma grup 25-29 i 30-34), wg płci -- przybliżony " +
+      "wskaźnik migracji selektywnych młodych dorosłych. Jednorazowy pomiar z NSP 2021, nie " +
+      "dane roczne (BDL nie publikuje tej konkretnej grupy wieku w bieżącej, corocznej ewidencji " +
+      "ludności -- tylko szersze kategorie wieku produkcyjnego/przedprodukcyjnego/poprodukcyjnego).",
+    source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
+    accessNote:
+      "Kody zmiennych BDL: 1644517/1644518 (mężczyźni 25-29/30-34), 1644537/1644538 " +
+      "(kobiety 25-29/30-34), zsumowane -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "25-34 lata" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  wages: {
+    label: "Wynagrodzenia",
+    unit: "zł",
+    file: "data/wages.json",
+    meaning:
+      "Przeciętne miesięczne wynagrodzenie brutto wg płci i miejsca zamieszkania (nie miejsca " +
+      "pracy).",
+    source: "GUS, \"Rozkład wynagrodzeń w gospodarce narodowej\" (publikacja roczna)",
+    accessNote:
+      "Nie z API BDL -- BDL nie udostępnia wynagrodzeń wg płci na poziomie powiatu. Dane z " +
+      "publikacji GUS (plik Excel, tablica \"Miary wynagrodzeń według miejsca zamieszkania i płci\"), " +
+      "wgrywane ręcznie co roku.",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Pracujący ogółem" }],
+    measures: [
+      { key: "mean", label: "Średnia" },
+      { key: "median", label: "Mediana" },
+    ],
+    sharesMeaningful: false,
+  },
   e8_angielski: {
     label: "Egzamin ósmoklasisty -- język angielski",
     unit: "%",

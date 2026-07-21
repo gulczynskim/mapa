@@ -6,3 +6,4 @@ node_modules/
 .env
 data_raw/
 data/CKE_E8/
+data/wages_GUS/
