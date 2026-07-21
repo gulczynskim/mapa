@@ -569,6 +569,21 @@ const VARIABLE_META = {
     measures: [{ key: "default", label: "Wartość" }],
     sharesMeaningful: true,
   },
+  population_thousands: {
+    label: "Ludność w tysiącach",
+    unit: "tys. osób",
+    topic: "ludnosc",
+    file: "data/population_thousands.json",
+    meaning: "Liczba ludności (w tysiącach), wg płci.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Kody zmiennych BDL: 1645341 (ogółem), 1645343 (kobiety), 1645344 (mężczyźni), temat P2425 -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
   gestosc_zaludnienia: {
     label: "Gęstość zaludnienia",
     unit: "osób/km²",

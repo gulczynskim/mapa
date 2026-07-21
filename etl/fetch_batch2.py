@@ -54,6 +54,10 @@ FILES = {
         "level": POWIAT,
         "slices": {"default": {"default": {"k": "746291", "m": "746290"}}},
     },
+    "population_thousands.json": {  # og:1645341, missed in the first pass -- see conversation
+        "level": POWIAT,
+        "slices": {"default": {"default": {"og": "1645341", "k": "1645343", "m": "1645344"}}},
+    },
     "rolnictwo_pracujacy.json": {
         "level": POWIAT,
         "slices": {
