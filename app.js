@@ -7,6 +7,7 @@ const BOUNDARY_FILES = {
   powiat: "data/powiaty.json",
   gmina: "data/gminy.json",
   podregion: "data/podregiony.json",
+  wojewodztwo: "data/wojewodztwa.json",
 };
 
 // 8 buckets for magnitude views (per user request for finer resolution than
@@ -771,7 +772,7 @@ function formatPl(n, maxFractionDigits) {
 function formatValue(v) {
   if (v === null) return "brak danych";
   const view = VIEWS[state.view];
-  const unit = view.unit !== undefined ? view.unit : VARIABLE_META[state.variable].unit;
+  const unit = view.unit !== undefined ? view.unit : unitFor(VARIABLE_META[state.variable], state.measure);
   const formatted = formatPl(v, view.decimals);
   return unit ? formatted + " " + unit : formatted;
 }
@@ -1025,6 +1026,14 @@ function hasTotalFor(meta, ageGroup, measure) {
 
 function hasTotalForCurrentSelection() {
   return hasTotalFor(VARIABLE_META[state.variable], state.ageGroup, state.measure);
+}
+
+// Lets a measure override the variable-level unit (e.g. "głosów" for a votes
+// measure sitting next to "osób" candidate/elected measures in the same
+// variable) -- same lookup pattern as hasTotalFor above.
+function unitFor(meta, measure) {
+  const measureOpt = meta.measures.find((o) => o.key === measure);
+  return measureOpt?.unit ?? meta.unit;
 }
 
 function updateViewAvailability() {

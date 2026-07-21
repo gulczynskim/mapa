@@ -104,7 +104,7 @@ const VARIABLE_META = {
     ],
   },
   radni_powiatu: {
-    label: "Radni powiatu",
+    label: "Radni powiatu (BDL GUS)",
     unit: "osób",
     topic: "polityka",
     file: "data/radni_powiatu.json",
@@ -124,7 +124,7 @@ const VARIABLE_META = {
     sharesMeaningful: true,
   },
   radni_gminy: {
-    label: "Radni gminy",
+    label: "Radni gminy (BDL GUS)",
     unit: "osób",
     topic: "polityka",
     file: "data/radni_gminy.json",
@@ -136,6 +136,102 @@ const VARIABLE_META = {
     levels: [{ key: "gmina", label: "Gmina" }],
     ageGroups: [{ key: "default", label: "Wszyscy radni" }],
     measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  wybory_rady_gmin: {
+    label: "Wybory do rady gminy",
+    unit: "osób",
+    topic: "polityka",
+    file: "data/wybory_rady_gmin.json",
+    meaning:
+      "Kandydaci, wybrani radni i oddane głosy w wyborach do rad gmin, wg płci. Dane tylko z lat " +
+      "wyborczych 1998-2024 (nieciągłe, w przeciwieństwie do \"Radni gminy\" z BDL). Warszawa liczona " +
+      "jako jedna rada miasta -- rady dzielnic m.st. Warszawy są celowo pominięte, żeby liczby były " +
+      "porównywalne z resztą gmin. 52 gminy z lat 1998-2014 (głównie dawne odrębne gminy Warszawy " +
+      "sprzed unifikacji w 2002 r.) nie mają dzisiejszego odpowiednika administracyjnego i figurują " +
+      "pod swoim historycznym 6-cyfrowym TERYT-em -- nie pojawią się na mapie, dopóki nie powstanie " +
+      "dla nich osobna warstwa granic.",
+    source: "Państwowa Komisja Wyborcza (PKW)",
+    accessNote:
+      "Zbiory kandydatów PKW z projektu badawczego użytkownika (\"Bitwa o wozy i Parytety w Polsce\") " +
+      "-- zob. etl/pkw_councils.py i etl/pkw_prepare_merge.py.",
+    levels: [{ key: "gmina", label: "Gmina" }],
+    ageGroups: [{ key: "default", label: "Wszyscy kandydaci/radni" }],
+    measures: [
+      { key: "candidates", label: "Kandydaci", unit: "osób" },
+      { key: "elected", label: "Wybrani radni", unit: "osób" },
+      { key: "votes", label: "Głosy", unit: "głosów" },
+    ],
+    sharesMeaningful: true,
+  },
+  wybory_rady_powiatow: {
+    label: "Wybory do rady powiatu",
+    unit: "osób",
+    topic: "polityka",
+    file: "data/wybory_rady_powiatow.json",
+    meaning:
+      "Kandydaci, wybrani radni i oddane głosy w wyborach do rad powiatów, wg płci. Dane tylko z lat " +
+      "wyborczych 1998-2018 (2024 nie jest dostępny -- zob. accessNote). Miasta na prawach powiatu " +
+      "(Kraków, Warszawa itd.) nie mają osobnej rady powiatu, więc nie występują w tym zbiorze -- " +
+      "ich radni są liczeni wyłącznie pod \"Wybory do rady gminy\".",
+    source: "Państwowa Komisja Wyborcza (PKW)",
+    accessNote:
+      "Zbiory kandydatów PKW z projektu badawczego użytkownika. Dla 2024 plik z kandydatami do rad " +
+      "powiatów nie był dostępny w folderze Councils/, tylko w Regional/2024/ -- zob. " +
+      "etl/pkw_councils.py.",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Wszyscy kandydaci/radni" }],
+    measures: [
+      { key: "candidates", label: "Kandydaci", unit: "osób" },
+      { key: "elected", label: "Wybrani radni", unit: "osób" },
+      { key: "votes", label: "Głosy", unit: "głosów" },
+    ],
+    sharesMeaningful: true,
+  },
+  wybory_sejmiku: {
+    label: "Wybory do sejmiku województwa",
+    unit: "osób",
+    topic: "polityka",
+    file: "data/wybory_sejmiku.json",
+    meaning:
+      "Kandydaci, wybrani radni sejmiku i oddane głosy w wyborach do sejmików województw, wg płci. " +
+      "Dane tylko z lat wyborczych 1998-2024. Granice województw na tej mapie są dociągnięte przez " +
+      "połączenie powiatów (etl/build_wojewodztwa.py) -- nie pochodzą z osobnego źródła granic.",
+    source: "Państwowa Komisja Wyborcza (PKW)",
+    accessNote:
+      "Zbiory kandydatów PKW z projektu badawczego użytkownika; dane 2024 z Regional/2024/ -- zob. " +
+      "etl/pkw_councils.py.",
+    levels: [{ key: "wojewodztwo", label: "Województwo" }],
+    ageGroups: [{ key: "default", label: "Wszyscy kandydaci/radni" }],
+    measures: [
+      { key: "candidates", label: "Kandydaci", unit: "osób" },
+      { key: "elected", label: "Wybrani radni", unit: "osób" },
+      { key: "votes", label: "Głosy", unit: "głosów" },
+    ],
+    sharesMeaningful: true,
+  },
+  wybory_wojtowie: {
+    label: "Wybory wójtów/burmistrzów/prezydentów miast",
+    unit: "osób",
+    topic: "polityka",
+    file: "data/wybory_wojtowie.json",
+    meaning:
+      "Kandydaci, wybrany kandydat i oddane głosy w wyborach na wójta/burmistrza/prezydenta miasta, " +
+      "wg płci. \"Kandydaci\" to pole I tury (wszyscy zarejestrowani); \"Głosy I tura\"/\"Głosy II " +
+      "tura\" liczone osobno -- kandydaci, którzy nie weszli do II tury, mają tam 0. \"Wybrani\" " +
+      "obejmuje zwycięzcę niezależnie od tego, w której turze rozstrzygnęły się wybory.",
+    source: "Państwowa Komisja Wyborcza (PKW)",
+    accessNote:
+      "Zbiory kandydatów PKW z projektu badawczego użytkownika -- zob. etl/pkw_mayors.py i " +
+      "etl/pkw_prepare_merge.py.",
+    levels: [{ key: "gmina", label: "Gmina" }],
+    ageGroups: [{ key: "default", label: "Wszyscy kandydaci" }],
+    measures: [
+      { key: "candidates", label: "Kandydaci", unit: "osób" },
+      { key: "elected", label: "Wybrani", unit: "osób" },
+      { key: "votes_r1", label: "Głosy I tura", unit: "głosów" },
+      { key: "votes_r2", label: "Głosy II tura", unit: "głosów" },
+    ],
     sharesMeaningful: true,
   },
   liceum: {
