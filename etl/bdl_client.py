@@ -1,4 +1,6 @@
 import os
+import re
+import time
 
 import requests
 
@@ -8,6 +10,24 @@ BASE_URL = "https://bdl.stat.gov.pl/api/v1"
 def _headers():
     api_key = os.environ.get("BDL_API_KEY")
     return {"X-ClientId": api_key} if api_key else {}
+
+
+def _get(url, params):
+    """GET with 429 retry -- BDL's own Retry-After isn't the plain-integer
+    HTTP spec format, it's a Polish string like "221 sek", so pull the
+    leading number out instead of assuming it parses as a bare float
+    (confirmed hitting this for real while fetching a large variable batch)."""
+    for attempt in range(6):
+        resp = requests.get(url, params=params, headers=_headers())
+        if resp.status_code == 429:
+            m = re.search(r"\d+", resp.headers.get("Retry-After", ""))
+            wait = int(m.group()) if m else 5 * (attempt + 1)
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp
+    resp.raise_for_status()
+    return resp
 
 
 def fetch_variable_data(variable_id, unit_level=5, year=None):
@@ -21,8 +41,7 @@ def fetch_variable_data(variable_id, unit_level=5, year=None):
     page = 0
     while True:
         params["page"] = page
-        resp = requests.get(url, params=params, headers=_headers())
-        resp.raise_for_status()
+        resp = _get(url, params)
         data = resp.json()
         page_results = data.get("results", [])
         if not page_results:

@@ -168,7 +168,7 @@ function renderBoundaries(data) {
   terytToLayer = {};
   terytToName = {};
   geoLayer = L.geoJSON(data, {
-    style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.6 }),
+    style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.3 }),
     onEachFeature: (feature, layer) => {
       const teryt = feature.properties.JPT_KOD_JE;
       const name = feature.properties.JPT_NAZWA_;
@@ -683,7 +683,7 @@ function highlight(layer) {
 // us for real: any mouseout was capable of whiting out the entire map, not
 // just the hovered polygon.
 function baseStyleFor(value, domain) {
-  return { fillColor: colorFor(value, domain), fillOpacity: 0.9, color: "#ffffff", weight: 0.6 };
+  return { fillColor: colorFor(value, domain), fillOpacity: 0.9, color: "#ffffff", weight: 0.3 };
 }
 
 // Polish locale throughout the UI: comma decimal separator, space thousands

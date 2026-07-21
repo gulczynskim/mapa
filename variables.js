@@ -22,6 +22,8 @@ const TOPICS = {
   polityka: "Polityka",
   ludnosc: "Ludność",
   zdrowie: "Zdrowie",
+  rolnictwo: "Rolnictwo",
+  kultura_sport: "Kultura i sport",
 };
 
 const VARIABLE_META = {
@@ -143,11 +145,13 @@ const VARIABLE_META = {
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Kody zmiennych BDL: uczniowie 270621 (mężczyźni) / 270655 (kobiety), absolwenci " +
-      "270638 (mężczyźni) / 270602 (kobiety) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "270638 (mężczyźni) / 270602 (kobiety), uczniowie w 1 klasie 378692 (mężczyźni) / " +
+      "378694 (kobiety) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Młodzież licealna" }],
     measures: [
       { key: "uczniowie", label: "Uczniowie" },
+      { key: "uczniowie_1_klasa", label: "Uczniowie w 1 klasie" },
       { key: "absolwenci", label: "Absolwenci" },
     ],
     sharesMeaningful: true,
@@ -281,5 +285,326 @@ const VARIABLE_META = {
     // app.js. Pools all years into one color scale per sex/age instead of
     // rescaling to each year's narrow spread.
     fixedScaleAcrossYears: true,
+  },
+  population_by_age: {
+    label: "Ludność wg grup wieku",
+    unit: "osób",
+    topic: "ludnosc",
+    file: "data/population_by_age.json",
+    agegroupLabel: "Grupa wieku",
+    meaning:
+      "Liczba ludności (miasto i wieś łącznie) wg grup wieku i płci. Dwa nakładające się zestawy " +
+      "kategorii współistnieją w tych danych: starszy, drobniejszy podział (0-2, 3-6, 7-12, 13-15, " +
+      "16-19, 20-24, 25-34, 35-44, 45-54, 55-64, 65 i więcej) i nowszy, szerszy (0-14, 15-64, 16-19, " +
+      "19-24) wprowadzony od 2010 -- nie sumują się do jednej spójnej piramidy wieku, traktuj je jako " +
+      "niezależne kategorie.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P3447, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "ogolem", label: "Wszystkie grupy wieku" },
+      { key: "0-2", label: "0-2 lata" },
+      { key: "0-14", label: "0-14 lat" },
+      { key: "3-6", label: "3-6 lat" },
+      { key: "7-12", label: "7-12 lat" },
+      { key: "13-15", label: "13-15 lat" },
+      { key: "15-64", label: "15-64 lata" },
+      { key: "16-19", label: "16-19 lat" },
+      { key: "19-24", label: "19-24 lata" },
+      { key: "20-24", label: "20-24 lata" },
+      { key: "25-34", label: "25-34 lata" },
+      { key: "35-44", label: "35-44 lata" },
+      { key: "45-54", label: "45-54 lata" },
+      { key: "55-64", label: "55-64 lata" },
+      { key: "65plus", label: "65 lat i więcej" },
+    ],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  median_age: {
+    label: "Mediana wieku ludności",
+    unit: "lat",
+    topic: "ludnosc",
+    file: "data/median_age.json",
+    meaning: "Wiek, poniżej i powyżej którego znajduje się połowa populacji (mediana), wg płci.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P3814, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
+  },
+  rolnictwo_pracujacy: {
+    label: "Pracujący w gospodarstwach rolnych",
+    unit: "osób",
+    topic: "rolnictwo",
+    file: "data/rolnictwo_pracujacy.json",
+    agegroupLabel: "Typ gospodarstwa",
+    meaning:
+      "Członkowie rodziny i pracujący najemni stali w gospodarstwach rolnych, wg płci. \"Gospodarstwa " +
+      "rolne ogółem\" obejmuje też gospodarstwa państwowe/spółdzielcze/spółek, \"gospodarstwa " +
+      "indywidualne\" to podzbiór -- tylko gospodarstwa prywatne. Jednorazowy Powszechny Spis Rolny " +
+      "2020, nie dane roczne.",
+    source: "Bank Danych Lokalnych GUS (Powszechny Spis Rolny 2020)",
+    accessNote: "Temat BDL P4081, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "gospodarstwa_rolne", label: "Gospodarstwa rolne ogółem" },
+      { key: "gospodarstwa_indywidualne", label: "Gospodarstwa indywidualne" },
+    ],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  rolnictwo_kierujacy: {
+    label: "Kierujący gospodarstwami rolnymi",
+    unit: "osób",
+    topic: "rolnictwo",
+    file: "data/rolnictwo_kierujacy.json",
+    agegroupLabel: "Rola",
+    meaning:
+      "Osoby związane z gospodarstwem indywidualnym, wg płci -- \"Kierujący produkcją\" faktycznie " +
+      "prowadzi gospodarstwo dzień po dniu, \"Użytkownik\" to formalny posiadacz/właściciel (bywa inną " +
+      "osobą niż kierujący). Jednorazowy Powszechny Spis Rolny 2020.",
+    source: "Bank Danych Lokalnych GUS (Powszechny Spis Rolny 2020)",
+    accessNote: "Temat BDL P4077, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "gospodarstwo", label: "Kierujący produkcją" },
+      { key: "uzytkownik", label: "Użytkownik (właściciel)" },
+    ],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  rolnictwo_uzytkownicy: {
+    label: "Użytkownicy gospodarstw indywidualnych",
+    unit: "osób",
+    topic: "rolnictwo",
+    file: "data/rolnictwo_uzytkownicy.json",
+    meaning:
+      "Użytkownicy oraz członkowie ich rodzin pracujący w gospodarstwach indywidualnych, wg płci. " +
+      "Jednorazowy Powszechny Spis Rolny 2020.",
+    source: "Bank Danych Lokalnych GUS (Powszechny Spis Rolny 2020)",
+    accessNote: "Temat BDL P4272, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  szkoly_policealne: {
+    label: "Szkoły policealne",
+    unit: "osób",
+    topic: "edukacja",
+    file: "data/szkoly_policealne.json",
+    agegroupLabel: "Typ szkoły",
+    meaning:
+      "Uczniowie (ogółem i w 1 klasie) oraz absolwenci szkół policealnych, wg typu szkoły i płci. Nie " +
+      "każdy typ szkoły ma dane dla wszystkich trzech miar -- brakujące kombinacje pokazują brak danych.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P2178, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "kolegium_bez_specjalnych", label: "W tym kolegium pracowników służb społecznych (bez specjalnych)" },
+      { key: "pomaturalne_doroslych", label: "Pomaturalne dla dorosłych" },
+      { key: "ogolem_z_kolegiami", label: "Ogółem (w tym kolegia pracowników służb społecznych)" },
+      { key: "pomaturalne_mlodziezy", label: "Pomaturalne dla młodzieży" },
+      { key: "specjalne", label: "Specjalne" },
+    ],
+    measures: [
+      { key: "uczniowie", label: "Uczniowie" },
+      { key: "uczniowie_1_klasa", label: "Uczniowie w 1 klasie" },
+      { key: "absolwenci", label: "Absolwenci" },
+    ],
+    sharesMeaningful: true,
+  },
+  zasadnicze_zawodowe: {
+    label: "Zasadnicze szkoły zawodowe",
+    unit: "osób",
+    topic: "edukacja",
+    file: "data/zasadnicze_zawodowe.json",
+    agegroupLabel: "Typ szkoły",
+    meaning:
+      "Uczniowie (ogółem i w 1 klasie) oraz absolwenci zasadniczych szkół zawodowych i pokrewnych, wg " +
+      "typu szkoły i płci. Nie każdy typ szkoły ma dane dla wszystkich trzech miar -- brakujące " +
+      "kombinacje pokazują brak danych.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P2143, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "specjalne_przysposabiajace", label: "Szkoły specjalne przysposabiające do pracy" },
+      { key: "ponadpodstawowe_przysposabiajace", label: "Ponadpodstawowe przysposabiające do pracy (specjalne)" },
+      { key: "zawodowe_mlodziezy_specjalne", label: "Zawodowe dla młodzieży (specjalne)" },
+      { key: "zawodowe_doroslych", label: "Zawodowe dla dorosłych" },
+      { key: "ponadpodstawowe_zasadnicze_doroslych", label: "Ponadpodstawowe zasadnicze dla dorosłych" },
+      { key: "zawodowe_mlodziezy_bez_specjalnych", label: "Zawodowe dla młodzieży (bez specjalnych)" },
+    ],
+    measures: [
+      { key: "uczniowie", label: "Uczniowie" },
+      { key: "uczniowie_1_klasa", label: "Uczniowie w 1 klasie" },
+      { key: "absolwenci", label: "Absolwenci" },
+    ],
+    sharesMeaningful: true,
+  },
+  uczelnie: {
+    label: "Studenci i absolwenci uczelni",
+    unit: "osób",
+    topic: "edukacja",
+    file: "data/uczelnie.json",
+    meaning: "Liczba studentów i absolwentów szkół wyższych, wg płci i powiatu siedziby uczelni.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P3226, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [
+      { key: "studenci", label: "Studenci" },
+      { key: "absolwenci", label: "Absolwenci" },
+    ],
+    sharesMeaningful: true,
+  },
+  wypadki_przy_pracy: {
+    label: "Wypadki przy pracy",
+    unit: "osób",
+    topic: "rynek_pracy",
+    file: "data/wypadki_przy_pracy.json",
+    meaning: "Liczba osób poszkodowanych w wypadkach przy pracy (ogółem), wg płci.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P2276, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  kluby_sportowe: {
+    label: "Ćwiczący w klubach sportowych",
+    unit: "osób",
+    topic: "kultura_sport",
+    file: "data/kluby_sportowe.json",
+    meaning: "Liczba ćwiczących w klubach sportowych (łącznie z klubami wyznaniowymi i UKS), wg płci.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P2155, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  zamachy_samobojcze: {
+    label: "Zamachy samobójcze",
+    unit: "osób",
+    topic: "zdrowie",
+    file: "data/zamachy_samobojcze.json",
+    meaning: "Liczba osób w zamachach samobójczych, wg płci -- ogółem oraz zakończone zgonem.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P3833, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [
+      { key: "ogolem", label: "Wszystkie" },
+      { key: "zakonczone_zgonem", label: "Zakończone zgonem" },
+    ],
+    sharesMeaningful: true,
+  },
+  wyksztalcenie_nsp: {
+    label: "Wykształcenie ludności 13+ (NSP)",
+    unit: "osób",
+    topic: "edukacja",
+    file: "data/wyksztalcenie_nsp.json",
+    agegroupLabel: "Poziom wykształcenia",
+    meaning:
+      "Ludność rezydująca w wieku 13 lat i więcej wg poziomu wykształcenia i płci. Jednorazowy " +
+      "Narodowy Spis Powszechny 2021, nie dane roczne.",
+    source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
+    accessNote: "Temat BDL P4318, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "ogolem", label: "Wszystkie poziomy" },
+      { key: "wyzsze", label: "Wyższe" },
+      { key: "sr_i_pol_ogolem", label: "Średnie i policealne (ogółem)" },
+      { key: "sr_ogolnoksztalcace", label: "Średnie ogólnokształcące" },
+      { key: "sr_zawodowe", label: "Średnie zawodowe" },
+      { key: "zasadnicze_branzowe", label: "Zasadnicze zawodowe/branżowe" },
+      { key: "gimnazjalne", label: "Gimnazjalne" },
+      { key: "podstawowe_ukonczone", label: "Podstawowe ukończone" },
+      { key: "podstawowe_niekonczone", label: "Podstawowe nieukończone / brak wykształcenia" },
+      { key: "nieustalony", label: "Nieustalony" },
+    ],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  stan_cywilny_nsp: {
+    label: "Stan cywilny ludności 15+ (NSP)",
+    unit: "osób",
+    topic: "ludnosc",
+    file: "data/stan_cywilny_nsp.json",
+    agegroupLabel: "Stan cywilny",
+    meaning:
+      "Ludność rezydująca w wieku 15 lat i więcej wg stanu cywilnego i płci. Jednorazowy Narodowy Spis " +
+      "Powszechny 2021, nie dane roczne.",
+    source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
+    accessNote: "Temat BDL P4288, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "ogolem", label: "Wszystkie" },
+      { key: "kawalerowie_panny", label: "Kawalerowie / panny" },
+      { key: "zonaci_zamezne", label: "Żonaci / zamężne" },
+      { key: "wdowcy_wdowy", label: "Wdowcy / wdowy" },
+      { key: "rozwiedzeni", label: "Rozwiedzeni" },
+      { key: "nieustalony", label: "Nieustalony" },
+    ],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  ludnosc_roczniki_nsp: {
+    label: "Ludność ogółem (NSP, wariant roczników)",
+    unit: "osób",
+    topic: "ludnosc",
+    file: "data/ludnosc_roczniki_nsp.json",
+    meaning:
+      "Ludność rezydująca ogółem, wg płci, z tematu BDL który udostępnia też podział na pojedyncze " +
+      "roczniki wieku (0,1,2...) -- tu wgrany wyłącznie wariant \"ogółem\" (poza podziałem na " +
+      "roczniki). Ten sam ludnościowy fakt (populacja wg płci) jest już dostępny jako \"Ludność w " +
+      "tysiącach\" w temacie Gęstość zaludnienia, z bieżącej ewidencji rocznej zamiast jednorazowego " +
+      "spisu -- te dwie zmienne prawdopodobnie się pokrywają.",
+    source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
+    accessNote: "Temat BDL P4254, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  gestosc_zaludnienia: {
+    label: "Gęstość zaludnienia",
+    unit: "osób/km²",
+    topic: "ludnosc",
+    file: "data/gestosc_zaludnienia.json",
+    meaning: "Liczba ludności na 1 km² powierzchni. BDL nie publikuje tego wskaźnika w podziale na płeć.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Kod zmiennej BDL: 60559 (temat P2425) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/60559",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
+  },
+  dochody_powiat: {
+    label: "Dochody na 1 mieszkańca (powiat)",
+    unit: "zł",
+    topic: "ludnosc",
+    file: "data/dochody_powiat.json",
+    meaning: "Dochody budżetu powiatu na 1 mieszkańca. BDL nie publikuje tego wskaźnika w podziale na płeć.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P2410, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
+  },
+  dochody_gmina: {
+    label: "Dochody na 1 mieszkańca (gmina)",
+    unit: "zł",
+    topic: "ludnosc",
+    file: "data/dochody_gmina.json",
+    meaning:
+      "Dochody budżetu gminy na 1 mieszkańca -- wszystkie typy gmin łącznie, w tym miasta na prawach " +
+      "powiatu. BDL nie publikuje tego wskaźnika w podziale na płeć.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P2627, poziom gmina -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "gmina", label: "Gmina" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Wartość" }],
   },
 };
