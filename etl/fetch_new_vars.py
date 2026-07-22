@@ -21,6 +21,33 @@ load_dotenv()
 OUT_DIR = "../data"
 
 
+def resolve_gmina_teryt(unit_id, unit_name):
+    """unit_id_to_teryt's positional slicing assumes standard post-2002 gmina
+    unit_ids -- it was never meant for BDL's separate pre-2002 "Warszawa"
+    legacy block (confirmed live: e.g. id 071412831041 named "Warszawa -
+    Centrum do 2001"), which it silently mis-decodes into fake-looking but
+    plausible 7-digit codes sharing an "1431..." prefix. Those aren't real
+    TERYT gminas; the block mixes one citywide-total row with individual
+    (now nonexistent) dzielnica rows at the same nominal level.
+
+    The citywide row ("M.st.Warszawa do <year>") is the direct predecessor
+    of today's single Warszawa gmina (1465011, confirmed continuous from
+    2002 onward in this same BDL variable) -- remapped there. The dzielnica/
+    union/undetermined rows have no current single-gmina equivalent and are
+    dropped, matching the "exclude Warsaw's district races entirely, don't
+    roll them up" convention already used for the PKW election data.
+    """
+    if unit_name and unit_name.startswith("M.st.Warszawa do "):
+        return "1465011"
+    if unit_name and (
+        unit_name.startswith("Warszawa - ")
+        or unit_name.startswith("Związek gmin dzielnic Warszawy")
+        or unit_name.startswith("GMINY-DZIELNICY WARSZAWY")
+    ):
+        return None
+    return unit_id_to_teryt(unit_id, level=6)
+
+
 def fetch_sex_slice(ids, level):
     """ids: {'t': var_id, 'm': var_id, 'k': var_id} (t optional). Returns {teryt: {year: {t,m,k}}}."""
     all_rows = []
@@ -29,7 +56,11 @@ def fetch_sex_slice(ids, level):
         all_rows.extend(flatten(sex, raw))
 
     df = pd.DataFrame(all_rows)
-    df["teryt"] = df["unit_id"].apply(lambda u: unit_id_to_teryt(u, level=level))
+    if level == 6:
+        df["teryt"] = df.apply(lambda r: resolve_gmina_teryt(r["unit_id"], r["unit_name"]), axis=1)
+        df = df[df["teryt"].notna()]
+    else:
+        df["teryt"] = df["unit_id"].apply(lambda u: unit_id_to_teryt(u, level=level))
 
     out = {}
     for (teryt, year), g in df.groupby(["teryt", "year"]):
