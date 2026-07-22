@@ -307,11 +307,10 @@ async function init() {
     preferCanvas: true,
   });
   setDefaultView();
-  // prefix:false was removing Leaflet's own "Leaflet" credit link entirely.
-  // Not a license requirement (Leaflet is BSD-2-Clause, which doesn't mandate
-  // on-screen attribution) but it's the project's own explicitly-requested
-  // convention, and free to keep.
-  attributionControl = L.control.attribution().addTo(map);
+  // prefix:false drops Leaflet's own "Leaflet" credit link -- not a license
+  // requirement (Leaflet is BSD-2-Clause, which doesn't mandate on-screen
+  // attribution), removed per explicit request.
+  attributionControl = L.control.attribution({ prefix: false }).addTo(map);
   attributionControl.addAttribution('Mapa: <a href="https://mapa.michalgulczynski.pl">Michał Gulczyński</a>');
   updateMapAttribution();
 
