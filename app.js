@@ -65,29 +65,38 @@ const MISSING_COLOR = "#d9d8d2";
 // always blue, regardless of variable, so the same hue always means the
 // same sex across every variable on the site. Diverging views encode both
 // sexes in one scale instead (see reverseDiverging below).
+// null (missing data) silently coerces to 0 in JS arithmetic (null - 5 ===
+// -5, null / 5 === 0, 5 / null === Infinity) -- every view below that
+// combines k and m has to guard against that explicitly, or a county
+// missing just ONE of the two would render (and feed the color domain and
+// legend) as if the missing side were a real zero instead of "brak danych".
+function bothOrNull(a, b, fn) {
+  return a === null || b === null ? null : fn(a, b);
+}
+
 const VIEWS = {
   women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k, decimals: 1, sexColor: "k" },
   men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m, decimals: 1, sexColor: "m" },
   total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t, decimals: 1 },
-  diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => d.k - d.m, center: 0, decimals: 1 },
+  diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => bothOrNull(d.k, d.m, (k, m) => k - m), center: 0, decimals: 1 },
   // logScale: a ratio can never go negative, and 2x / 0.5x are equally far
   // from "equal" multiplicatively -- linear spread around center=1 would
   // let the color scale (and any tick derived from it) drift negative,
   // which is meaningless for a ratio. Symmetrize in log space instead.
-  ratio: { label: "Proporcja (K / M)", kind: "diverging", pick: (d) => d.k / d.m, center: 1, logScale: true, decimals: 2, unit: "" },
+  ratio: { label: "Proporcja (K / M)", kind: "diverging", pick: (d) => bothOrNull(d.k, d.m, (k, m) => k / m), center: 1, logScale: true, decimals: 2, unit: "" },
   // reverseDiverging: DIVERGING_STEPS always runs blue(low)->red(high) by
   // raw position. That's correct for "diff" (K-M > 0 means more women =
   // red, natural ordering) and "ratio" (K/M > 1 also means more women =
   // red), but M/K > 1 means more MEN -- which should be blue, not red. Flip
   // which end of the ramp gets used so a county where men dominate is
   // always blue here too, never red just because the raw ratio is "high".
-  ratioInverse: { label: "Proporcja (M / K)", kind: "diverging", pick: (d) => d.m / d.k, center: 1, logScale: true, decimals: 2, unit: "", reverseDiverging: true },
+  ratioInverse: { label: "Proporcja (M / K)", kind: "diverging", pick: (d) => bothOrNull(d.m, d.k, (m, k) => m / k), center: 1, logScale: true, decimals: 2, unit: "", reverseDiverging: true },
   // Useful for compositional data (e.g. share of women among elected
   // officials or students) where the natural "total" is a headcount, not a
   // percentage -- these compute the share directly from k/m regardless of
   // what the variable's own unit is.
-  shareWomen: { label: "% kobiet", kind: "sequential", pick: (d) => (d.k / (d.k + d.m)) * 100, decimals: 1, unit: "%", sexColor: "k" },
-  shareMen: { label: "% mężczyzn", kind: "sequential", pick: (d) => (d.m / (d.k + d.m)) * 100, decimals: 1, unit: "%", sexColor: "m" },
+  shareWomen: { label: "% kobiet", kind: "sequential", pick: (d) => bothOrNull(d.k, d.m, (k, m) => (k / (k + m)) * 100), decimals: 1, unit: "%", sexColor: "k" },
+  shareMen: { label: "% mężczyzn", kind: "sequential", pick: (d) => bothOrNull(d.m, d.k, (m, k) => (m / (m + k)) * 100), decimals: 1, unit: "%", sexColor: "m" },
 };
 
 const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
@@ -100,15 +109,24 @@ const COLOR_SCALES = { linear: "Liniowa (równe przedziały)", log: "Logarytmicz
 const SCALE_SCOPES = { year: "Dla danego roku", all: "Wspólna dla wszystkich lat" };
 
 let state = {
-  variable: "unemployment",
-  view: "total",
+  variable: "e8_matematyka",
+  view: "diff",
   year: null, // set to the most recent available year once data is loaded (see syncYearSlider)
   level: "powiat",
   ageGroup: "default",
-  measure: "default",
+  measure: "mean",
   colorScale: "linear",
   colorScaleScope: "year",
 };
+
+// Every variable defaults to showing the gender GAP (Różnica K-M) first
+// rather than a raw total -- that's the map's whole reason for existing.
+// Polityka is the one exception: for political representation specifically,
+// "% kobiet" (the share of women among officials/candidates) is a more
+// immediately legible starting point than a raw headcount difference.
+function defaultView(variable) {
+  return VARIABLE_META[variable].topic === "polityka" ? "shareWomen" : "diff";
+}
 
 // The color scale domain is always established within the current variable
 // + level + ageGroup + measure + view (e.g. men's life expectancy at birth
@@ -660,16 +678,24 @@ function logBoundariesSequential(domain, n) {
   return Array.from({ length: n + 1 }, (_, i) => Math.exp(lnMin + (i / n) * (lnMax - lnMin)));
 }
 
-// Diverging, "linear" mode (default): a single symmetric spread around
-// center, sized by whichever value is furthest from it. One extreme outlier
-// on either side stretches the whole scale and crowds everyone else into the
-// pale near-center buckets -- e.g. it's what made the wage-gap "Różnica"
-// view look almost entirely white (88% of counties landed in one bucket).
+// Diverging, "linear" mode (default): each ARM (below/above center) gets
+// its own spread, sized only by that arm's own furthest value -- e.g. one
+// extreme outlier above center no longer stretches the below-center arm
+// too (it used to: a single shared spread mirrored onto both sides is what
+// made the wage-gap "Różnica" view look almost entirely white, 88% of
+// counties landed in one bucket). This also means a genuinely ONE-SIDED
+// variable -- life expectancy's K-M is never negative, since women never
+// live shorter than men -- gets belowSpread=0 rather than inheriting the
+// real (above-center) spread, so the empty arm collapses to zero-width
+// buckets at `center` instead of wasting half the palette (and the legend)
+// on a range that can't occur. See legendBuckets(), which is what actually
+// hides those zero-width buckets from the rendered legend.
 function linearBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
-  const spread = Math.max(...domain.map((v) => Math.abs(v - center)), 1e-9);
+  const belowSpread = Math.max(0, ...domain.filter((v) => v < center).map((v) => center - v));
+  const aboveSpread = Math.max(0, ...domain.filter((v) => v >= center).map((v) => v - center));
   const tBoundaries = Array.from({ length: n + 1 }, (_, i) => -1 + (i * 2) / n);
-  return tBoundaries.map((t) => center + t * spread);
+  return tBoundaries.map((t) => center + t * (t < 0 ? belowSpread : aboveSpread));
 }
 
 // Diverging, "quantile" mode: each arm (below/above center) gets its own
@@ -697,19 +723,23 @@ function quantileBoundariesDiverging(domain, view, n) {
 // center, which only holds in log space. Difference-style views (center =
 // 0) use a "symlog" transform (sign-preserving log1p of the distance from
 // center) instead of a plain log, since a plain log is undefined at/below
-// zero and a raw difference can be zero or negative.
+// zero and a raw difference can be zero or negative. Same per-arm spread as
+// linear mode above (and for the same reason) -- a one-sided variable's
+// empty arm gets spread=0 instead of mirroring the populated arm's range.
 function logBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
   const tBoundaries = Array.from({ length: n + 1 }, (_, i) => -1 + (i * 2) / n);
   if (view.logScale) {
     const logCenter = Math.log(center);
-    const logSpread = Math.max(...domain.map((v) => Math.abs(Math.log(v) - logCenter)), 1e-9);
-    return tBoundaries.map((t) => Math.exp(logCenter + t * logSpread));
+    const belowSpread = Math.max(0, ...domain.filter((v) => v < center).map((v) => logCenter - Math.log(v)));
+    const aboveSpread = Math.max(0, ...domain.filter((v) => v >= center).map((v) => Math.log(v) - logCenter));
+    return tBoundaries.map((t) => Math.exp(logCenter + t * (t < 0 ? belowSpread : aboveSpread)));
   }
   const symlog = (v) => Math.sign(v - center) * Math.log1p(Math.abs(v - center));
   const invSymlog = (t) => center + Math.sign(t) * Math.expm1(Math.abs(t));
-  const spread = Math.max(...domain.map((v) => Math.abs(symlog(v))), 1e-9);
-  return tBoundaries.map((t) => invSymlog(t * spread));
+  const belowSpread = Math.max(0, ...domain.filter((v) => v < center).map((v) => Math.abs(symlog(v))));
+  const aboveSpread = Math.max(0, ...domain.filter((v) => v >= center).map((v) => Math.abs(symlog(v))));
+  return tBoundaries.map((t) => invSymlog(t * (t < 0 ? belowSpread : aboveSpread)));
 }
 
 // The N+1 boundary values (original data units) between the N color
@@ -789,7 +819,11 @@ function formatPl(n, maxFractionDigits) {
 function formatValue(v) {
   if (v === null) return "brak danych";
   const view = VIEWS[state.view];
-  const unit = view.unit !== undefined ? view.unit : unitFor(VARIABLE_META[state.variable], state.measure);
+  let unit = view.unit !== undefined ? view.unit : unitFor(VARIABLE_META[state.variable], state.measure);
+  // Subtracting two percentages is a point difference, not itself a
+  // percentage (e.g. 65% minus 60% is "5 p.p.", not "5%") -- only applies to
+  // Różnica, since ratio/share views already override their own unit above.
+  if (state.view === "diff" && unit === "%") unit = "p.p.";
   const formatted = formatPl(v, view.decimals);
   return unit ? formatted + " " + unit : formatted;
 }
@@ -817,26 +851,64 @@ function legendValueFormat(v) {
   return formatPl(v, VIEWS[state.view].decimals);
 }
 
-// One tick per color boundary (N colors -> N+1 ticks), so every edge between
-// two swatches has a visible number showing exactly where it falls -- not
-// just the overall min/max. Sign (diff) or position relative to 1 (ratio)
-// already conveys the M-vs-K direction, so bare numbers are enough.
+// Sequential views' boundaries are always real (derived straight from the
+// domain's own min/max), so every bucket gets equal on-screen width and a
+// tick at every boundary. Diverging views are different: a per-arm spread
+// (see linear/logBoundariesDiverging) can leave one whole arm collapsed to
+// zero-width buckets sitting exactly at `center`, when all the real data is
+// on the other side (life expectancy's K-M is never negative -- women never
+// live shorter than men). Rendering those anyway would show several
+// identical duplicate tick labels for a range that never occurs. This
+// drops the zero-width buckets and returns each survivor's position as a
+// 0..1 FRACTION of the real (non-empty) range, so both the sidebar legend
+// and the exported map's legend can scale to their own units (% or px)
+// without duplicating this logic between them.
+function legendBuckets(view, boundaries, steps) {
+  if (view.kind !== "diverging") {
+    const n = steps.length;
+    return {
+      buckets: steps.map((c, i) => ({ color: c, lo: i / n, hi: (i + 1) / n })),
+      ticks: boundaries.map((v, i) => ({ value: v, pos: i / n })),
+    };
+  }
+  const real = [];
+  for (let i = 0; i < steps.length; i++) {
+    if (boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1] });
+  }
+  const min = real.length ? real[0].lo : 0;
+  const total = real.length ? real[real.length - 1].hi - min : 0;
+  const frac = (v) => (total ? (v - min) / total : 0);
+  return {
+    buckets: real.map((b) => ({ color: b.color, lo: frac(b.lo), hi: frac(b.hi) })),
+    ticks: (real.length ? [real[0].lo, ...real.map((b) => b.hi)] : []).map((v) => ({ value: v, pos: frac(v) })),
+  };
+}
+
+// One tick per color boundary (N colors -> N+1 ticks, minus any collapsed
+// by legendBuckets), so every edge between two swatches has a visible
+// number showing exactly where it falls -- not just the overall min/max.
+// Sign (diff) or position relative to 1 (ratio) already conveys the M-vs-K
+// direction, so bare numbers are enough.
 function updateLegend(domain) {
   const view = VIEWS[state.view];
   const steps = stepsForView(view);
-  document.getElementById("legend-scale").innerHTML = steps.map((c) => `<span style="background:${c}"></span>`).join("");
+  const scaleEl = document.getElementById("legend-scale");
   const labelsEl = document.getElementById("legend-labels");
   if (domain.length === 0) {
+    scaleEl.innerHTML = "";
     labelsEl.innerHTML = "";
     return;
   }
   const boundaries = colorBoundaries(domain, view, steps);
-  const n = boundaries.length - 1;
-  labelsEl.innerHTML = boundaries
-    .map((v, i) => {
-      const pct = (i / n) * 100;
-      const pos = i === 0 ? "left:0" : i === n ? "right:0" : `left:${pct}%;transform:translateX(-50%)`;
-      return `<span style="${pos}">${legendValueFormat(v)}</span>`;
+  const { buckets, ticks } = legendBuckets(view, boundaries, steps);
+  scaleEl.innerHTML = buckets
+    .map((b) => `<span style="flex:none;width:${((b.hi - b.lo) * 100).toFixed(3)}%;background:${b.color}"></span>`)
+    .join("");
+  const n = ticks.length - 1;
+  labelsEl.innerHTML = ticks
+    .map((t, i) => {
+      const pos = i === 0 ? "left:0" : i === n ? "right:0" : `left:${(t.pos * 100).toFixed(3)}%;transform:translateX(-50%)`;
+      return `<span style="${pos}">${legendValueFormat(t.value)}</span>`;
     })
     .join("");
 }
@@ -953,23 +1025,26 @@ function wrapAtMidpoint(text, fontSize, maxWidth) {
 }
 
 // Full-width legend (unlike the cramped sidebar copy) so the tick labels --
-// up to 9 of them, for the 8-bucket sequential scale -- have room to breathe.
+// up to 9 of them, for the 8-bucket sequential scale -- have room to
+// breathe. Uses the same legendBuckets() as the sidebar legend, so a
+// diverging view's collapsed (zero-width, one-sided) buckets are hidden
+// here too instead of exporting an image with duplicate tick labels.
 function buildExportLegendSvg(x, y, width, textColor) {
   const view = VIEWS[state.view];
   const steps = stepsForView(view);
   const boundaries = colorBoundaries(lastDomain, view, steps);
-  const n = steps.length;
+  const { buckets, ticks } = legendBuckets(view, boundaries, steps);
   const swatchH = 16;
-  const swatchW = width / n;
-  let out = steps
-    .map((c, i) => `<rect x="${(x + i * swatchW).toFixed(1)}" y="${y}" width="${swatchW.toFixed(1)}" height="${swatchH}" fill="${c}" />`)
+  let out = buckets
+    .map((b) => `<rect x="${(x + b.lo * width).toFixed(1)}" y="${y}" width="${((b.hi - b.lo) * width).toFixed(1)}" height="${swatchH}" fill="${b.color}" />`)
     .join("");
   const tickY = y + swatchH + 16;
-  out += boundaries
-    .map((v, i) => {
-      const tx = x + (i / n) * width;
+  const n = ticks.length - 1;
+  out += ticks
+    .map((t, i) => {
+      const tx = x + t.pos * width;
       const anchor = i === 0 ? "start" : i === n ? "end" : "middle";
-      return `<text x="${tx.toFixed(1)}" y="${tickY}" font-size="12" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="${anchor}">${escapeXml(legendValueFormat(v))}</text>`;
+      return `<text x="${tx.toFixed(1)}" y="${tickY}" font-size="12" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="${anchor}">${escapeXml(legendValueFormat(t.value))}</text>`;
     })
     .join("");
   return out;
@@ -1119,12 +1194,13 @@ async function selectVariable(requested) {
   state.ageGroup = meta.ageGroups[0].key;
   state.measure = meta.measures[0].key;
   state.colorScaleScope = defaultColorScaleScope(requested);
+  state.view = defaultView(requested);
   document.getElementById("topic-select").value = meta.topic;
   populateVariableOptions(meta.topic);
   document.getElementById("variable-select").value = state.variable;
   buildDimensionSelectors();
   buildScaleScopeButtons();
-  updateViewAvailability();
+  buildViewButtons();
   syncYearSlider();
   updateMeta();
   updateMapAttribution();
@@ -1631,6 +1707,7 @@ async function restoreFromUrl() {
     return;
   }
 
+  state.view = defaultView(state.variable);
   if (params.has("view") && VIEWS[params.get("view")]) state.view = params.get("view");
   if (params.has("year")) state.year = Number(params.get("year"));
   if (params.has("level")) state.level = resolveDimension(state.variable, "levels", params.get("level"));
