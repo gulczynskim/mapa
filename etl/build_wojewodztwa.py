@@ -8,7 +8,7 @@ dissolve data/powiaty.json straight into 16 groups by that prefix.
 import json
 import os
 
-from shapely.geometry import shape, mapping
+from shapely.geometry import MultiPolygon, shape, mapping
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
@@ -57,6 +57,18 @@ if __name__ == "__main__":
     features = []
     for woj_teryt, geoms in sorted(groups.items()):
         dissolved = unary_union(geoms)
+        # unary_union on real (if make_valid-repaired) boundary data can spit
+        # out a GeometryCollection with degenerate zero-area LineString/Point
+        # artifacts at seams alongside the real polygon(s) -- confirmed live
+        # for Pomorskie after swapping in higher-precision coastline data for
+        # two of its powiats. Genuinely separate landmasses (e.g. the piece
+        # of the Vistula Spit cut off by the shipping canal) survive this
+        # filter fine since they're real, non-degenerate Polygon parts.
+        if dissolved.geom_type == "GeometryCollection":
+            polys = [g for g in dissolved.geoms if g.geom_type in ("Polygon", "MultiPolygon") and g.area > 0]
+            dissolved = polys[0] if len(polys) == 1 else MultiPolygon(
+                [p for g in polys for p in (g.geoms if g.geom_type == "MultiPolygon" else [g])]
+            )
         features.append(
             {
                 "type": "Feature",

@@ -1,23 +1,36 @@
 """
-Fixes gminy.json's three most severely under-simplified coastal boundaries:
-Hel (2211011), Jastarnia (2211023), and Krynica Morska (2210011). All three
-are thin peninsula/spit towns represented with only 11-20 points in the
-vendored source (github.com/waszkiewiczja/GeoJSON-Polska-Wojewodztwa-Powiaty-
-Gminy) -- by far the coarsest of any gmina nationally. At that point count, a
-long thin curving shape can only be approximated by straight chords that cut
-across the bay/lagoon rather than following the coast, ballooning the
-polygon's area to 4.5-5.5x the real land area (confirmed live against
-official government data below) and rendering as an unrecognizable blob
-instead of a peninsula.
+Fixes the most severely under-simplified coastal boundaries on the Hel
+Peninsula and Vistula Spit, at BOTH gmina and powiat level:
+  gminy:   Hel (2211011), Jastarnia (2211023), Krynica Morska (2210011)
+  powiaty: pucki (2211), nowodworski (2210)
+All are represented far more coarsely than any comparable unit nationally in
+the vendored source (github.com/waszkiewiczja/GeoJSON-Polska-Wojewodztwa-
+Powiaty-Gminy) -- e.g. Hel at 12 points, Jastarnia at 11, vs. 60-390 for
+other coastal gminas. At that point count, a long thin curving shape can
+only be approximated by straight chords that cut across the bay/lagoon
+rather than following the coast, ballooning the polygon's area to 4.5-5.5x
+(gmina) / 1.3-1.8x (powiat, which includes more well-detailed mainland coast
+so the effect is diluted) the real land area, and rendering as an
+unrecognizable blob instead of a peninsula.
 
-Every other coastal gmina in this dataset ALSO legitimately extends into
-adjacent sea/bay water (that's real, official Polish administrative
+Every other coastal gmina/powiat in this dataset ALSO legitimately extends
+into adjacent sea/bay water (that's real, official Polish administrative
 geography, e.g. Gdynia's official area is ~2.9x its land area) -- but they
-have 60-390 points, enough to still read as a recognizable coastline. This
-script deliberately does NOT touch those; the problem here is specifically
-the combination of water-inclusion AND severe under-sampling, not water-
+have enough points to still read as a recognizable coastline. This script
+deliberately does NOT touch those; the problem is specifically the
+combination of water-inclusion AND severe under-sampling, not water-
 inclusion alone. Run `audit_data.py` or re-derive the point-count table in
 this docstring's investigation if other candidates ever need checking.
+
+wojewodztwa.json and podregiony.json are NOT touched directly -- they're
+dissolved from powiaty.json by build_wojewodztwa.py/build_podregiony.py, so
+re-running those after this script propagates the powiat-level fix
+automatically. Doing that surfaced an unrelated pre-existing bug in both
+dissolve scripts (shapely's unary_union occasionally returns a
+GeometryCollection with degenerate zero-area LineString/Point artifacts
+alongside the real polygon -- confirmed present in 10 of 73 podregiony
+before this, nothing to do with peninsulas); both scripts now filter those
+out, see their own comments.
 
 Method (verified live, see the 2026-07-22 conversation for the full
 investigation):
@@ -31,9 +44,9 @@ investigation):
   2. This official boundary has 10-20x more points than the vendored file
      but the SAME water-inclusive area -- confirming the water inclusion is
      a genuine feature of the official boundary, not a vendoring bug. Most
-     of its perimeter (>95% of points) tightly hugs the real coast; only one
-     contiguous stretch per gmina (a straight-ish maritime/lagoon boundary
-     crossing open water) accounts for nearly all the excess area.
+     of its perimeter tightly hugs the real coast; only specific stretches
+     (a straight-ish maritime/lagoon boundary crossing open water) account
+     for nearly all the excess area.
   3. Fetch OSM natural=coastline ways for the same area (Overpass), which
      -- unlike the admin boundary -- are drawn with a consistent land-left/
      sea-right winding convention.
@@ -45,9 +58,9 @@ investigation):
 
 This is NOT meant to be re-run casually -- it depends on two live external
 services (GUGiK WFS, Overpass) that were slow/unreliable when this was built
-(multiple mirrors and long timeouts were needed). It's committed as the
-record of how the current data/gminy.json geometry for these 3 units was
-produced, not as a routinely-scheduled ETL step.
+(multiple mirrors, long timeouts, and manual per-mirror retries were needed
+more than once). It's committed as the record of how the current geometry
+for these 5 units was produced, not as a routinely-scheduled ETL step.
 """
 
 import json
@@ -70,33 +83,42 @@ OVERPASS_MIRRORS = [
     "https://overpass.openstreetmap.ru/api/interpreter",
 ]
 
-# (teryt, PRG fetch bbox, coastline fetch bbox) -- bboxes are generous enough
-# to cover the whole peninsula/spit body, not just the one gmina, since Hel
-# and Jastarnia share a landmass and need each other's coastline context.
-UNITS = {
+# bboxes are generous enough to cover the whole peninsula/spit body, not
+# just one unit, since Hel/Jastarnia (and pucki's other gminas) share a
+# landmass and need each other's coastline context.
+GMINA_UNITS = {
     "2211011": "Hel",
     "2211023": "Jastarnia",
     "2210011": "Krynica Morska",
 }
-PRG_BBOXES = {
+GMINA_BBOXES = {
     "hel_peninsula": (54.55, 18.40, 54.79, 18.90),  # covers Hel + Jastarnia
     "krynica": (54.30, 19.10, 54.50, 19.75),
 }
-COASTLINE_BBOXES = PRG_BBOXES  # same regions
+POWIAT_UNITS = {
+    "2211": "pucki",
+    "2210": "nowodworski",
+}
+POWIAT_BBOXES = {
+    "pucki": (54.53, 17.85, 54.87, 18.92),
+    "nowodworski": (54.08, 18.78, 54.53, 19.72),
+}
 
 
-def fetch_prg_bbox(bbox):
-    """bbox = (minlat, minlon, maxlat, maxlon). Returns {teryt: {name, rings}}
-    with rings already reprojected to WGS84 lon/lat. CQL_FILTER on this
-    server returns the whole national layer regardless of the filter value
-    (confirmed: a filtered request came back at 150MB+ and was still
-    growing when killed) -- bbox is the only reliable way to scope this."""
+def fetch_prg_bbox(bbox, type_name):
+    """bbox = (minlat, minlon, maxlat, maxlon). type_name is the PRG WFS
+    layer, e.g. "ms:A03_Granice_gmin" (gminy) or "ms:A02_Granice_powiatow"
+    (powiaty). Returns {teryt: {name, rings}} with rings already reprojected
+    to WGS84 lon/lat. CQL_FILTER on this server returns the whole national
+    layer regardless of the filter value (confirmed: a filtered request came
+    back at 150MB+ and was still growing when killed) -- bbox is the only
+    reliable way to scope this."""
     minlat, minlon, maxlat, maxlon = bbox
     params = {
         "service": "WFS",
         "version": "2.0.0",
         "request": "GetFeature",
-        "typeName": "ms:A03_Granice_gmin",
+        "typeName": type_name,
         # axis order must be lat,lon with an explicit CRS URN -- plain
         # lon,lat bbox silently matched zero features on this server.
         "bbox": f"{minlat},{minlon},{maxlat},{maxlon},urn:ogc:def:crs:EPSG::4326",
@@ -124,8 +146,9 @@ def fetch_prg_bbox(bbox):
     # landing in eastern Poland/Belarus (~lon 22-23) when left unswapped.
     transformer = Transformer.from_crs("EPSG:2180", "EPSG:4326", always_xy=True)
 
+    type_local = type_name.split(":")[-1]
     out = {}
-    for member in root.findall(".//ms:A03_Granice_gmin", ns):
+    for member in root.findall(f".//ms:{type_local}", ns):
         kod = member.find("ms:JPT_KOD_JE", ns).text
         nazwa = member.find("ms:JPT_NAZWA_", ns).text
         rings = []
@@ -201,12 +224,53 @@ def largest_part(geom):
     return max(geom.geoms, key=lambda p: p.area)
 
 
-def main():
-    prg_features = {}
-    for bbox in PRG_BBOXES.values():
-        prg_features.update(fetch_prg_bbox(bbox))
+def significant_parts(geom, min_km2=0.02):
+    """Drops sub-min_km2 slivers (harbor moles etc.) but keeps genuinely
+    separate landmasses -- e.g. the piece of the Vistula Spit cut off by the
+    shipping canal (~1.8-27 km2, well above the threshold)."""
+    if geom.geom_type == "Polygon":
+        return [geom] if geom.area * 111.32 * 111.32 * 0.586 >= min_km2 else []
+    return [p for p in geom.geoms if p.area * 111.32 * 111.32 * 0.586 >= min_km2]
 
-    coastline_by_region = {name: fetch_coastline_bbox(bbox) for name, bbox in COASTLINE_BBOXES.items()}
+
+def round_coords(geom_mapping, ndigits=7):
+    def rc(c):
+        return [round(x, ndigits) for x in c] if isinstance(c[0], (int, float)) else [rc(x) for x in c]
+
+    m = dict(geom_mapping)
+    m["coordinates"] = rc(m["coordinates"])
+    return m
+
+
+def shape_area_km2(geom_mapping):
+    from shapely.geometry import shape
+
+    g = shape(geom_mapping)
+    return g.area * 111.32 * 111.32 * 0.586  # rough deg2->km2 at ~54.6N
+
+
+def replace_features(path, new_geoms, unit_names):
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    replaced = 0
+    for feature in data["features"]:
+        kod = feature["properties"]["JPT_KOD_JE"]
+        if kod in new_geoms:
+            feature["geometry"] = new_geoms[kod]
+            replaced += 1
+            km2 = shape_area_km2(new_geoms[kod])
+            print(f"{kod} ({unit_names[kod]}): replaced, land area ~{km2:.1f} km2")
+    assert replaced == len(unit_names), f"expected to replace {len(unit_names)} features in {path}, replaced {replaced}"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"{path}: {len(data['features'])} features written")
+
+
+def fix_gminy():
+    prg_features = {}
+    for bbox in GMINA_BBOXES.values():
+        prg_features.update(fetch_prg_bbox(bbox, "ms:A03_Granice_gmin"))
+    coastline_by_region = {name: fetch_coastline_bbox(bbox) for name, bbox in GMINA_BBOXES.items()}
 
     hel_poly = make_valid(Polygon(prg_features["2211011"]["rings"][0]))
     jastarnia_poly = make_valid(Polygon(prg_features["2211023"]["rings"][0]))
@@ -219,53 +283,45 @@ def main():
     peninsula_land = land_only(unary_union([hel_poly, jastarnia_poly]), coastline_by_region["hel_peninsula"])
     hel_final = largest_part(peninsula_land.intersection(hel_poly))
     jastarnia_final = largest_part(peninsula_land.intersection(jastarnia_poly))
-
-    krynica_land = land_only(krynica_poly, coastline_by_region["krynica"])
-    # Krynica Morska's land genuinely comes in two separate pieces (a small
-    # detached settlement south of the main spit body) -- keep both, unlike
-    # Hel's ~2900m2 sliver near the harbor which was dropped as noise.
-    krynica_final = krynica_land
-
-    def round_coords(geom_mapping, ndigits=7):
-        def rc(c):
-            return [round(x, ndigits) for x in c] if isinstance(c[0], (int, float)) else [rc(x) for x in c]
-
-        m = dict(geom_mapping)
-        m["coordinates"] = rc(m["coordinates"])
-        return m
+    # Krynica Morska's land genuinely comes in separate pieces (a small
+    # detached settlement south of the main spit body) -- keep all of them,
+    # unlike Hel's ~2900m2 sliver near the harbor which was dropped as noise.
+    krynica_final = land_only(krynica_poly, coastline_by_region["krynica"])
 
     new_geoms = {
         "2211011": round_coords(mapping(hel_final)),
         "2211023": round_coords(mapping(jastarnia_final)),
         "2210011": round_coords(mapping(krynica_final)),
     }
-
-    path = os.path.join(OUT_DIR, "gminy.json")
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-
-    replaced = 0
-    for feature in data["features"]:
-        kod = feature["properties"]["JPT_KOD_JE"]
-        if kod in new_geoms:
-            feature["geometry"] = new_geoms[kod]
-            replaced += 1
-            km2 = shape_area_km2(new_geoms[kod])
-            print(f"{kod} ({UNITS[kod]}): replaced, land area ~{km2:.1f} km2")
-
-    assert replaced == len(UNITS), f"expected to replace {len(UNITS)} features, replaced {replaced}"
-
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"{path}: {len(data['features'])} features written")
+    replace_features(os.path.join(OUT_DIR, "gminy.json"), new_geoms, GMINA_UNITS)
 
 
-def shape_area_km2(geom_mapping):
-    from shapely.geometry import shape
+def fix_powiaty():
+    prg_features = {}
+    for bbox in POWIAT_BBOXES.values():
+        prg_features.update(fetch_prg_bbox(bbox, "ms:A02_Granice_powiatow"))
+    coastline_by_region = {name: fetch_coastline_bbox(bbox) for name, bbox in POWIAT_BBOXES.items()}
 
-    g = shape(geom_mapping)
-    return g.area * 111.32 * 111.32 * 0.586  # rough deg2->km2 at ~54.6N
+    pucki_poly = make_valid(Polygon(prg_features["2211"]["rings"][0]))
+    nowo_poly = make_valid(Polygon(prg_features["2210"]["rings"][0]))
+
+    pucki_land = land_only(pucki_poly, coastline_by_region["pucki"])
+    nowo_land = land_only(nowo_poly, coastline_by_region["nowodworski"])
+
+    from shapely.geometry import MultiPolygon
+
+    def finalize(geom):
+        parts = significant_parts(geom)
+        return parts[0] if len(parts) == 1 else MultiPolygon(parts)
+
+    new_geoms = {
+        "2211": round_coords(mapping(finalize(pucki_land))),
+        "2210": round_coords(mapping(finalize(nowo_land))),
+    }
+    replace_features(os.path.join(OUT_DIR, "powiaty.json"), new_geoms, POWIAT_UNITS)
 
 
 if __name__ == "__main__":
-    main()
+    fix_gminy()
+    fix_powiaty()
+    print("Now re-run build_wojewodztwa.py and build_podregiony.py to propagate the powiat fix.")

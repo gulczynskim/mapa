@@ -16,7 +16,7 @@ import json
 import os
 
 import requests
-from shapely.geometry import shape, mapping
+from shapely.geometry import MultiPolygon, shape, mapping
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
@@ -79,6 +79,19 @@ if __name__ == "__main__":
     features = []
     for podregion_teryt, g in sorted(groups.items()):
         dissolved = unary_union(g["geoms"])
+        # unary_union can spit out a GeometryCollection with degenerate
+        # zero-area LineString/Point artifacts at seams alongside the real
+        # polygon(s), even when every input was individually make_valid-ed --
+        # confirmed live for 10 of the 73 podregiony (Lubelski, Skierniewicki,
+        # Krakowski, Ciechanowski, Nyski, Krośnieński, Łomżyński, Słupski,
+        # Kielecki, Elbląski) before this fix. Real disconnected landmasses
+        # (islands, a spit cut by a shipping canal) survive this filter fine
+        # since they're non-degenerate Polygon parts, not zero-area slivers.
+        if dissolved.geom_type == "GeometryCollection":
+            polys = [p for p in dissolved.geoms if p.geom_type in ("Polygon", "MultiPolygon") and p.area > 0]
+            dissolved = polys[0] if len(polys) == 1 else MultiPolygon(
+                [p for poly in polys for p in (poly.geoms if poly.geom_type == "MultiPolygon" else [poly])]
+            )
         features.append(
             {
                 "type": "Feature",
