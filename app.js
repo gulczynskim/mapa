@@ -1252,6 +1252,34 @@ function unitFor(meta, measure) {
   return measureOpt?.unit ?? meta.unit;
 }
 
+// Cached per variable (scanning every row is only worth doing once, same
+// idea as nameCounts below) -- true if ANY row has a non-null m or k.
+// Variables like gestosc_zaludnienia/dochody_* are never sex-disaggregated
+// in the source at all (GUS just doesn't publish that split), so every row
+// has m=k=null by design, not by gap -- Kobiety/Mężczyźni need to be
+// disabled for those the same way Ogółem/% already are for their own
+// not-applicable cases, or clicking them renders an all-"missing data" map.
+let sexDataAvailability = {};
+
+function hasSexData(variable) {
+  if (variable in sexDataAvailability) return sexDataAvailability[variable];
+  const data = loadedData[variable] || {};
+  let found = false;
+  outer: for (const teryt in data) {
+    for (const year in data[teryt]) {
+      for (const slice in data[teryt][year]) {
+        const v = data[teryt][year][slice];
+        if (v.m !== null || v.k !== null) {
+          found = true;
+          break outer;
+        }
+      }
+    }
+  }
+  sexDataAvailability[variable] = found;
+  return found;
+}
+
 function updateViewAvailability() {
   const totalBtn = document.querySelector('#view-buttons button[data-view-key="total"]');
   if (!totalBtn) return;
@@ -1260,6 +1288,17 @@ function updateViewAvailability() {
   const totalOk = hasTotalForCurrentSelection();
   totalBtn.disabled = !totalOk;
   totalBtn.title = totalOk ? "" : "Ogółem niedostępne dla tej grupy wieku/miary (patrz opis zmiennej)";
+
+  // Kobiety/Mężczyźni obviously need m/k, but so do the diverging views --
+  // Różnica is k-m, both Proporcje are k/m or m/k -- so all five are gated
+  // on the same hasSexData() check, not just the two sequential ones.
+  const sexOk = hasSexData(state.variable);
+  for (const key of ["women", "men", "diff", "ratio", "ratioInverse"]) {
+    const btn = document.querySelector(`#view-buttons button[data-view-key="${key}"]`);
+    if (!btn) continue;
+    btn.disabled = !sexOk;
+    btn.title = sexOk ? "" : "Ta zmienna nie ma danych w podziale na płeć -- dostępne jest tylko Ogółem";
+  }
 
   // % kobiet / % mężczyzn compute k/(k+m) -- only meaningful when k and m
   // are COUNTS (people, pupils, votes), not rates or scores. Adding two
@@ -1273,10 +1312,13 @@ function updateViewAvailability() {
     btn.title = sharesOk ? "" : "Dostępne tylko dla zmiennych liczebnościowych (np. liczba uczniów), nie dla wskaźników i wyników";
   }
 
-  const currentBlocked =
-    (!totalOk && state.view === "total") || (!sharesOk && (state.view === "shareWomen" || state.view === "shareMen"));
-  if (currentBlocked) {
-    state.view = "women";
+  // Read back off the DOM rather than re-deriving which of the three
+  // disabled-conditions above applies -- one source of truth for "is the
+  // currently selected view actually clickable", so a future fourth
+  // disabling condition can't be added above without this fallback noticing.
+  const currentBtn = document.querySelector(`#view-buttons button[data-view-key="${state.view}"]`);
+  if (currentBtn && currentBtn.disabled) {
+    state.view = totalOk ? "total" : "women";
     [...document.querySelectorAll("#view-buttons button")].forEach((b) =>
       b.classList.toggle("active", b.dataset.viewKey === state.view)
     );
