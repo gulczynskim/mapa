@@ -43,6 +43,16 @@ if __name__ == "__main__":
         for sex, var_id in ids.items():
             raw = fetch_variable_data(var_id, unit_level=LEVEL)
             for row in flatten(sex, raw):
+                # BDL returns an explicit row with value=0 (not simply an
+                # absent row) for podregion-years this variable predates --
+                # confirmed live: 3162 of 7884 slices came back as literal
+                # k=0,m=0 pairs (never just one side), concentrated in years
+                # before the table's real start, causing "0 gender gap"
+                # phantom data points in the frontend's diverging scale. 0
+                # is never a real life expectancy, so treat it as BDL's own
+                # missing-data sentinel here and leave the slice null instead.
+                if row["value"] == 0:
+                    continue
                 teryt = unit_id_to_teryt(row["unit_id"], level=LEVEL)
                 year = str(row["year"])
                 slice_ = out.setdefault(teryt, {}).setdefault(year, {}).setdefault(f"{age}__default", {"t": None, "m": None, "k": None})
