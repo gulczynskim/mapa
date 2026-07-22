@@ -82,6 +82,18 @@ header .author-link a { color: var(--text-secondary); }
   background: var(--surface-1);
 }
 
+/* Second sidebar (scale/legend/export/source) -- broken out of .controls so
+   a wide viewport can put it on the OTHER side of the map instead of
+   stacking everything into one increasingly long left panel. Narrower than
+   .controls since its content (button pairs, a legend bar) needs less room. */
+.controls-secondary {
+  width: clamp(260px, 20vw, 340px);
+  flex-shrink: 0;
+  padding: 1rem;
+  border-left: 1px solid var(--hairline);
+  background: var(--surface-1);
+}
+
 .control-group { margin-bottom: 1.4rem; }
 .control-group label {
   display: block;
@@ -394,6 +406,14 @@ footer a { color: inherit; }
      overridden back to stretch. */
   .layout { flex-direction: column; height: auto; align-items: stretch; }
   .controls { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--hairline); }
+  /* One panel on narrow screens, per explicit request -- .controls-secondary
+     drops its own border/width and reorders (flexbox order, not DOM order)
+     to sit right after .controls, above the map, so the two read as a
+     single continuous sidebar instead of bracketing the map. */
+  .controls-secondary { width: 100%; height: auto; border-left: none; border-bottom: 1px solid var(--hairline); }
+  .controls { order: 1; }
+  .controls-secondary { order: 2; }
+  .map-wrap { order: 3; }
   /* flex: none overrides the base rule's "flex: 1" (flex-basis: 0%), which
      would otherwise ignore this explicit height entirely and size the row
      purely by flex-grow -- collapsing to 0 height, since .layout's own
