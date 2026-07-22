@@ -229,6 +229,7 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
   font-variant-numeric: tabular-nums;
 }
 .legend-labels span { position: absolute; top: 0; white-space: nowrap; }
+.legend-labels span.tick-long { font-size: 0.52rem; }
 
 .leaflet-tooltip.region-tooltip {
   background: var(--surface-1);

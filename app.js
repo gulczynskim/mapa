@@ -678,43 +678,94 @@ function logBoundariesSequential(domain, n) {
   return Array.from({ length: n + 1 }, (_, i) => Math.exp(lnMin + (i / n) * (lnMax - lnMin)));
 }
 
-// Diverging, "linear" mode (default): each ARM (below/above center) gets
-// its own spread, sized only by that arm's own furthest value -- e.g. one
+// Shared by all three diverging modes below. Each ARM (below/above center)
+// is spaced using only that arm's own real distances-from-center -- one
 // extreme outlier above center no longer stretches the below-center arm
 // too (it used to: a single shared spread mirrored onto both sides is what
 // made the wage-gap "Różnica" view look almost entirely white, 88% of
-// counties landed in one bucket). This also means a genuinely ONE-SIDED
-// variable -- life expectancy's K-M is never negative, since women never
-// live shorter than men -- gets belowSpread=0 rather than inheriting the
-// real (above-center) spread, so the empty arm collapses to zero-width
-// buckets at `center` instead of wasting half the palette (and the legend)
-// on a range that can't occur. See legendBuckets(), which is what actually
-// hides those zero-width buckets from the rendered legend.
-function linearBoundariesDiverging(domain, view, n) {
-  const center = view.center ?? 0;
-  const belowSpread = Math.max(0, ...domain.filter((v) => v < center).map((v) => center - v));
-  const aboveSpread = Math.max(0, ...domain.filter((v) => v >= center).map((v) => v - center));
-  const tBoundaries = Array.from({ length: n + 1 }, (_, i) => -1 + (i * 2) / n);
-  return tBoundaries.map((t) => center + t * (t < 0 ? belowSpread : aboveSpread));
+// counties landed in one bucket).
+//
+// Critically, a POPULATED arm is spaced between its own true MIN and MAX
+// distance, not between 0 (center) and its max -- otherwise the boundary
+// closest to center is an arbitrary fraction of the max, not a real value,
+// which silently reintroduces the exact bug this was meant to fix: for a
+// genuinely one-sided variable (life expectancy's K-M is never negative --
+// women never live shorter than men), the empty arm still needs to
+// collapse to *something*, and collapsing it to `center` leaves a
+// nonzero-width "near equality" bucket sitting between `center` and the
+// populated arm's true minimum -- which is exactly as wrong as the
+// original bug, just one level more subtle (a legend that LOOKS collapsed
+// but still starts at 0/1 instead of the real smallest gap). Collapsing
+// the empty arm to the POPULATED arm's own innermost boundary instead
+// closes that gap to zero width too, so legendBuckets() hides all of it.
+//
+// `dists` are already-computed positive distances-from-center in whatever
+// space this mode spaces evenly in (raw for linear, log-magnitude for
+// ratio-style views, symlog-magnitude for difference-style views);
+// `combine(distance, sign)` turns a spaced distance back into an actual
+// boundary value (sign is -1 for the below-center arm, +1 for above).
+function spacedDivergingBoundaries(belowDists, aboveDists, n, combine) {
+  const half = (n + 1) / 2; // n is always odd (a diverging palette needs a true center bucket)
+  const evenSpace = (dists) => {
+    const lo = Math.min(...dists);
+    const hi = Math.max(...dists);
+    return Array.from({ length: half }, (_, j) => (hi === lo ? lo : lo + (j / (half - 1)) * (hi - lo)));
+  };
+  if (belowDists.length === 0 && aboveDists.length === 0) {
+    const c = combine(0, 1);
+    return Array.from({ length: n + 1 }, () => c);
+  }
+  if (belowDists.length === 0 || aboveDists.length === 0) {
+    const belowEmpty = belowDists.length === 0;
+    const populated = belowEmpty ? aboveDists : belowDists;
+    const inner = evenSpace(populated); // ascending distance, [0] = arm's own true minimum
+    const populatedBoundaries = belowEmpty
+      ? inner.map((d) => combine(d, 1))
+      : inner.slice().reverse().map((d) => combine(d, -1));
+    const anchor = populatedBoundaries[belowEmpty ? 0 : half - 1];
+    const pad = Array.from({ length: n + 1 - half }, () => anchor);
+    return belowEmpty ? [...pad, ...populatedBoundaries] : [...populatedBoundaries, ...pad];
+  }
+  const belowB = evenSpace(belowDists).reverse().map((d) => combine(d, -1));
+  const aboveB = evenSpace(aboveDists).map((d) => combine(d, 1));
+  return [...belowB, ...aboveB];
 }
 
-// Diverging, "quantile" mode: each arm (below/above center) gets its own
-// quantile boundaries, computed independently from that arm's own
-// distribution. Unlike linear mode's single global "biggest distance from
-// center" spread, one extreme outlier on one side no longer stretches every
-// other county (on either side) into the pale near-center buckets.
+// Diverging, "linear" mode (default).
+function linearBoundariesDiverging(domain, view, n) {
+  const center = view.center ?? 0;
+  const below = domain.filter((v) => v < center).map((v) => center - v);
+  const above = domain.filter((v) => v >= center).map((v) => v - center);
+  return spacedDivergingBoundaries(below, above, n, (d, sign) => center + sign * d);
+}
+
+// Diverging, "quantile" mode: each arm's boundaries sit at real quantiles
+// of that arm's own distribution (not evenly spaced), so one extreme
+// outlier no longer stretches every other county on that arm into the
+// pale near-center buckets. Same one-sided handling as
+// spacedDivergingBoundaries above, just with `quantile()` standing in for
+// the even-spacing -- quantile(dists, 0) is already that arm's true
+// minimum, so the "start at the real min, not at center" fix falls out
+// naturally here rather than needing an explicit anchor step.
 function quantileBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
-  const half = (n + 1) / 2; // n is always odd (a diverging palette needs a true center bucket)
+  const half = (n + 1) / 2;
   const below = domain.filter((v) => v < center).map((v) => center - v).sort((a, b) => a - b);
   const above = domain.filter((v) => v >= center).map((v) => v - center).sort((a, b) => a - b);
-  const sideDistances = (dists) =>
-    dists.length === 0
-      ? Array.from({ length: half }, () => 0)
-      : Array.from({ length: half }, (_, j) => quantile(dists, (j + 1) / half));
+  const sideQuantiles = (dists) => Array.from({ length: half }, (_, j) => quantile(dists, j / (half - 1)));
 
-  const left = sideDistances(below).reverse().map((d) => center - d); // ascending: center-maxDist .. center-minDist
-  const right = sideDistances(above).map((d) => center + d); // ascending: center+minDist .. center+maxDist
+  if (below.length === 0 && above.length === 0) return Array.from({ length: n + 1 }, () => center);
+  if (below.length === 0 || above.length === 0) {
+    const belowEmpty = below.length === 0;
+    const populated = belowEmpty ? above : below;
+    const inner = sideQuantiles(populated);
+    const populatedBoundaries = belowEmpty ? inner.map((d) => center + d) : inner.slice().reverse().map((d) => center - d);
+    const anchor = populatedBoundaries[belowEmpty ? 0 : half - 1];
+    const pad = Array.from({ length: n + 1 - half }, () => anchor);
+    return belowEmpty ? [...pad, ...populatedBoundaries] : [...populatedBoundaries, ...pad];
+  }
+  const left = sideQuantiles(below).reverse().map((d) => center - d);
+  const right = sideQuantiles(above).map((d) => center + d);
   return [...left, ...right];
 }
 
@@ -723,23 +774,20 @@ function quantileBoundariesDiverging(domain, view, n) {
 // center, which only holds in log space. Difference-style views (center =
 // 0) use a "symlog" transform (sign-preserving log1p of the distance from
 // center) instead of a plain log, since a plain log is undefined at/below
-// zero and a raw difference can be zero or negative. Same per-arm spread as
-// linear mode above (and for the same reason) -- a one-sided variable's
-// empty arm gets spread=0 instead of mirroring the populated arm's range.
+// zero and a raw difference can be zero or negative.
 function logBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
-  const tBoundaries = Array.from({ length: n + 1 }, (_, i) => -1 + (i * 2) / n);
   if (view.logScale) {
     const logCenter = Math.log(center);
-    const belowSpread = Math.max(0, ...domain.filter((v) => v < center).map((v) => logCenter - Math.log(v)));
-    const aboveSpread = Math.max(0, ...domain.filter((v) => v >= center).map((v) => Math.log(v) - logCenter));
-    return tBoundaries.map((t) => Math.exp(logCenter + t * (t < 0 ? belowSpread : aboveSpread)));
+    const below = domain.filter((v) => v < center).map((v) => logCenter - Math.log(v));
+    const above = domain.filter((v) => v >= center).map((v) => Math.log(v) - logCenter);
+    return spacedDivergingBoundaries(below, above, n, (d, sign) => Math.exp(logCenter + sign * d));
   }
   const symlog = (v) => Math.sign(v - center) * Math.log1p(Math.abs(v - center));
   const invSymlog = (t) => center + Math.sign(t) * Math.expm1(Math.abs(t));
-  const belowSpread = Math.max(0, ...domain.filter((v) => v < center).map((v) => Math.abs(symlog(v))));
-  const aboveSpread = Math.max(0, ...domain.filter((v) => v >= center).map((v) => Math.abs(symlog(v))));
-  return tBoundaries.map((t) => invSymlog(t * (t < 0 ? belowSpread : aboveSpread)));
+  const below = domain.filter((v) => v < center).map((v) => Math.abs(symlog(v)));
+  const above = domain.filter((v) => v >= center).map((v) => Math.abs(symlog(v)));
+  return spacedDivergingBoundaries(below, above, n, (d, sign) => invSymlog(sign * d));
 }
 
 // The N+1 boundary values (original data units) between the N color
@@ -908,7 +956,12 @@ function updateLegend(domain) {
   labelsEl.innerHTML = ticks
     .map((t, i) => {
       const pos = i === 0 ? "left:0" : i === n ? "right:0" : `left:${(t.pos * 100).toFixed(3)}%;transform:translateX(-50%)`;
-      return `<span style="${pos}">${legendValueFormat(t.value)}</span>`;
+      const label = legendValueFormat(t.value);
+      // The sidebar legend is narrow -- a run of 5+ digit ticks (thousands
+      // of złoty, headcounts) can overlap its neighbors at the base font
+      // size, so shrink just those instead of shrinking every tick always.
+      const cls = (label.match(/\d/g) || []).length > 4 ? ' class="tick-long"' : "";
+      return `<span style="${pos}"${cls}>${label}</span>`;
     })
     .join("");
 }
@@ -1044,7 +1097,13 @@ function buildExportLegendSvg(x, y, width, textColor) {
     .map((t, i) => {
       const tx = x + t.pos * width;
       const anchor = i === 0 ? "start" : i === n ? "end" : "middle";
-      return `<text x="${tx.toFixed(1)}" y="${tickY}" font-size="12" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="${anchor}">${escapeXml(legendValueFormat(t.value))}</text>`;
+      const label = legendValueFormat(t.value);
+      // Same reasoning as the sidebar legend: a run of 5+ digit ticks
+      // (thousands of złoty, headcounts) can overlap its neighbors,
+      // especially now that the legend itself is capped narrower than the
+      // map (see EXPORT_LEGEND_MAX_W) -- shrink just those.
+      const fontSize = (label.match(/\d/g) || []).length > 4 ? 10 : 12;
+      return `<text x="${tx.toFixed(1)}" y="${tickY}" font-size="${fontSize}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="${anchor}">${escapeXml(label)}</text>`;
     })
     .join("");
   return out;
@@ -1054,26 +1113,39 @@ function buildExportLegendSvg(x, y, width, textColor) {
 // viewBox -- everything is authored in one consistent coordinate space, and
 // the higher-resolution PNG export just asks the browser to rasterize that
 // same markup at a larger physical size (crisp text/lines, no upscaling blur).
-// How much of the map container's full height is actually blank margin
-// around Poland's shape (kept on-screen for pan/zoom affordance, useless in
-// a static export) -- min/max screen Y only need the geometry's north/south
-// extremes, not every vertex, since Web Mercator Y is monotonic in latitude
-// regardless of longitude.
+// How much of the map container is actually blank margin around Poland's
+// shape (kept on-screen for pan/zoom affordance, useless in a static
+// export) -- min/max screen Y only need the geometry's north/south
+// extremes (not every vertex), since Web Mercator Y is monotonic in
+// latitude regardless of longitude; same idea for X and west/east.
 const EXPORT_CROP_PAD_Y = 12;
+const EXPORT_CROP_PAD_X = 12;
+// The legend doesn't need to span the map's full (often quite wide) width
+// to be readable -- capped and centered instead, so a handful of swatches
+// (common now that one-sided diverging scales collapse to 3-4 real ones,
+// see legendBuckets) don't balloon into oversized blocks next to the much
+// narrower description/credit text lines above them.
+const EXPORT_LEGEND_MAX_W = 360;
 
 function buildExportSvg({ pixelScale = 1 } = {}) {
   const mapEl = document.getElementById("map");
-  const mapW = mapEl.clientWidth;
+  const fullMapW = mapEl.clientWidth;
   const fullMapH = mapEl.clientHeight;
-  const availW = mapW - EXPORT_PAD_X * 2;
 
   const bounds = geoLayer.getBounds();
-  const lng = bounds.getCenter().lng;
-  const shapeTopY = map.latLngToContainerPoint([bounds.getNorth(), lng]).y;
-  const shapeBottomY = map.latLngToContainerPoint([bounds.getSouth(), lng]).y;
+  const centerLat = bounds.getCenter().lat;
+  const centerLng = bounds.getCenter().lng;
+  const shapeTopY = map.latLngToContainerPoint([bounds.getNorth(), centerLng]).y;
+  const shapeBottomY = map.latLngToContainerPoint([bounds.getSouth(), centerLng]).y;
+  const shapeLeftX = map.latLngToContainerPoint([centerLat, bounds.getWest()]).x;
+  const shapeRightX = map.latLngToContainerPoint([centerLat, bounds.getEast()]).x;
   const cropTop = Math.max(0, shapeTopY - EXPORT_CROP_PAD_Y);
   const cropBottom = Math.min(fullMapH, shapeBottomY + EXPORT_CROP_PAD_Y);
+  const cropLeft = Math.max(0, shapeLeftX - EXPORT_CROP_PAD_X);
+  const cropRight = Math.min(fullMapW, shapeRightX + EXPORT_CROP_PAD_X);
   const mapH = cropBottom - cropTop;
+  const mapW = cropRight - cropLeft;
+  const availW = mapW - EXPORT_PAD_X * 2;
 
   const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
   const creditFontSize = fitFontSize(creditText, 12, 9, availW);
@@ -1104,11 +1176,13 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
     .map((line, i) => `<text x="${EXPORT_PAD_X}" y="${descY + 18 + i * EXPORT_DESC_LINE_H}" font-size="${descFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="start">${escapeXml(line)}</text>`)
     .join("");
   const legendY = descY + descH;
-  const legendSvg = buildExportLegendSvg(EXPORT_PAD_X, legendY + 6, availW, textColor);
+  const legendW = Math.min(availW, EXPORT_LEGEND_MAX_W);
+  const legendX = EXPORT_PAD_X + (availW - legendW) / 2;
+  const legendSvg = buildExportLegendSvg(legendX, legendY + 6, legendW, textColor);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(mapW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${mapW} ${totalH}">
     <rect x="0" y="0" width="${mapW}" height="${totalH}" fill="${pageColor}" />
-    <g transform="translate(0, ${(-cropTop).toFixed(1)})">${polys}</g>
+    <g transform="translate(${(-cropLeft).toFixed(1)}, ${(-cropTop).toFixed(1)})">${polys}</g>
     <rect x="0" y="${footerY}" width="${mapW}" height="${EXPORT_FOOTER_H}" fill="${surfaceColor}" />
     <text x="${mapW / 2}" y="${footerY + EXPORT_FOOTER_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>
     ${descTextSvg}
