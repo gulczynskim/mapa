@@ -93,6 +93,11 @@ const VIEWS = {
 const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
 
 const COLOR_SCALES = { linear: "Liniowa (równe przedziały)", log: "Logarytmiczna", quantile: "Kwantyle" };
+// "year": domain from the currently-shown year only. "all": domain pooled
+// across every year (for the current variable/level/ageGroup/measure/view),
+// so scrubbing the year slider recolors polygons without renormalizing the
+// scale itself -- see currentDomain() below for when each reads better.
+const SCALE_SCOPES = { year: "Dla danego roku", all: "Wspólna dla wszystkich lat" };
 
 let state = {
   variable: "unemployment",
@@ -102,7 +107,20 @@ let state = {
   ageGroup: "default",
   measure: "default",
   colorScale: "linear",
+  colorScaleScope: "year",
 };
+
+// The color scale domain is always established within the current variable
+// + level + ageGroup + measure + view (e.g. men's life expectancy at birth
+// never shares a scale with men's at 60, or with women's, or with the
+// difference view -- currentDomain()/valueFor() already key on all of
+// those). colorScaleScope only controls a further axis on top of that: does
+// the domain also pool across every year, or just the one currently shown.
+// Defaults per variable via fixedScaleAcrossYears (see currentDomain), but
+// stays user-overridable via the Zakres skali buttons.
+function defaultColorScaleScope(variable) {
+  return VARIABLE_META[variable].fixedScaleAcrossYears ? "all" : "year";
+}
 
 let loadedData = {}; // variable -> {teryt: {year: {"<ageGroup>__<measure>": {t,m,k}}}}
 let loadedBoundaries = {}; // level -> GeoJSON, fetched lazily and cached
@@ -349,6 +367,7 @@ async function init() {
   await buildCorrelationSelectors();
   await restoreFromUrl();
   buildScaleButtons();
+  buildScaleScopeButtons();
   buildDimensionSelectors();
   updateViewAvailability();
   buildYearSlider();
@@ -567,21 +586,20 @@ function mapValueFor(teryt) {
   return valueFor(state.variable, teryt, state.year, state.ageGroup, state.measure);
 }
 
-// Most variables scale their color domain to ONLY the currently-shown
-// year -- e.g. unemployment's map highlights that year's relative spread
-// among powiats, which is the point (2003's rates were structurally
-// different from 2025's). Life expectancy is the opposite case: it barely
-// moves year to year, and rescaling the palette to each year's narrow
-// slice would make small noise look dramatic while making the same color
-// mean a different value depending which year happens to be selected.
-// fixedScaleAcrossYears opts a variable out of the per-year default,
-// pooling every available year (for the current sex/ageGroup/measure) into
-// one domain instead, so scrubbing the year slider recolors polygons
-// without ever renormalizing the scale itself.
+// Most variables read best scaled to ONLY the currently-shown year -- e.g.
+// unemployment's map highlights that year's relative spread among powiats,
+// which is the point (2003's rates were structurally different from
+// 2025's). Life expectancy is the opposite case: it barely moves year to
+// year, and rescaling the palette to each year's narrow slice would make
+// small noise look dramatic while making the same color mean a different
+// value depending which year happens to be selected -- fixedScaleAcrossYears
+// (see defaultColorScaleScope) defaults THAT variable to "all" instead, but
+// state.colorScaleScope is what actually decides it, and the user can
+// override either way via the Zakres skali buttons.
 function currentDomain() {
   const values = [];
   const data = loadedData[state.variable] || {};
-  if (VARIABLE_META[state.variable].fixedScaleAcrossYears) {
+  if (state.colorScaleScope === "all") {
     for (const teryt in data) {
       for (const year in data[teryt]) {
         const v = valueFor(state.variable, teryt, year, state.ageGroup, state.measure);
@@ -1100,10 +1118,12 @@ async function selectVariable(requested) {
   state.level = meta.levels[0].key;
   state.ageGroup = meta.ageGroups[0].key;
   state.measure = meta.measures[0].key;
+  state.colorScaleScope = defaultColorScaleScope(requested);
   document.getElementById("topic-select").value = meta.topic;
   populateVariableOptions(meta.topic);
   document.getElementById("variable-select").value = state.variable;
   buildDimensionSelectors();
+  buildScaleScopeButtons();
   updateViewAvailability();
   syncYearSlider();
   updateMeta();
@@ -1218,6 +1238,27 @@ function buildScaleButtons() {
     btn.className = key === state.colorScale ? "active" : "";
     btn.addEventListener("click", () => {
       state.colorScale = key;
+      [...container.children].forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      updateAll();
+    });
+    container.appendChild(btn);
+  }
+}
+
+// Rebuilt (not just re-styled) on every variable change, same as
+// buildScaleButtons would need to be if colorScale ever got a per-variable
+// default -- keeps this in sync whether colorScaleScope changed via a
+// variable-switch default, a URL param, or a direct click.
+function buildScaleScopeButtons() {
+  const container = document.getElementById("scale-scope-buttons");
+  container.innerHTML = "";
+  for (const key in SCALE_SCOPES) {
+    const btn = document.createElement("button");
+    btn.textContent = SCALE_SCOPES[key];
+    btn.className = key === state.colorScaleScope ? "active" : "";
+    btn.addEventListener("click", () => {
+      state.colorScaleScope = key;
       [...container.children].forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       updateAll();
@@ -1570,6 +1611,7 @@ function updateUrl() {
   params.set("agegroup", state.ageGroup);
   params.set("measure", state.measure);
   params.set("scale", state.colorScale);
+  params.set("scaleScope", state.colorScaleScope);
   history.replaceState(null, "", "?" + params.toString());
 }
 async function restoreFromUrl() {
@@ -1595,6 +1637,8 @@ async function restoreFromUrl() {
   if (params.has("agegroup")) state.ageGroup = resolveDimension(state.variable, "ageGroups", params.get("agegroup"));
   if (params.has("measure")) state.measure = resolveDimension(state.variable, "measures", params.get("measure"));
   if (params.has("scale") && COLOR_SCALES[params.get("scale")]) state.colorScale = params.get("scale");
+  state.colorScaleScope = defaultColorScaleScope(state.variable);
+  if (params.has("scaleScope") && SCALE_SCOPES[params.get("scaleScope")]) state.colorScaleScope = params.get("scaleScope");
 
   // The variable-select's options are topic-filtered -- if the URL points
   // at a variable outside the default topic, its key wouldn't even be a
