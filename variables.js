@@ -160,7 +160,7 @@ const VARIABLE_META = {
     measures: [
       { key: "candidates", label: "Kandydaci", unit: "osób" },
       { key: "elected", label: "Wybrani radni", unit: "osób" },
-      { key: "votes", label: "Głosy", unit: "głosów" },
+      { key: "votes", label: "Zdobyte głosy", unit: "głosów" },
     ],
     sharesMeaningful: true,
   },
@@ -184,7 +184,7 @@ const VARIABLE_META = {
     measures: [
       { key: "candidates", label: "Kandydaci", unit: "osób" },
       { key: "elected", label: "Wybrani radni", unit: "osób" },
-      { key: "votes", label: "Głosy", unit: "głosów" },
+      { key: "votes", label: "Zdobyte głosy", unit: "głosów" },
     ],
     sharesMeaningful: true,
   },
@@ -206,7 +206,7 @@ const VARIABLE_META = {
     measures: [
       { key: "candidates", label: "Kandydaci", unit: "osób" },
       { key: "elected", label: "Wybrani radni", unit: "osób" },
-      { key: "votes", label: "Głosy", unit: "głosów" },
+      { key: "votes", label: "Zdobyte głosy", unit: "głosów" },
     ],
     sharesMeaningful: true,
   },
@@ -217,8 +217,8 @@ const VARIABLE_META = {
     file: "data/wybory_wojtowie.json",
     meaning:
       "Kandydaci, wybrany kandydat i oddane głosy w wyborach na wójta/burmistrza/prezydenta miasta, " +
-      "wg płci. \"Kandydaci\" to pole I tury (wszyscy zarejestrowani); \"Głosy I tura\"/\"Głosy II " +
-      "tura\" liczone osobno -- kandydaci, którzy nie weszli do II tury, mają tam 0. \"Wybrani\" " +
+      "wg płci. \"Kandydaci\" to pole I tury (wszyscy zarejestrowani); \"Zdobyte głosy I tura\"/" +
+      "\"Zdobyte głosy II tura\" liczone osobno -- kandydaci, którzy nie weszli do II tury, mają tam 0. \"Wybrani\" " +
       "obejmuje zwycięzcę niezależnie od tego, w której turze rozstrzygnęły się wybory.",
     source: "Państwowa Komisja Wyborcza (PKW)",
     accessNote:
@@ -229,8 +229,8 @@ const VARIABLE_META = {
     measures: [
       { key: "candidates", label: "Kandydaci", unit: "osób" },
       { key: "elected", label: "Wybrani", unit: "osób" },
-      { key: "votes_r1", label: "Głosy I tura", unit: "głosów" },
-      { key: "votes_r2", label: "Głosy II tura", unit: "głosów" },
+      { key: "votes_r1", label: "Zdobyte głosy I tura", unit: "głosów" },
+      { key: "votes_r2", label: "Zdobyte głosy II tura", unit: "głosów" },
     ],
     sharesMeaningful: true,
   },

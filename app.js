@@ -961,11 +961,26 @@ function buildExportLegendSvg(x, y, width, textColor) {
 // viewBox -- everything is authored in one consistent coordinate space, and
 // the higher-resolution PNG export just asks the browser to rasterize that
 // same markup at a larger physical size (crisp text/lines, no upscaling blur).
+// How much of the map container's full height is actually blank margin
+// around Poland's shape (kept on-screen for pan/zoom affordance, useless in
+// a static export) -- min/max screen Y only need the geometry's north/south
+// extremes, not every vertex, since Web Mercator Y is monotonic in latitude
+// regardless of longitude.
+const EXPORT_CROP_PAD_Y = 12;
+
 function buildExportSvg({ pixelScale = 1 } = {}) {
   const mapEl = document.getElementById("map");
   const mapW = mapEl.clientWidth;
-  const mapH = mapEl.clientHeight;
+  const fullMapH = mapEl.clientHeight;
   const availW = mapW - EXPORT_PAD_X * 2;
+
+  const bounds = geoLayer.getBounds();
+  const lng = bounds.getCenter().lng;
+  const shapeTopY = map.latLngToContainerPoint([bounds.getNorth(), lng]).y;
+  const shapeBottomY = map.latLngToContainerPoint([bounds.getSouth(), lng]).y;
+  const cropTop = Math.max(0, shapeTopY - EXPORT_CROP_PAD_Y);
+  const cropBottom = Math.min(fullMapH, shapeBottomY + EXPORT_CROP_PAD_Y);
+  const mapH = cropBottom - cropTop;
 
   const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
   const creditFontSize = fitFontSize(creditText, 12, 9, availW);
@@ -1000,9 +1015,9 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(mapW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${mapW} ${totalH}">
     <rect x="0" y="0" width="${mapW}" height="${totalH}" fill="${pageColor}" />
-    ${polys}
+    <g transform="translate(0, ${(-cropTop).toFixed(1)})">${polys}</g>
     <rect x="0" y="${footerY}" width="${mapW}" height="${EXPORT_FOOTER_H}" fill="${surfaceColor}" />
-    <text x="${mapW - EXPORT_PAD_X}" y="${footerY + EXPORT_FOOTER_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="end">${escapeXml(creditText)}</text>
+    <text x="${mapW / 2}" y="${footerY + EXPORT_FOOTER_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>
     ${descTextSvg}
     ${legendSvg}
   </svg>`;
