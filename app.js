@@ -311,7 +311,7 @@ async function init() {
   // requirement (Leaflet is BSD-2-Clause, which doesn't mandate on-screen
   // attribution), removed per explicit request.
   attributionControl = L.control.attribution({ prefix: false }).addTo(map);
-  attributionControl.addAttribution('Mapa: <a href="https://mapa.michalgulczynski.pl">Michał Gulczyński</a>');
+  attributionControl.addAttribution('Interaktywna Mapa Nierówności Płci: <a href="https://mapa.michalgulczynski.pl">Michał Gulczyński</a>');
   updateMapAttribution();
 
   const ResetViewControl = L.Control.extend({
@@ -842,6 +842,208 @@ function updateMeta() {
     lines.push(`Miara: ${meta.measures.map((o) => o.label).join(", ")}`);
   }
   document.getElementById("variable-availability").textContent = lines.join(" · ");
+}
+
+// --- Map image export (PNG/SVG) ---
+// Re-projects each polygon's stored LatLngs to the CURRENT screen pixels via
+// Leaflet's own map.latLngToContainerPoint -- not a snapshot of the canvas
+// Leaflet actually paints with (preferCanvas above), which would need
+// reverse-engineering its devicePixelRatio scaling and pane transform to
+// crop correctly. Rebuilding the vector paths ourselves is what lets the
+// exact same markup serve as both the .svg download and, rasterized onto a
+// canvas, the .png one.
+function ringToPathPoints(ring) {
+  return ring.map((ll) => {
+    const p = map.latLngToContainerPoint(ll);
+    return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+  }).join(" L ");
+}
+
+// GeoJSON Polygon layers store latlngs 2 levels deep (array of rings);
+// MultiPolygon ones store them 3 levels deep (array of polygons of rings) --
+// recurse until we hit a ring (array of LatLng) rather than assuming either.
+function latlngsToPathData(latlngs) {
+  if (!Array.isArray(latlngs[0])) return `M ${ringToPathPoints(latlngs)} Z`;
+  if (!Array.isArray(latlngs[0][0])) return latlngs.map((ring) => `M ${ringToPathPoints(ring)} Z`).join(" ");
+  return latlngs.map(latlngsToPathData).join(" ");
+}
+
+function escapeXml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+// Mirrors the sidebar's "Opis zmiennej" info in one line, e.g. "Radni gminy
+// · 2018 · % kobiet · BDL GUS" -- so the image stays self-explanatory once
+// it's out of the app (shared, printed, etc). Age group / measure are only
+// included when the variable actually offers more than one option, same
+// condition updateMeta() above uses for its own "Miara" line.
+function exportDescriptionLine() {
+  const meta = VARIABLE_META[state.variable];
+  const view = VIEWS[state.view];
+  const parts = [meta.label, String(state.year)];
+  if (meta.ageGroups.length > 1) {
+    const ag = meta.ageGroups.find((o) => o.key === state.ageGroup);
+    if (ag) parts.push(ag.label);
+  }
+  if (meta.measures.length > 1) {
+    const ms = meta.measures.find((o) => o.key === state.measure);
+    if (ms) parts.push(ms.label);
+  }
+  parts.push(view.label, meta.source);
+  return parts.join(" · ");
+}
+
+function exportFileBaseName() {
+  const slug = `${VARIABLE_META[state.variable].label}_${state.view}_${state.year}`
+    .toLowerCase()
+    .replace(/[^a-z0-9ąćęłńóśźż]+/gi, "_")
+    .replace(/^_+|_+$/g, "");
+  return `mapa_${slug}`;
+}
+
+const EXPORT_PAD_X = 20;
+const EXPORT_FOOTER_H = 26; // credit bar, flush against the map's bottom edge
+const EXPORT_DESC_LINE_H = 20; // one line of the variable/year/view/source text
+const EXPORT_LEGEND_H = 60; // swatches + tick labels
+
+// Long sources (e.g. "Narodowy Spis Powszechny Ludności i Mieszkań 2021
+// (BDL GUS)") can push exportDescriptionLine() past the map's width -- an
+// SVG root clips to its viewBox by default, so an unfitted line would just
+// be silently cut off rather than visibly overflow. Shrinks first, then
+// wraps onto a second line at a " · " boundary if it still doesn't fit even
+// at the font-size floor.
+function measureTextWidth(text, fontSize, fontFamily = "system-ui, sans-serif") {
+  const ctx = measureTextWidth._ctx || (measureTextWidth._ctx = document.createElement("canvas").getContext("2d"));
+  ctx.font = `${fontSize}px ${fontFamily}`;
+  return ctx.measureText(text).width;
+}
+
+function fitFontSize(text, baseSize, minSize, maxWidth) {
+  const w = measureTextWidth(text, baseSize);
+  if (w <= maxWidth) return baseSize;
+  return Math.max(minSize, baseSize * (maxWidth / w));
+}
+
+function wrapAtMidpoint(text, fontSize, maxWidth) {
+  if (measureTextWidth(text, fontSize) <= maxWidth) return [text];
+  const seps = [];
+  for (let i = text.indexOf(" · "); i !== -1; i = text.indexOf(" · ", i + 3)) seps.push(i);
+  if (seps.length === 0) return [text];
+  const mid = text.length / 2;
+  const cut = seps.reduce((a, b) => (Math.abs(b - mid) < Math.abs(a - mid) ? b : a));
+  return [text.slice(0, cut), text.slice(cut + 3)];
+}
+
+// Full-width legend (unlike the cramped sidebar copy) so the tick labels --
+// up to 9 of them, for the 8-bucket sequential scale -- have room to breathe.
+function buildExportLegendSvg(x, y, width, textColor) {
+  const view = VIEWS[state.view];
+  const steps = stepsForView(view);
+  const boundaries = colorBoundaries(lastDomain, view, steps);
+  const n = steps.length;
+  const swatchH = 16;
+  const swatchW = width / n;
+  let out = steps
+    .map((c, i) => `<rect x="${(x + i * swatchW).toFixed(1)}" y="${y}" width="${swatchW.toFixed(1)}" height="${swatchH}" fill="${c}" />`)
+    .join("");
+  const tickY = y + swatchH + 16;
+  out += boundaries
+    .map((v, i) => {
+      const tx = x + (i / n) * width;
+      const anchor = i === 0 ? "start" : i === n ? "end" : "middle";
+      return `<text x="${tx.toFixed(1)}" y="${tickY}" font-size="12" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="${anchor}">${escapeXml(legendValueFormat(v))}</text>`;
+    })
+    .join("");
+  return out;
+}
+
+// pixelScale only widens the <svg> width/height attributes, not the
+// viewBox -- everything is authored in one consistent coordinate space, and
+// the higher-resolution PNG export just asks the browser to rasterize that
+// same markup at a larger physical size (crisp text/lines, no upscaling blur).
+function buildExportSvg({ pixelScale = 1 } = {}) {
+  const mapEl = document.getElementById("map");
+  const mapW = mapEl.clientWidth;
+  const mapH = mapEl.clientHeight;
+  const availW = mapW - EXPORT_PAD_X * 2;
+
+  const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
+  const creditFontSize = fitFontSize(creditText, 12, 9, availW);
+
+  const descFontSize = fitFontSize(exportDescriptionLine(), 13, 11, availW);
+  const descLines = wrapAtMidpoint(exportDescriptionLine(), descFontSize, availW);
+  const descH = descLines.length * EXPORT_DESC_LINE_H + 10;
+
+  const totalH = mapH + EXPORT_FOOTER_H + descH + EXPORT_LEGEND_H;
+
+  // Resolved to concrete hex/rgb here, not left as var(--x) -- the exported
+  // file has no stylesheet of its own to resolve custom properties against,
+  // so it has to bake in whichever theme (light/dark) is active right now.
+  const cs = getComputedStyle(document.documentElement);
+  const pageColor = cs.getPropertyValue("--page").trim();
+  const surfaceColor = cs.getPropertyValue("--surface-1").trim();
+  const textColor = cs.getPropertyValue("--text-primary").trim();
+
+  let polys = "";
+  geoLayer.eachLayer((layer) => {
+    const fill = layer.options.fillColor || MISSING_COLOR;
+    polys += `<path d="${latlngsToPathData(layer.getLatLngs())}" fill="${fill}" fill-rule="evenodd" stroke="#ffffff" stroke-width="0.3" />`;
+  });
+
+  const footerY = mapH;
+  const descY = footerY + EXPORT_FOOTER_H;
+  const descTextSvg = descLines
+    .map((line, i) => `<text x="${EXPORT_PAD_X}" y="${descY + 18 + i * EXPORT_DESC_LINE_H}" font-size="${descFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="start">${escapeXml(line)}</text>`)
+    .join("");
+  const legendY = descY + descH;
+  const legendSvg = buildExportLegendSvg(EXPORT_PAD_X, legendY + 6, availW, textColor);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(mapW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${mapW} ${totalH}">
+    <rect x="0" y="0" width="${mapW}" height="${totalH}" fill="${pageColor}" />
+    ${polys}
+    <rect x="0" y="${footerY}" width="${mapW}" height="${EXPORT_FOOTER_H}" fill="${surfaceColor}" />
+    <text x="${mapW - EXPORT_PAD_X}" y="${footerY + EXPORT_FOOTER_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="end">${escapeXml(creditText)}</text>
+    ${descTextSvg}
+    ${legendSvg}
+  </svg>`;
+}
+
+function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportMapSvg() {
+  const svg = buildExportSvg({ pixelScale: 1 });
+  downloadBlob(`${exportFileBaseName()}.svg`, new Blob([svg], { type: "image/svg+xml" }));
+}
+
+// Rasterizes the same SVG markup via an off-DOM <img> + <canvas> -- no extra
+// dependency, and since every resource inside the SVG is inline (no external
+// images/fonts), the canvas is never tainted and toBlob() works normally.
+function exportMapPng() {
+  const svg = buildExportSvg({ pixelScale: 2 });
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+    canvas.toBlob((blob) => downloadBlob(`${exportFileBaseName()}.png`, blob), "image/png");
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    showError("Nie udało się wygenerować obrazu PNG.");
+  };
+  img.src = url;
 }
 
 // Guards against overlapping selections: if the variable changes again (e.g.
@@ -1505,5 +1707,7 @@ function renderScatter(points, labelX, labelY, isLogX, isLogY) {
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("download-btn").addEventListener("click", downloadCsv);
   document.getElementById("corr-run").addEventListener("click", runCorrelation);
+  document.getElementById("export-png-btn").addEventListener("click", exportMapPng);
+  document.getElementById("export-svg-btn").addEventListener("click", exportMapSvg);
   init();
 });
