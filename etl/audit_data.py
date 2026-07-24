@@ -92,7 +92,15 @@ def audit_variable(vmeta, boundary_teryts):
                     for label, val in (("t", tt), ("m", mm), ("k", kk)):
                         if isinstance(val, (int, float)) and val > 100:
                             pct_over_100.append((t, y, slice_key, label, val))
-                if shares_meaningful and all(isinstance(v, (int, float)) for v in (tt, mm, kk)):
+                # k+m==t is only a valid identity for a raw count -- a rate
+                # derived by add_derived_measures.py (_per100k divides by a
+                # DIFFERENT population denominator per sex; _odsetek divides
+                # by a different section-total per sex) has no reason to sum
+                # across sexes the same way, so skip those measures here
+                # rather than flooding this check with expected mismatches.
+                measure_key = slice_key.split("__", 1)[1] if "__" in slice_key else slice_key
+                is_rate_measure = measure_key.endswith("_per100k") or measure_key.endswith("_odsetek") or measure_key == "odsetek"
+                if shares_meaningful and not is_rate_measure and all(isinstance(v, (int, float)) for v in (tt, mm, kk)):
                     diff = abs((mm + kk) - tt)
                     denom = max(abs(tt), 1)
                     if diff > max(1, 0.02 * denom):

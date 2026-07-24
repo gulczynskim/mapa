@@ -337,14 +337,17 @@ const VARIABLE_META = {
     file: "data/pkd_zatrudnienie.json",
     agegroupLabel: "Sekcja PKD",
     meaning:
-      "Liczba pracujących wg sekcji PKD (Polska Klasyfikacja Działalności) i płci, stan na " +
-      "styczeń. Surowe dane sekcja po sekcji -- bez wyliczonego wskaźnika segregacji zawodowej " +
-      "(np. indeksu Duncana), którego formuła nie jest jeszcze ustalona. Miara \"% pracujących\": " +
-      "liczba pracujących w danej sekcji podzielona przez \"Wszystkie sekcje\" (dla tej samej płci) " +
-      "i pomnożona przez 100.",
+      "Liczba pracujących wg sekcji PKD (Polska Klasyfikacja Działalności) i płci, stan na wybrany " +
+      "miesiąc (BDL publikuje ten temat jako 12 niezależnych migawek miesięcznych, nie jedną roczną -- " +
+      "wybór miesiąca jest częścią pola \"Miara\" poniżej). Surowe dane sekcja po sekcji -- bez " +
+      "wyliczonego wskaźnika segregacji zawodowej (np. indeksu Duncana), którego formuła nie jest " +
+      "jeszcze ustalona. Miara \"% pracujących\" (dla danego miesiąca): liczba pracujących w danej " +
+      "sekcji podzielona przez \"Wszystkie sekcje\" tego samego miesiąca (dla tej samej płci) i " +
+      "pomnożona przez 100.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
-      "Temat BDL P4283, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "Temat BDL P4283, poziom powiat -- 12 zestawów zmiennych (po jednym na miesiąc), kody odkrywane " +
+      "na żywo wg n1/n2/n3, zob. etl/fetch_pkd.py -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "ogolem", label: "Wszystkie sekcje" },
@@ -368,9 +371,35 @@ const VARIABLE_META = {
       { key: "R", label: "R - Kultura, rozrywka i rekreacja" },
       { key: "S", label: "S - Pozostała działalność usługowa" },
     ],
+    // Month folded into the measure key ("01".."12") instead of a whole new
+    // dimension alongside ageGroup/measure -- see fetch_pkd.py. Ordered
+    // chronologically so Styczeń (the site's original single-month
+    // default, before this went monthly) stays the default selection.
     measures: [
-      { key: "default", label: "Liczba" },
-      { key: "odsetek", label: "% pracujących", unit: "%" },
+      { key: "01_default", label: "Styczeń -- Liczba" },
+      { key: "01_odsetek", label: "Styczeń -- % pracujących", unit: "%" },
+      { key: "02_default", label: "Luty -- Liczba" },
+      { key: "02_odsetek", label: "Luty -- % pracujących", unit: "%" },
+      { key: "03_default", label: "Marzec -- Liczba" },
+      { key: "03_odsetek", label: "Marzec -- % pracujących", unit: "%" },
+      { key: "04_default", label: "Kwiecień -- Liczba" },
+      { key: "04_odsetek", label: "Kwiecień -- % pracujących", unit: "%" },
+      { key: "05_default", label: "Maj -- Liczba" },
+      { key: "05_odsetek", label: "Maj -- % pracujących", unit: "%" },
+      { key: "06_default", label: "Czerwiec -- Liczba" },
+      { key: "06_odsetek", label: "Czerwiec -- % pracujących", unit: "%" },
+      { key: "07_default", label: "Lipiec -- Liczba" },
+      { key: "07_odsetek", label: "Lipiec -- % pracujących", unit: "%" },
+      { key: "08_default", label: "Sierpień -- Liczba" },
+      { key: "08_odsetek", label: "Sierpień -- % pracujących", unit: "%" },
+      { key: "09_default", label: "Wrzesień -- Liczba" },
+      { key: "09_odsetek", label: "Wrzesień -- % pracujących", unit: "%" },
+      { key: "10_default", label: "Październik -- Liczba" },
+      { key: "10_odsetek", label: "Październik -- % pracujących", unit: "%" },
+      { key: "11_default", label: "Listopad -- Liczba" },
+      { key: "11_odsetek", label: "Listopad -- % pracujących", unit: "%" },
+      { key: "12_default", label: "Grudzień -- Liczba" },
+      { key: "12_odsetek", label: "Grudzień -- % pracujących", unit: "%" },
     ],
     sharesMeaningful: true,
   },
@@ -584,11 +613,12 @@ const VARIABLE_META = {
     file: "data/wypadki_przy_pracy.json",
     meaning:
       "Liczba osób poszkodowanych w wypadkach przy pracy (ogółem), wg płci. Miara \"Na 100 000 " +
-      "pracujących\": liczba poszkodowanych podzielona przez liczbę pracujących ogółem (zmienna " +
-      "\"Pracujący wg sekcji PKD\", \"Wszystkie sekcje\") i pomnożona przez 100 000 -- dzielnik jest " +
-      "liczbą pracujących, nie ludności ogółem, bo to trafniejszy mianownik dla wypadków przy pracy. " +
-      "\"Pracujący wg sekcji PKD\" ma dane dopiero od 2024 r., więc ta miara pokaże brak danych dla " +
-      "wcześniejszych lat.",
+      "pracujących\": liczba poszkodowanych podzielona przez liczbę pracujących ogółem w CZERWCU " +
+      "danego roku (zmienna \"Pracujący wg sekcji PKD\", \"Wszystkie sekcje\", miesiąc czerwiec -- " +
+      "wybrany jako reprezentatywna migawka w połowie roku, skoro \"Pracujący wg sekcji PKD\" jest " +
+      "publikowane co miesiąc) i pomnożona przez 100 000 -- dzielnik jest liczbą pracujących, nie " +
+      "ludności ogółem, bo to trafniejszy mianownik dla wypadków przy pracy. \"Pracujący wg sekcji " +
+      "PKD\" ma dane dopiero od 2024 r., więc ta miara pokaże brak danych dla wcześniejszych lat.",
     source: "Bank Danych Lokalnych GUS",
     accessNote: "Temat BDL P2276, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],

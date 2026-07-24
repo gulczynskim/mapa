@@ -1408,10 +1408,16 @@ async function selectVariable(requested) {
   state.variable = requested;
   hideLoading();
   // Reset to the new variable's default dimensions rather than keeping
-  // stale keys from the previous variable that might not exist here.
+  // stale keys from the previous variable that might not exist here --
+  // year included: syncYearSlider() below only resets state.year when it's
+  // null or invalid for the new variable, so without this a year that
+  // happens to ALSO exist for the new variable would carry over instead of
+  // landing on ITS most recent year (the actual desired default whenever a
+  // variable is freshly selected).
   state.level = meta.levels[0].key;
   state.ageGroup = meta.ageGroups[0].key;
   state.measure = meta.measures[0].key;
+  state.year = null;
   state.colorScaleScope = defaultColorScaleScope(requested);
   state.view = defaultView(requested);
   document.getElementById("topic-select").value = meta.topic;
