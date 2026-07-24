@@ -867,12 +867,63 @@ function spacedDivergingBoundaries(belowDists, aboveDists, n, combine) {
   return [...belowB, ...aboveB];
 }
 
+// Shared by linear and log/symlog diverging modes (NOT quantile below,
+// which has a real, stated reason to scale each arm independently -- an
+// outlier on one side shouldn't wash out the other side's spread). Linear
+// and log both inherited that same per-arm-only scaling from an earlier
+// shared helper with no equivalent justification of their own -- confirmed
+// live this was actually wrong: Wynagrodzenia's K-M gap reaches -7056 zł
+// on the "men ahead" side but only +1050 zł on "women ahead" (linear), and
+// its K/M ratio's innermost boundaries sat at 0.9993/1.0007 -- the closest-
+// to-1 real data points on each side -- instead of true equality at 1.0
+// (log). Scaling each arm to its own extreme/closest-point gave wildly
+// different bucket widths and an off-center "equality" boundary, which
+// reads as a construction bug rather than real skew once checked against
+// the actual numbers.
+//
+// `belowDists`/`aboveDists` are already-transformed distances from center
+// (raw for linear, log-magnitude for ratio-style log, symlog-magnitude for
+// difference-style log -- see the two callers), always >= 0.
+// `combine(distance, sign)` turns a spaced distance back into an actual
+// boundary value (sign is -1 for the below-center arm, +1 for above).
+//
+// Both arms share ONE radius -- the larger side's real extreme -- so the
+// scale is symmetric around center, with n buckets evenly spaced across
+// the full 2*radius span. This also gives the true center bucket a real,
+// non-zero width instead of collapsing to whatever the single closest-to-
+// center data point happened to be (which is what produced the "0 to 0"
+// middle bin E8 matematyka's linear legend showed, and the 0.9993/1.0007
+// near-miss on the log ratio scale).
+function symmetricDivergingBoundaries(belowDists, aboveDists, n, combine) {
+  const belowEmpty = belowDists.length === 0;
+  const aboveEmpty = aboveDists.length === 0;
+  if (belowEmpty && aboveEmpty) {
+    const c = combine(0, 1);
+    return Array.from({ length: n + 1 }, () => c);
+  }
+  // One-sided data (e.g. life expectancy's K-M, never negative): nothing
+  // real to mirror on the empty side, so spend the FULL step count
+  // sweeping center..max on the side that actually has data instead of
+  // reserving half of it for a symmetric-but-empty mirror image.
+  if (belowEmpty || aboveEmpty) {
+    const maxDist = Math.max(...(belowEmpty ? aboveDists : belowDists));
+    return belowEmpty
+      ? Array.from({ length: n + 1 }, (_, i) => combine((i / n) * maxDist, 1))
+      : Array.from({ length: n + 1 }, (_, i) => combine(((n - i) / n) * maxDist, -1));
+  }
+  const radius = Math.max(...belowDists, ...aboveDists);
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const signedDist = (i - n / 2) * ((2 * radius) / n);
+    return signedDist < 0 ? combine(-signedDist, -1) : combine(signedDist, 1);
+  });
+}
+
 // Diverging, "linear" mode (default).
 function linearBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
   const below = domain.filter((v) => v < center).map((v) => center - v);
   const above = domain.filter((v) => v >= center).map((v) => v - center);
-  return spacedDivergingBoundaries(below, above, n, (d, sign) => center + sign * d);
+  return symmetricDivergingBoundaries(below, above, n, (d, sign) => center + sign * d);
 }
 
 // Diverging, "quantile" mode: each arm's boundaries sit at real quantiles
@@ -917,13 +968,13 @@ function logBoundariesDiverging(domain, view, n) {
     const logCenter = Math.log(center);
     const below = domain.filter((v) => v < center).map((v) => logCenter - Math.log(v));
     const above = domain.filter((v) => v >= center).map((v) => Math.log(v) - logCenter);
-    return spacedDivergingBoundaries(below, above, n, (d, sign) => Math.exp(logCenter + sign * d));
+    return symmetricDivergingBoundaries(below, above, n, (d, sign) => Math.exp(logCenter + sign * d));
   }
   const symlog = (v) => Math.sign(v - center) * Math.log1p(Math.abs(v - center));
   const invSymlog = (t) => center + Math.sign(t) * Math.expm1(Math.abs(t));
   const below = domain.filter((v) => v < center).map((v) => Math.abs(symlog(v)));
   const above = domain.filter((v) => v >= center).map((v) => Math.abs(symlog(v)));
-  return spacedDivergingBoundaries(below, above, n, (d, sign) => invSymlog(sign * d));
+  return symmetricDivergingBoundaries(below, above, n, (d, sign) => invSymlog(sign * d));
 }
 
 // The N+1 boundary values (original data units) between the N color
