@@ -1211,15 +1211,29 @@ function escapeXml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
-// Mirrors the sidebar's "Opis zmiennej" info in one line, e.g. "Radni gminy
-// · 2018 · % kobiet · BDL GUS" -- so the image stays self-explanatory once
-// it's out of the app (shared, printed, etc). Age group / measure are only
-// included when the variable actually offers more than one option, same
-// condition updateMeta() above uses for its own "Miara" line.
-function exportDescriptionLine() {
+// Variable name alone -- the large title over the exported map. Kept
+// separate from exportFeatureParts() below so the two can use different
+// font sizes/weights (title much larger) rather than living in one string.
+function exportTitle() {
+  return VARIABLE_META[state.variable].label;
+}
+
+// Every dimension that affects what's actually drawn, as a LIST (not a
+// pre-joined string) so the caller can wrap it across as many lines as it
+// needs rather than a fixed one-or-two -- this project now has variables
+// with a real choice on every one of these axes (e.g. pkd_zatrudnienie's
+// 24 miesiąc+miara combinations, fundusz_alimentacyjny's 6 measures), so
+// the exported image needs to spell out exactly which combination is
+// shown, not just the variable name. Level and color scale are ALWAYS
+// included (even a single fixed level, or the default linear scale, isn't
+// obvious from the image alone once it's out of the app) -- age group and
+// measure stay conditional on the variable actually offering a choice,
+// same condition updateMeta() uses for its own sidebar line.
+function exportFeatureParts() {
   const meta = VARIABLE_META[state.variable];
   const view = VIEWS[state.view];
-  const parts = [meta.label, String(state.year)];
+  const level = meta.levels.find((o) => o.key === state.level) || meta.levels[0];
+  const parts = [String(state.year), level.label];
   if (meta.ageGroups.length > 1) {
     const ag = meta.ageGroups.find((o) => o.key === state.ageGroup);
     if (ag) parts.push(ag.label);
@@ -1228,8 +1242,8 @@ function exportDescriptionLine() {
     const ms = meta.measures.find((o) => o.key === state.measure);
     if (ms) parts.push(ms.label);
   }
-  parts.push(view.label, meta.source);
-  return parts.join(" · ");
+  parts.push(view.label, COLOR_SCALES[state.colorScale], SCALE_SCOPES[state.colorScaleScope], meta.source);
+  return parts;
 }
 
 function exportFileBaseName() {
@@ -1242,15 +1256,18 @@ function exportFileBaseName() {
 
 const EXPORT_PAD_X = 20;
 const EXPORT_FOOTER_H = 26; // credit bar, flush against the map's bottom edge
-const EXPORT_DESC_LINE_H = 20; // one line of the variable/year/view/source text
 const EXPORT_LEGEND_H = 60; // swatches + tick labels
+const EXPORT_TITLE_PAD_TOP = 22;
+const EXPORT_TITLE_PAD_BOTTOM = 10;
+const EXPORT_FEATURES_LINE_H = 24; // one line of the year/level/measure/.../source text
+const EXPORT_FEATURES_PAD_BOTTOM = 16;
 
-// Long sources (e.g. "Narodowy Spis Powszechny Ludności i Mieszkań 2021
-// (BDL GUS)") can push exportDescriptionLine() past the map's width -- an
-// SVG root clips to its viewBox by default, so an unfitted line would just
-// be silently cut off rather than visibly overflow. Shrinks first, then
-// wraps onto a second line at a " · " boundary if it still doesn't fit even
-// at the font-size floor.
+// A long title, or a long source citation among exportFeatureParts() (e.g.
+// "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)"), can push
+// past the map's width -- an SVG root clips to its viewBox by default, so
+// an unfitted line would just be silently cut off rather than visibly
+// overflow. Shrinks first, then wrapParts() above spreads the features
+// list across as many lines as it needs at that size.
 function measureTextWidth(text, fontSize, fontFamily = "system-ui, sans-serif") {
   const ctx = measureTextWidth._ctx || (measureTextWidth._ctx = document.createElement("canvas").getContext("2d"));
   ctx.font = `${fontSize}px ${fontFamily}`;
@@ -1263,14 +1280,27 @@ function fitFontSize(text, baseSize, minSize, maxWidth) {
   return Math.max(minSize, baseSize * (maxWidth / w));
 }
 
-function wrapAtMidpoint(text, fontSize, maxWidth) {
-  if (measureTextWidth(text, fontSize) <= maxWidth) return [text];
-  const seps = [];
-  for (let i = text.indexOf(" · "); i !== -1; i = text.indexOf(" · ", i + 3)) seps.push(i);
-  if (seps.length === 0) return [text];
-  const mid = text.length / 2;
-  const cut = seps.reduce((a, b) => (Math.abs(b - mid) < Math.abs(a - mid) ? b : a));
-  return [text.slice(0, cut), text.slice(cut + 3)];
+// Greedily packs `parts` (joined with " · ") onto as many lines as needed
+// to fit maxWidth, instead of a fixed one-or-two -- exportFeatureParts() can
+// now return up to 7 parts (year/level/ageGroup/measure/view/scale/scope/
+// source), more than a single midpoint-split could ever fit even at the
+// font-size floor. A single part wider than maxWidth on its own (e.g. a
+// long source citation) still just overflows its own line -- fitFontSize
+// already shrunk the font as far as it reasonably can before this runs.
+function wrapParts(parts, fontSize, maxWidth) {
+  const lines = [];
+  let current = [];
+  for (const part of parts) {
+    const candidate = [...current, part].join(" · ");
+    if (current.length > 0 && measureTextWidth(candidate, fontSize) > maxWidth) {
+      lines.push(current.join(" · "));
+      current = [part];
+    } else {
+      current.push(part);
+    }
+  }
+  if (current.length > 0) lines.push(current.join(" · "));
+  return lines;
 }
 
 // Full-width legend (unlike the cramped sidebar copy) so the tick labels --
@@ -1346,11 +1376,24 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
   const creditFontSize = fitFontSize(creditText, 12, 9, availW);
 
-  const descFontSize = fitFontSize(exportDescriptionLine(), 13, 11, availW);
-  const descLines = wrapAtMidpoint(exportDescriptionLine(), descFontSize, availW);
-  const descH = descLines.length * EXPORT_DESC_LINE_H + 10;
+  // Title: the variable name alone, large, centered above the map.
+  const titleText = exportTitle();
+  const titleFontSize = fitFontSize(titleText, 26, 18, availW);
+  const titleH = EXPORT_TITLE_PAD_TOP + titleFontSize + EXPORT_TITLE_PAD_BOTTOM;
 
-  const totalH = mapH + EXPORT_FOOTER_H + descH + EXPORT_LEGEND_H;
+  // Features: every dimension that affects what's actually drawn (year,
+  // level, age group/measure if the variable offers a choice, view, color
+  // scale + scope, source) -- wrapped across as many lines as it needs.
+  // Shrunk only as far as the single LONGEST part requires, not the whole
+  // joined list, since wrapping (not shrinking) is what absorbs the rest.
+  const featureParts = exportFeatureParts();
+  const longestPart = featureParts.reduce((a, b) => (measureTextWidth(b, 16) > measureTextWidth(a, 16) ? b : a));
+  const featuresFontSize = fitFontSize(longestPart, 16, 12, availW);
+  const featureLines = wrapParts(featureParts, featuresFontSize, availW);
+  const featuresH = featureLines.length * EXPORT_FEATURES_LINE_H + EXPORT_FEATURES_PAD_BOTTOM;
+
+  const headerH = titleH + featuresH;
+  const totalH = headerH + mapH + EXPORT_FOOTER_H + EXPORT_LEGEND_H;
 
   // Resolved to concrete hex/rgb here, not left as var(--x) -- the exported
   // file has no stylesheet of its own to resolve custom properties against,
@@ -1366,22 +1409,24 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
     polys += `<path d="${latlngsToPathData(layer.getLatLngs())}" fill="${fill}" fill-rule="evenodd" stroke="#ffffff" stroke-width="0.3" />`;
   });
 
-  const footerY = mapH;
-  const descY = footerY + EXPORT_FOOTER_H;
-  const descTextSvg = descLines
-    .map((line, i) => `<text x="${EXPORT_PAD_X}" y="${descY + 18 + i * EXPORT_DESC_LINE_H}" font-size="${descFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="start">${escapeXml(line)}</text>`)
+  const titleSvg = `<text x="${mapW / 2}" y="${EXPORT_TITLE_PAD_TOP + titleFontSize}" font-size="${titleFontSize.toFixed(1)}" font-weight="600" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(titleText)}</text>`;
+  const featuresSvg = featureLines
+    .map((line, i) => `<text x="${mapW / 2}" y="${titleH + EXPORT_FEATURES_LINE_H * 0.75 + i * EXPORT_FEATURES_LINE_H}" font-size="${featuresFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(line)}</text>`)
     .join("");
-  const legendY = descY + descH;
+
+  const footerY = headerH + mapH;
+  const legendY = footerY + EXPORT_FOOTER_H;
   const legendW = Math.min(availW, EXPORT_LEGEND_MAX_W);
   const legendX = EXPORT_PAD_X + (availW - legendW) / 2;
   const legendSvg = buildExportLegendSvg(legendX, legendY + 6, legendW, textColor);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(mapW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${mapW} ${totalH}">
     <rect x="0" y="0" width="${mapW}" height="${totalH}" fill="${pageColor}" />
-    <g transform="translate(${(-cropLeft).toFixed(1)}, ${(-cropTop).toFixed(1)})">${polys}</g>
+    ${titleSvg}
+    ${featuresSvg}
+    <g transform="translate(${(-cropLeft).toFixed(1)}, ${(headerH - cropTop).toFixed(1)})">${polys}</g>
     <rect x="0" y="${footerY}" width="${mapW}" height="${EXPORT_FOOTER_H}" fill="${surfaceColor}" />
     <text x="${mapW / 2}" y="${footerY + EXPORT_FOOTER_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>
-    ${descTextSvg}
     ${legendSvg}
   </svg>`;
 }
