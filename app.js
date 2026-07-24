@@ -152,6 +152,17 @@ let terytToName = {};
 let nameCounts = {}; // name -> how many teryts share it, precomputed per level (see renderBoundaries)
 let lastDomain = [];
 
+// Gmina-only (see applyGminaHistoricalOverrides): the only two gmina splits
+// in the site's data range (both 2025-01-01) need their pre-split shape
+// restored for earlier years, or the newer piece renders as a "no data"
+// hole even though its area's value is already correctly included in the
+// parent's historical figure. gminyOverrides is fetched lazily (tiny file,
+// only ever needed at gmina level) and cached; appliedGminaOverrides tracks
+// which ones are CURRENTLY swapped in, so repeated updateAll() calls (e.g.
+// every year-slider tick) only touch layers when the state actually flips.
+let gminyOverrides = null;
+let appliedGminaOverrides = {}; // parentTeryt -> {originalParentLayer, hiddenChildLayers: {teryt: layer}}
+
 // The map's own attribution control shows the source for whichever variable
 // is currently selected (CKE for E8, PKW for election data once added, BDL
 // GUS for the rest) -- not a fixed list of every source the site ever uses.
@@ -193,15 +204,24 @@ async function loadVariable(name) {
   return data;
 }
 
-// Plain fitBounds leaves a lot of empty margin on this layout: the sidebar
-// makes the map viewport much wider than Poland's Mercator-projected shape
-// (nearly square, since latitude is stretched relative to longitude at this
-// latitude), so height is always the binding constraint and there's a lot of
-// unused width. There's no way to fill that width without zooming in past
-// the tight vertical fit -- any further zoom necessarily crops a bit of the
-// north/south extremes. One zoomSnap step in is a deliberately mild version
-// of that trade-off (a few percent off the Baltic coast/Tatra tips, verified
-// visually), not the aggressive crop a bigger bump would cause.
+// This used to call map.setView(POLAND_BOUNDS.getCenter(), tightZoom) by
+// hand instead of plain fitBounds, to trim the empty side margin fitBounds
+// leaves (the sidebar makes the map viewport wider than Poland's Mercator-
+// projected shape, so height is normally the binding constraint and width
+// has a lot of unused space; an extra zoomSnap step of zoom used to trade
+// away a few percent of the Baltic coast/Tatra tips to fill more of that
+// width). Both of those hand-rolled pieces were removed 2026-07-24 because
+// together they cropped the very top of Poland off-screen in some browsers:
+// (a) the extra zoom step alone already ate into the margin fitBounds relies
+// on, and (b) LatLngBounds.getCenter() averages raw lat/lng, which is NOT
+// the vertical center of the bounds' actual Mercator-PROJECTED shape (a
+// degree of latitude covers more projected pixels the further north it is,
+// so the naive lat/lng average sits measurably south of the true center --
+// confirmed live: ~19km/0.06 deg south for POLAND_BOUNDS). Centering the
+// view there meant the window showed extra empty margin below the south
+// coast while running short of the north edge, even at an otherwise-correct
+// zoom. Plain fitBounds computes the center from the projection, not raw
+// lat/lng, so it doesn't have this problem.
 //
 // {animate: false} is required, not a style choice: Leaflet's CSS-transition
 // zoom animation doesn't reliably finish in some automated/headless browser
@@ -224,13 +244,41 @@ function setDefaultView() {
   // from the actual tight fit keeps a similar "don't zoom out too far" floor
   // on any screen shape without ever fighting the fit itself.
   map.setMinZoom(Math.min(6, tightZoom - 0.5));
-  map.setView(POLAND_BOUNDS.getCenter(), tightZoom + map.options.zoomSnap, { animate: false });
+  map.fitBounds(POLAND_BOUNDS, { animate: false });
 }
 
 // Builds the Leaflet layer for one level's boundary GeoJSON and swaps it
 // onto the map, replacing whatever was there before. Pulled out of init()
 // so switching variables across levels (e.g. powiat unemployment -> gmina
 // radni) can rebuild the same layer instead of only ever creating it once.
+// Shared by renderBoundaries' onEachFeature below and by
+// applyGminaHistoricalOverrides, which swaps individual layers in/out of an
+// already-rendered level rather than rebuilding it -- both need the exact
+// same registration/hover/tooltip wiring so a swapped-in override layer
+// behaves identically to a normal one.
+function bindFeatureLayer(teryt, name, layer) {
+  terytToLayer[teryt] = layer;
+  terytToName[teryt] = name;
+  layer.on({
+    // Tooltip content is built lazily here, on actual hover, not for
+    // every layer on every updateAll() -- at gmina scale (2479 layers)
+    // eagerly rebuilding every tooltip's HTML on every year-slider tick
+    // was a real, measured cost for something almost never shown.
+    mouseover: (e) => {
+      highlight(e.target);
+      setTooltipContent(e.target, teryt, name);
+    },
+    // Explicit closeTooltip: with sticky tooltips some browsers/embedded
+    // views don't reliably deliver the internal event Leaflet uses to
+    // hide them, leaving the box stuck on screen after the cursor leaves.
+    mouseout: (e) => {
+      e.target.setStyle(baseStyleFor(mapValueFor(teryt), lastDomain));
+      e.target.closeTooltip();
+    },
+  });
+  layer.bindTooltip("", { className: "region-tooltip", sticky: true });
+}
+
 function renderBoundaries(data) {
   if (geoLayer) map.removeLayer(geoLayer);
   // Fresh per level: a stale teryt from the previous level would either not
@@ -238,38 +286,73 @@ function renderBoundaries(data) {
   // collide with an unrelated region that happens to share the same code.
   terytToLayer = {};
   terytToName = {};
+  appliedGminaOverrides = {};
   geoLayer = L.geoJSON(data, {
     style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.3 }),
-    onEachFeature: (feature, layer) => {
-      const teryt = feature.properties.JPT_KOD_JE;
-      const name = feature.properties.JPT_NAZWA_;
-      terytToLayer[teryt] = layer;
-      terytToName[teryt] = name;
-      layer.on({
-        // Tooltip content is built lazily here, on actual hover, not for
-        // every layer on every updateAll() -- at gmina scale (2479 layers)
-        // eagerly rebuilding every tooltip's HTML on every year-slider tick
-        // was a real, measured cost for something almost never shown.
-        mouseover: (e) => {
-          highlight(e.target);
-          setTooltipContent(e.target, teryt, name);
-        },
-        // Explicit closeTooltip: with sticky tooltips some browsers/embedded
-        // views don't reliably deliver the internal event Leaflet uses to
-        // hide them, leaving the box stuck on screen after the cursor leaves.
-        mouseout: (e) => {
-          e.target.setStyle(baseStyleFor(mapValueFor(teryt), lastDomain));
-          e.target.closeTooltip();
-        },
-      });
-      layer.bindTooltip("", { className: "region-tooltip", sticky: true });
-    },
+    onEachFeature: (feature, layer) =>
+      bindFeatureLayer(feature.properties.JPT_KOD_JE, feature.properties.JPT_NAZWA_, layer),
   }).addTo(map);
 
   // Precomputed once per level instead of inside displayName() -- that used
   // to re-scan every single name for every single layer it was asked about,
   // an O(n^2) cost (~6 million comparisons at gmina scale) that was the
   // dominant cost of every updateAll() call.
+  nameCounts = {};
+  for (const n of Object.values(terytToName)) nameCounts[n] = (nameCounts[n] || 0) + 1;
+}
+
+// See gminyOverrides above. Only meaningful at gmina level -- swaps each
+// affected parent teryt's polygon for its pre-split (merged) shape and hides
+// the split-off child('s) polygon(s) when the selected year predates the
+// split, and reverses that the moment the year is back at/after it. Cheap
+// either way (at most a couple of layers touched, out of 2479 at gmina
+// scale), so it's safe to call unconditionally from updateAll() on every
+// year-slider tick rather than needing its own separate call sites.
+async function applyGminaHistoricalOverrides(year) {
+  if (currentLevel !== "gmina") return;
+  if (gminyOverrides === null) {
+    gminyOverrides = await fetch("data/gminy_historical_overrides.json").then((r) => (r.ok ? r.json() : {}));
+  }
+  for (const parentTeryt in gminyOverrides) {
+    const { validUntil, hides, geometry } = gminyOverrides[parentTeryt];
+    const shouldApply = year <= validUntil;
+    const isApplied = !!appliedGminaOverrides[parentTeryt];
+    if (shouldApply === isApplied) continue;
+
+    if (shouldApply) {
+      const originalParentLayer = terytToLayer[parentTeryt];
+      const mergedLayer = L.geoJSON(
+        { type: "Feature", properties: { JPT_KOD_JE: parentTeryt, JPT_NAZWA_: terytToName[parentTeryt] }, geometry },
+        { style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.3 }) }
+      ).getLayers()[0];
+      geoLayer.removeLayer(originalParentLayer);
+      bindFeatureLayer(parentTeryt, terytToName[parentTeryt], mergedLayer);
+      geoLayer.addLayer(mergedLayer);
+
+      const hiddenChildLayers = {};
+      for (const childTeryt of hides) {
+        hiddenChildLayers[childTeryt] = terytToLayer[childTeryt];
+        geoLayer.removeLayer(terytToLayer[childTeryt]);
+        delete terytToLayer[childTeryt];
+        delete terytToName[childTeryt];
+      }
+      appliedGminaOverrides[parentTeryt] = { originalParentLayer, hiddenChildLayers };
+    } else {
+      const { originalParentLayer, hiddenChildLayers } = appliedGminaOverrides[parentTeryt];
+      geoLayer.removeLayer(terytToLayer[parentTeryt]);
+      geoLayer.addLayer(originalParentLayer);
+      terytToLayer[parentTeryt] = originalParentLayer;
+      terytToName[parentTeryt] = originalParentLayer.feature.properties.JPT_NAZWA_;
+      for (const childTeryt in hiddenChildLayers) {
+        geoLayer.addLayer(hiddenChildLayers[childTeryt]);
+        terytToLayer[childTeryt] = hiddenChildLayers[childTeryt];
+        terytToName[childTeryt] = hiddenChildLayers[childTeryt].feature.properties.JPT_NAZWA_;
+      }
+      delete appliedGminaOverrides[parentTeryt];
+    }
+  }
+  // Recomputed since the swap can change which names collide (see
+  // renderBoundaries) -- cheap at the 2-entry scale this ever runs at.
   nameCounts = {};
   for (const n of Object.values(terytToName)) nameCounts[n] = (nameCounts[n] || 0) + 1;
 }
@@ -876,8 +959,9 @@ function formatValue(v) {
   return unit ? formatted + " " + unit : formatted;
 }
 
-function updateAll() {
+async function updateAll() {
   if (!geoLayer) return;
+  await applyGminaHistoricalOverrides(state.year);
   const domain = currentDomain();
   lastDomain = domain;
   // Tooltip content is NOT rebuilt here -- see setTooltipContent, built
@@ -899,18 +983,22 @@ function legendValueFormat(v) {
   return formatPl(v, VIEWS[state.view].decimals);
 }
 
-// Sequential views' boundaries are always real (derived straight from the
-// domain's own min/max), so every bucket gets equal on-screen width and a
-// tick at every boundary. Diverging views are different: a per-arm spread
-// (see linear/logBoundariesDiverging) can leave one whole arm collapsed to
-// zero-width buckets sitting exactly at `center`, when all the real data is
-// on the other side (life expectancy's K-M is never negative -- women never
-// live shorter than men). Rendering those anyway would show several
-// identical duplicate tick labels for a range that never occurs. This
-// drops the zero-width buckets and returns each survivor's position as a
-// 0..1 FRACTION of the real (non-empty) range, so both the sidebar legend
-// and the exported map's legend can scale to their own units (% or px)
-// without duplicating this logic between them.
+// Every bucket gets EQUAL on-screen width regardless of scale mode -- the
+// quantile/log/diverging boundary values are real and unevenly spaced by
+// design (that's the whole point of a quantile scale), but rendering swatch
+// widths proportional to that real spacing squeezed some buckets down to a
+// sliver and left their tick labels overlapping their neighbors. Uniform
+// widths (standard practice for quantile-scale choropleth legends) fix the
+// overlap; the tick VALUES are still the real boundary values, only their
+// on-screen position is now index-based, not value-proportional.
+//
+// Diverging views are different from sequential ones in one respect: a
+// per-arm spread (see linear/logBoundariesDiverging) can leave one whole arm
+// collapsed to zero-width buckets sitting exactly at `center`, when all the
+// real data is on the other side (life expectancy's K-M is never negative --
+// women never live shorter than men). Rendering those anyway would show
+// several identical duplicate tick labels for a range that never occurs, so
+// those are dropped before assigning the (still uniform) positions below.
 function legendBuckets(view, boundaries, steps) {
   if (view.kind !== "diverging") {
     const n = steps.length;
@@ -923,12 +1011,11 @@ function legendBuckets(view, boundaries, steps) {
   for (let i = 0; i < steps.length; i++) {
     if (boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1] });
   }
-  const min = real.length ? real[0].lo : 0;
-  const total = real.length ? real[real.length - 1].hi - min : 0;
-  const frac = (v) => (total ? (v - min) / total : 0);
+  const n = real.length;
+  if (n === 0) return { buckets: [], ticks: [] };
   return {
-    buckets: real.map((b) => ({ color: b.color, lo: frac(b.lo), hi: frac(b.hi) })),
-    ticks: (real.length ? [real[0].lo, ...real.map((b) => b.hi)] : []).map((v) => ({ value: v, pos: frac(v) })),
+    buckets: real.map((b, i) => ({ color: b.color, lo: i / n, hi: (i + 1) / n })),
+    ticks: [real[0].lo, ...real.map((b) => b.hi)].map((v, i) => ({ value: v, pos: i / n })),
   };
 }
 

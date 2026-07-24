@@ -14,6 +14,20 @@ from shapely.validation import make_valid
 
 OUT_DIR = "../data"
 
+# The source powiat polygons (third-party GeoJSON) don't share exact vertex
+# coordinates along every internal border -- individually invisible (each
+# powiat is drawn as its own opaque layer), but dissolving several of them
+# together at the coast turns those mismatches into extra disjoint
+# MultiPolygon parts. Confirmed live (2026-07-24): every voivodeship's
+# dissolve has a clean order-of-magnitude gap between real islands/spits
+# (>=0.0026 sq deg -- e.g. the Wolin/Uznam pieces around Świnoujście, the
+# Vistula Spit piece east of the Elbląg Canal cut) and this seam noise
+# (<=0.00053 sq deg everywhere checked). This threshold sits in that gap.
+# Hel is NOT at risk from this filter either way: it's a peninsula attached
+# to the mainland by a land bridge, i.e. part of the main polygon, never a
+# separate MultiPolygon part to begin with.
+MIN_FRAGMENT_AREA = 0.001
+
 # Standard TERYT voivodeship codes -- stable, no API lookup needed.
 VOIVODESHIP_NAMES = {
     "02": "Dolnośląskie",
@@ -69,6 +83,12 @@ if __name__ == "__main__":
             dissolved = polys[0] if len(polys) == 1 else MultiPolygon(
                 [p for g in polys for p in (g.geoms if g.geom_type == "MultiPolygon" else [g])]
             )
+        # Seam-mismatch slivers (see MIN_FRAGMENT_AREA above) survive the
+        # GeometryCollection cleanup above since they're non-degenerate
+        # (positive-area) Polygon parts -- drop them here by size instead.
+        if dissolved.geom_type == "MultiPolygon":
+            kept = [p for p in dissolved.geoms if p.area > MIN_FRAGMENT_AREA]
+            dissolved = kept[0] if len(kept) == 1 else MultiPolygon(kept)
         features.append(
             {
                 "type": "Feature",
