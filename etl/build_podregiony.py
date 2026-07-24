@@ -24,6 +24,16 @@ from bdl_client import unit_id_to_teryt
 
 OUT_DIR = "../data"
 
+# Same seam-mismatch sliver issue as build_wojewodztwa.py's dissolve (the
+# source powiat polygons don't share exact vertices along every internal
+# border) -- confirmed live (2026-07-25): 6 of 73 podregiony came out as
+# MultiPolygon with extra disjoint parts (up to 21 for Podregion Szczeciński),
+# rendering as stray "powiat border" lines/shapes on the map since each part
+# gets its own outline. Same clean order-of-magnitude gap as wojewodztwa
+# between real islands/spits (>=0.0026 sq deg) and seam artifacts
+# (<=0.00053 sq deg) confirmed here too, so the same threshold applies.
+MIN_FRAGMENT_AREA = 0.001
+
 
 def fetch_all_units(level):
     units = []
@@ -92,6 +102,12 @@ if __name__ == "__main__":
             dissolved = polys[0] if len(polys) == 1 else MultiPolygon(
                 [p for poly in polys for p in (poly.geoms if poly.geom_type == "MultiPolygon" else [poly])]
             )
+        # Seam-mismatch slivers survive the GeometryCollection cleanup above
+        # since they're non-degenerate (positive-area) Polygon parts -- drop
+        # them here by size instead (see MIN_FRAGMENT_AREA above).
+        if dissolved.geom_type == "MultiPolygon":
+            kept = [p for p in dissolved.geoms if p.area > MIN_FRAGMENT_AREA]
+            dissolved = kept[0] if len(kept) == 1 else MultiPolygon(kept)
         features.append(
             {
                 "type": "Feature",

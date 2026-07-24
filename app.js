@@ -50,6 +50,12 @@ const DIVERGING_STEPS = [
   "#e34948",
 ];
 const MISSING_COLOR = "#d9d8d2";
+// Region borders -- grey rather than white so they stay visible even where
+// the fill itself is white (the diverging palette's own center color, see
+// DIVERGING_STEPS above) or MISSING_COLOR's own pale grey-beige. Used for
+// every rendered boundary layer AND the exported PNG/SVG's polygon stroke,
+// so the two stay visually consistent.
+const BORDER_COLOR = "#9a9a9a";
 
 // "Różnica" = kobiety - mężczyźni. Kept as a fixed, mechanical convention --
 // NOT a built-in judgment about which sex is disadvantaged, since that
@@ -289,7 +295,7 @@ function renderBoundaries(data) {
   terytToName = {};
   appliedGminaOverrides = {};
   geoLayer = L.geoJSON(data, {
-    style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.3 }),
+    style: () => ({ fillOpacity: 0.9, color: BORDER_COLOR, weight: 0.3 }),
     onEachFeature: (feature, layer) =>
       bindFeatureLayer(feature.properties.JPT_KOD_JE, feature.properties.JPT_NAZWA_, layer),
   }).addTo(map);
@@ -309,7 +315,7 @@ function renderBoundaries(data) {
 function buildOverrideLayer(teryt, name, geometry) {
   const layer = L.geoJSON(
     { type: "Feature", properties: { JPT_KOD_JE: teryt, JPT_NAZWA_: name }, geometry },
-    { style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.3 }) }
+    { style: () => ({ fillOpacity: 0.9, color: BORDER_COLOR, weight: 0.3 }) }
   ).getLayers()[0];
   bindFeatureLayer(teryt, name, layer);
   return layer;
@@ -1035,7 +1041,7 @@ function highlight(layer) {
 // us for real: any mouseout was capable of whiting out the entire map, not
 // just the hovered polygon.
 function baseStyleFor(value, domain) {
-  return { fillColor: colorFor(value, domain), fillOpacity: 0.9, color: "#ffffff", weight: 0.3 };
+  return { fillColor: colorFor(value, domain), fillOpacity: 0.9, color: BORDER_COLOR, weight: 0.3 };
 }
 
 // Polish locale throughout the UI: comma decimal separator, space thousands
@@ -1224,11 +1230,13 @@ function exportTitle() {
 // with a real choice on every one of these axes (e.g. pkd_zatrudnienie's
 // 24 miesiąc+miara combinations, fundusz_alimentacyjny's 6 measures), so
 // the exported image needs to spell out exactly which combination is
-// shown, not just the variable name. Level and color scale are ALWAYS
-// included (even a single fixed level, or the default linear scale, isn't
-// obvious from the image alone once it's out of the app) -- age group and
-// measure stay conditional on the variable actually offering a choice,
-// same condition updateMeta() uses for its own sidebar line.
+// shown, not just the variable name. Level is ALWAYS included (even a
+// single fixed level isn't obvious from the image alone once it's out of
+// the app) -- age group and measure stay conditional on the variable
+// actually offering a choice, same condition updateMeta() uses for its own
+// sidebar line. Color scale/scope are deliberately NOT here -- see
+// exportScaleSentence() below, which reads as its own sentence under the
+// legend instead of another " · "-joined fragment up here.
 function exportFeatureParts() {
   const meta = VARIABLE_META[state.variable];
   const view = VIEWS[state.view];
@@ -1242,8 +1250,22 @@ function exportFeatureParts() {
     const ms = meta.measures.find((o) => o.key === state.measure);
     if (ms) parts.push(ms.label);
   }
-  parts.push(view.label, COLOR_SCALES[state.colorScale], SCALE_SCOPES[state.colorScaleScope], meta.source);
+  parts.push(view.label, meta.source);
   return parts;
+}
+
+// One plain-language sentence describing the color scale, meant to sit
+// under the legend in the exported image (not up in exportFeatureParts() --
+// this reads as a caption for the legend specifically, not another item in
+// the variable/year/measure list). COLOR_SCALES/SCALE_SCOPES (used
+// elsewhere for the sidebar's own button labels) are noun phrases, not
+// grammatically adjectives agreeing with "Skala" (feminine) -- "Skala
+// Kwantyle" wouldn't parse as Polish, so this needs its own adjective forms
+// rather than reusing those labels directly.
+const EXPORT_SCALE_ADJ = { linear: "liniowa (równe przedziały)", log: "logarytmiczna", quantile: "kwantylowa" };
+const EXPORT_SCALE_SCOPE_PHRASE = { year: "dla danego roku", all: "wspólna dla wszystkich dostępnych lat" };
+function exportScaleSentence() {
+  return `Skala ${EXPORT_SCALE_ADJ[state.colorScale]} ${EXPORT_SCALE_SCOPE_PHRASE[state.colorScaleScope]}.`;
 }
 
 function exportFileBaseName() {
@@ -1257,6 +1279,7 @@ function exportFileBaseName() {
 const EXPORT_PAD_X = 20;
 const EXPORT_FOOTER_H = 26; // credit bar, flush against the map's bottom edge
 const EXPORT_LEGEND_H = 60; // swatches + tick labels
+const EXPORT_SCALE_SENTENCE_H = 30; // one line describing the color scale, under the legend
 const EXPORT_TITLE_PAD_TOP = 22;
 const EXPORT_TITLE_PAD_BOTTOM = 10;
 const EXPORT_FEATURES_LINE_H = 24; // one line of the year/level/measure/.../source text
@@ -1393,7 +1416,9 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const featuresH = featureLines.length * EXPORT_FEATURES_LINE_H + EXPORT_FEATURES_PAD_BOTTOM;
 
   const headerH = titleH + featuresH;
-  const totalH = headerH + mapH + EXPORT_FOOTER_H + EXPORT_LEGEND_H;
+  const scaleSentenceText = exportScaleSentence();
+  const scaleSentenceFontSize = fitFontSize(scaleSentenceText, 13, 11, availW);
+  const totalH = headerH + mapH + EXPORT_FOOTER_H + EXPORT_LEGEND_H + EXPORT_SCALE_SENTENCE_H;
 
   // Resolved to concrete hex/rgb here, not left as var(--x) -- the exported
   // file has no stylesheet of its own to resolve custom properties against,
@@ -1406,7 +1431,7 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   let polys = "";
   geoLayer.eachLayer((layer) => {
     const fill = layer.options.fillColor || MISSING_COLOR;
-    polys += `<path d="${latlngsToPathData(layer.getLatLngs())}" fill="${fill}" fill-rule="evenodd" stroke="#ffffff" stroke-width="0.3" />`;
+    polys += `<path d="${latlngsToPathData(layer.getLatLngs())}" fill="${fill}" fill-rule="evenodd" stroke="${BORDER_COLOR}" stroke-width="0.3" />`;
   });
 
   const titleSvg = `<text x="${mapW / 2}" y="${EXPORT_TITLE_PAD_TOP + titleFontSize}" font-size="${titleFontSize.toFixed(1)}" font-weight="600" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(titleText)}</text>`;
@@ -1419,6 +1444,7 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const legendW = Math.min(availW, EXPORT_LEGEND_MAX_W);
   const legendX = EXPORT_PAD_X + (availW - legendW) / 2;
   const legendSvg = buildExportLegendSvg(legendX, legendY + 6, legendW, textColor);
+  const scaleSentenceSvg = `<text x="${mapW / 2}" y="${legendY + EXPORT_LEGEND_H + 8}" font-size="${scaleSentenceFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(scaleSentenceText)}</text>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(mapW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${mapW} ${totalH}">
     <rect x="0" y="0" width="${mapW}" height="${totalH}" fill="${pageColor}" />
@@ -1428,6 +1454,7 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
     <rect x="0" y="${footerY}" width="${mapW}" height="${EXPORT_FOOTER_H}" fill="${surfaceColor}" />
     <text x="${mapW / 2}" y="${footerY + EXPORT_FOOTER_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>
     ${legendSvg}
+    ${scaleSentenceSvg}
   </svg>`;
 }
 
