@@ -606,7 +606,7 @@ function populateCorrViewOptions(prefix) {
   const ageGroup = document.getElementById(`corr-${prefix}-agegroup`).value;
   const measure = document.getElementById(`corr-${prefix}-measure`).value;
   const totalOk = hasTotalFor(meta, ageGroup, measure);
-  const sharesOk = meta.sharesMeaningful === true;
+  const sharesOk = meta.sharesMeaningful === true && !isRateMeasure(measure);
   const womenOnly = meta.sexScope === "women";
 
   const keys = Object.keys(VIEWS).filter((key) => {
@@ -1008,6 +1008,11 @@ function formatValue(v) {
   // percentage (e.g. 65% minus 60% is "5 p.p.", not "5%") -- only applies to
   // Różnica, since ratio/share views already override their own unit above.
   if (state.view === "diff" && unit === "%") unit = "p.p.";
+  // Same idea for a "per 100 000" rate: the difference of two such rates
+  // isn't itself "per 100 000" of anything -- there's no clean unit for it
+  // (unlike % -> p.p.), so it's shown bare rather than with a misleading
+  // "na 100 tys." suffix.
+  if (state.view === "diff" && unit === "na 100 tys.") unit = "";
   const formatted = formatPl(v, view.decimals);
   return unit ? formatted + " " + unit : formatted;
 }
@@ -1576,6 +1581,16 @@ function hasTotalFor(meta, ageGroup, measure) {
   return (ageGroupOpt?.hasTotal ?? true) && (measureOpt?.hasTotal ?? true);
 }
 
+// Measures ending "_per100k" (see etl/add_derived_measures.py) are already
+// a population-adjusted rate -- %kobiet/%mężczyzn would divide two such
+// rates rather than two raw headcounts, not the same meaningful "share of a
+// count" computation sharesMeaningful was designed for. Checked in addition
+// to (not instead of) the variable-level sharesMeaningful flag, in both the
+// map's own view buttons and the correlation tool's per-axis view list.
+function isRateMeasure(measure) {
+  return measure.endsWith("_per100k");
+}
+
 function hasTotalForCurrentSelection() {
   return hasTotalFor(VARIABLE_META[state.variable], state.ageGroup, state.measure);
 }
@@ -1655,8 +1670,10 @@ function updateViewAvailability() {
   // % kobiet / % mężczyzn compute k/(k+m) -- only meaningful when k and m
   // are COUNTS (people, pupils, votes), not rates or scores. Adding two
   // unemployment rates and dividing tells you nothing, so these views stay
-  // disabled unless the variable opts in with sharesMeaningful: true.
-  const sharesOk = meta.sharesMeaningful === true;
+  // disabled unless the variable opts in with sharesMeaningful: true --
+  // and even then, disabled again for this variable's own "_per100k"
+  // measures specifically, which are themselves already a rate.
+  const sharesOk = meta.sharesMeaningful === true && !isRateMeasure(state.measure);
   for (const key of ["shareWomen", "shareMen"]) {
     const btn = document.querySelector(`#view-buttons button[data-view-key="${key}"]`);
     if (!btn) continue;

@@ -339,7 +339,9 @@ const VARIABLE_META = {
     meaning:
       "Liczba pracujących wg sekcji PKD (Polska Klasyfikacja Działalności) i płci, stan na " +
       "styczeń. Surowe dane sekcja po sekcji -- bez wyliczonego wskaźnika segregacji zawodowej " +
-      "(np. indeksu Duncana), którego formuła nie jest jeszcze ustalona.",
+      "(np. indeksu Duncana), którego formuła nie jest jeszcze ustalona. Miara \"% pracujących\": " +
+      "liczba pracujących w danej sekcji podzielona przez \"Wszystkie sekcje\" (dla tej samej płci) " +
+      "i pomnożona przez 100.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P4283, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
@@ -366,7 +368,10 @@ const VARIABLE_META = {
       { key: "R", label: "R - Kultura, rozrywka i rekreacja" },
       { key: "S", label: "S - Pozostała działalność usługowa" },
     ],
-    measures: [{ key: "default", label: "Wartość" }],
+    measures: [
+      { key: "default", label: "Liczba" },
+      { key: "odsetek", label: "% pracujących", unit: "%" },
+    ],
     sharesMeaningful: true,
   },
   life_expectancy: {
@@ -577,12 +582,21 @@ const VARIABLE_META = {
     unit: "osób",
     topic: "rynek_pracy",
     file: "data/wypadki_przy_pracy.json",
-    meaning: "Liczba osób poszkodowanych w wypadkach przy pracy (ogółem), wg płci.",
+    meaning:
+      "Liczba osób poszkodowanych w wypadkach przy pracy (ogółem), wg płci. Miara \"Na 100 000 " +
+      "pracujących\": liczba poszkodowanych podzielona przez liczbę pracujących ogółem (zmienna " +
+      "\"Pracujący wg sekcji PKD\", \"Wszystkie sekcje\") i pomnożona przez 100 000 -- dzielnik jest " +
+      "liczbą pracujących, nie ludności ogółem, bo to trafniejszy mianownik dla wypadków przy pracy. " +
+      "\"Pracujący wg sekcji PKD\" ma dane dopiero od 2024 r., więc ta miara pokaże brak danych dla " +
+      "wcześniejszych lat.",
     source: "Bank Danych Lokalnych GUS",
     accessNote: "Temat BDL P2276, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
-    measures: [{ key: "default", label: "Wartość" }],
+    measures: [
+      { key: "default", label: "Liczba" },
+      { key: "default_per100k", label: "Na 100 000 pracujących", unit: "na 100 tys." },
+    ],
     sharesMeaningful: true,
   },
   kluby_sportowe: {
@@ -590,12 +604,18 @@ const VARIABLE_META = {
     unit: "osób",
     topic: "zdrowie",
     file: "data/kluby_sportowe.json",
-    meaning: "Liczba ćwiczących w klubach sportowych (łącznie z klubami wyznaniowymi i UKS), wg płci.",
+    meaning:
+      "Liczba ćwiczących w klubach sportowych (łącznie z klubami wyznaniowymi i UKS), wg płci. Miara " +
+      "\"Na 100 000 mieszkańców\": liczba ćwiczących podzielona przez ludność ogółem powiatu (zmienna " +
+      "\"Ludność wg grup wieku\", grupa \"Wszystkie grupy wieku\", ta sama płeć) i pomnożona przez 100 000.",
     source: "Bank Danych Lokalnych GUS",
     accessNote: "Temat BDL P2155, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
-    measures: [{ key: "default", label: "Wartość" }],
+    measures: [
+      { key: "default", label: "Liczba" },
+      { key: "default_per100k", label: "Na 100 000 mieszkańców", unit: "na 100 tys." },
+    ],
     sharesMeaningful: true,
   },
   zamachy_samobojcze: {
@@ -603,14 +623,19 @@ const VARIABLE_META = {
     unit: "osób",
     topic: "zdrowie",
     file: "data/zamachy_samobojcze.json",
-    meaning: "Liczba osób w zamachach samobójczych, wg płci -- ogółem oraz zakończone zgonem.",
+    meaning:
+      "Liczba osób w zamachach samobójczych, wg płci -- ogółem oraz zakończone zgonem. Miary \"Na " +
+      "100 000 mieszkańców\": liczba w danej kategorii podzielona przez ludność ogółem powiatu (zmienna " +
+      "\"Ludność wg grup wieku\", grupa \"Wszystkie grupy wieku\", ta sama płeć) i pomnożona przez 100 000.",
     source: "Bank Danych Lokalnych GUS",
     accessNote: "Temat BDL P3833, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [
-      { key: "ogolem", label: "Wszystkie" },
-      { key: "zakonczone_zgonem", label: "Zakończone zgonem" },
+      { key: "ogolem", label: "Wszystkie -- liczba" },
+      { key: "ogolem_per100k", label: "Wszystkie -- na 100 000 mieszkańców", unit: "na 100 tys." },
+      { key: "zakonczone_zgonem", label: "Zakończone zgonem -- liczba" },
+      { key: "zakonczone_zgonem_per100k", label: "Zakończone zgonem -- na 100 000 mieszkańców", unit: "na 100 tys." },
     ],
     sharesMeaningful: true,
   },
@@ -622,7 +647,8 @@ const VARIABLE_META = {
     agegroupLabel: "Poziom wykształcenia",
     meaning:
       "Ludność rezydująca w wieku 13 lat i więcej wg poziomu wykształcenia i płci. Jednorazowy " +
-      "Narodowy Spis Powszechny 2021, nie dane roczne.",
+      "Narodowy Spis Powszechny 2021, nie dane roczne. Miara \"Odsetek\": liczba osób z danym poziomem " +
+      "wykształcenia podzielona przez \"Wszystkie poziomy\" (dla tej samej płci) i pomnożona przez 100.",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
     accessNote: "Temat BDL P4318, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
@@ -638,7 +664,10 @@ const VARIABLE_META = {
       { key: "podstawowe_niekonczone", label: "Podstawowe nieukończone / brak wykształcenia" },
       { key: "nieustalony", label: "Nieustalony" },
     ],
-    measures: [{ key: "default", label: "Wartość" }],
+    measures: [
+      { key: "default", label: "Liczba" },
+      { key: "odsetek", label: "Odsetek", unit: "%" },
+    ],
     sharesMeaningful: true,
   },
   stan_cywilny_nsp: {
@@ -649,7 +678,8 @@ const VARIABLE_META = {
     agegroupLabel: "Stan cywilny",
     meaning:
       "Ludność rezydująca w wieku 15 lat i więcej wg stanu cywilnego i płci. Jednorazowy Narodowy Spis " +
-      "Powszechny 2021, nie dane roczne.",
+      "Powszechny 2021, nie dane roczne. Miara \"Odsetek\": liczba osób w danym stanie cywilnym " +
+      "podzielona przez \"Wszystkie\" (dla tej samej płci) i pomnożona przez 100.",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
     accessNote: "Temat BDL P4288, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
@@ -661,7 +691,10 @@ const VARIABLE_META = {
       { key: "rozwiedzeni", label: "Rozwiedzeni" },
       { key: "nieustalony", label: "Nieustalony" },
     ],
-    measures: [{ key: "default", label: "Wartość" }],
+    measures: [
+      { key: "default", label: "Liczba" },
+      { key: "odsetek", label: "Odsetek", unit: "%" },
+    ],
     sharesMeaningful: true,
   },
   ludnosc_roczniki_nsp: {
@@ -692,7 +725,7 @@ const VARIABLE_META = {
     measures: [{ key: "default", label: "Wartość" }],
   },
   wynagrodzenia: {
-    label: "Wynagrodzenia (powiat)",
+    label: "Wynagrodzenia ogółem",
     unit: "zł",
     topic: "rynek_pracy",
     file: "data/wynagrodzenia.json",
@@ -711,21 +744,27 @@ const VARIABLE_META = {
     ],
   },
   bezdomnosc_mieszkancy: {
-    label: "Mieszkańcy placówek opieki stacjonarnej wg płci",
+    label: "Mieszkańcy placówek opieki stacjonarnej",
     unit: "osób",
     topic: "inne",
     file: "data/bezdomnosc_mieszkancy.json",
     meaning:
       "Liczba mieszkańców placówek stacjonarnej pomocy społecznej (domy pomocy społecznej, schroniska, " +
       "noclegownie i inne), wg płci -- łącznie ze wszystkimi kategoriami mieszkańców, nie tylko osobami " +
-      "bezdomnymi (zob. osobna zmienna \"Bezdomni w placówkach opieki\" dla tej węższej kategorii).",
+      "bezdomnymi (zob. osobna zmienna \"Bezdomni w placówkach opieki\" dla tej węższej kategorii). " +
+      "Miara \"Na 100 000 mieszkańców\": liczba mieszkańców placówek podzielona przez ludność ogółem " +
+      "powiatu (zmienna \"Ludność wg grup wieku\", grupa \"Wszystkie grupy wieku\", ta sama płeć) i " +
+      "pomnożona przez 100 000.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P1799 (pod G267): 1609986 (kobiety), 1609987 (mężczyźni), 72323 (ogółem) -- " +
       "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Wszyscy mieszkańcy" }],
-    measures: [{ key: "default", label: "Wartość" }],
+    measures: [
+      { key: "default", label: "Liczba" },
+      { key: "default_per100k", label: "Na 100 000 mieszkańców", unit: "na 100 tys." },
+    ],
     sharesMeaningful: true,
   },
   bezdomnosc_bezdomni: {
@@ -735,12 +774,17 @@ const VARIABLE_META = {
     file: "data/bezdomnosc_bezdomni.json",
     meaning:
       "Liczba osób bezdomnych przebywających w noclegowniach, domach i schroniskach dla bezdomnych. " +
-      "BDL nie publikuje tego wskaźnika w podziale na płeć.",
+      "BDL nie publikuje tego wskaźnika w podziale na płeć. Miara \"Na 100 000 mieszkańców\": liczba " +
+      "bezdomnych podzielona przez ludność ogółem powiatu (zmienna \"Ludność wg grup wieku\", grupa " +
+      "\"Wszystkie grupy wieku\") i pomnożona przez 100 000.",
     source: "Bank Danych Lokalnych GUS",
     accessNote: "Temat BDL P1799 (pod G267), zmienna 195855, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
-    measures: [{ key: "default", label: "Wartość" }],
+    measures: [
+      { key: "default", label: "Liczba" },
+      { key: "default_per100k", label: "Na 100 000 mieszkańców", unit: "na 100 tys." },
+    ],
   },
   zgwalcenia: {
     label: "Zgwałcenia -- przestępstwa stwierdzone",
@@ -749,12 +793,17 @@ const VARIABLE_META = {
     file: "data/zgwalcenia.json",
     meaning:
       "Liczba przestępstw zgwałcenia stwierdzonych przez policję. BDL publikuje ten wskaźnik na poziomie " +
-      "powiatu dopiero od 2025 r. (jednorazowy punkt danych, nie szereg czasowy) i nie w podziale na płeć.",
+      "powiatu dopiero od 2025 r. (jednorazowy punkt danych, nie szereg czasowy) i nie w podziale na " +
+      "płeć. Miara \"Na 100 000 mieszkańców\": liczba zgwałceń podzielona przez ludność ogółem powiatu " +
+      "(zmienna \"Ludność wg grup wieku\", grupa \"Wszystkie grupy wieku\") i pomnożona przez 100 000.",
     source: "Bank Danych Lokalnych GUS",
     accessNote: "Temat BDL P4601, zmienna 1749162, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
-    measures: [{ key: "default", label: "Wartość" }],
+    measures: [
+      { key: "default", label: "Liczba" },
+      { key: "default_per100k", label: "Na 100 000 mieszkańców", unit: "na 100 tys." },
+    ],
   },
   fundusz_alimentacyjny: {
     label: "Fundusz alimentacyjny",
@@ -782,7 +831,7 @@ const VARIABLE_META = {
     ],
   },
   mammografia: {
-    label: "Mammografia -- pokrycie badaniami przesiewowymi",
+    label: "Pokrycie badaniami przesiewowymi -- Mammografia",
     unit: "%",
     topic: "zdrowie",
     file: "data/mammografia.json",
@@ -798,7 +847,7 @@ const VARIABLE_META = {
     sexScope: "women",
   },
   cytologia: {
-    label: "Cytologia -- pokrycie badaniami przesiewowymi",
+    label: "Pokrycie badaniami przesiewowymi -- Cytologia",
     unit: "%",
     topic: "zdrowie",
     file: "data/cytologia.json",
