@@ -301,32 +301,48 @@ function renderBoundaries(data) {
   for (const n of Object.values(terytToName)) nameCounts[n] = (nameCounts[n] || 0) + 1;
 }
 
-// See gminyOverrides above. Only meaningful at gmina level -- swaps each
-// affected parent teryt's polygon for its pre-split (merged) shape and hides
-// the split-off child('s) polygon(s) when the selected year predates the
-// split, and reverses that the moment the year is back at/after it. Cheap
-// either way (at most a couple of layers touched, out of 2479 at gmina
+// Builds a standalone Leaflet layer for one historical-override geometry
+// and wires it up exactly like a normal boundary layer (see bindFeatureLayer)
+// -- shared by both the split and merge branches below, which each need to
+// swap in or insert a layer that isn't part of the originally-loaded GeoJSON.
+function buildOverrideLayer(teryt, name, geometry) {
+  const layer = L.geoJSON(
+    { type: "Feature", properties: { JPT_KOD_JE: teryt, JPT_NAZWA_: name }, geometry },
+    { style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.3 }) }
+  ).getLayers()[0];
+  bindFeatureLayer(teryt, name, layer);
+  return layer;
+}
+
+// See gminyOverrides above. Only meaningful at gmina level. Two kinds of
+// event, both only mattering for a selected year <= validUntil (reverted
+// the moment the year is back at/after it):
+//  - splits: swap the parent's polygon for its pre-split (merged) shape and
+//    hide the split-off child(ren)'s polygon(s).
+//  - merges: insert the dissolved unit's own polygon (it isn't part of the
+//    current boundary file at all -- the unit no longer exists today) and
+//    shrink each absorbing unit's polygon back to its pre-merger extent.
+// Cheap either way (a handful of layers touched, out of 2479 at gmina
 // scale), so it's safe to call unconditionally from updateAll() on every
 // year-slider tick rather than needing its own separate call sites.
 async function applyGminaHistoricalOverrides(year) {
   if (currentLevel !== "gmina") return;
   if (gminyOverrides === null) {
-    gminyOverrides = await fetch("data/gminy_historical_overrides.json").then((r) => (r.ok ? r.json() : {}));
+    gminyOverrides = await fetch("data/gminy_historical_overrides.json").then((r) =>
+      r.ok ? r.json() : { splits: {}, merges: {} }
+    );
   }
-  for (const parentTeryt in gminyOverrides) {
-    const { validUntil, hides, geometry } = gminyOverrides[parentTeryt];
+
+  for (const parentTeryt in gminyOverrides.splits) {
+    const { validUntil, hides, geometry } = gminyOverrides.splits[parentTeryt];
     const shouldApply = year <= validUntil;
     const isApplied = !!appliedGminaOverrides[parentTeryt];
     if (shouldApply === isApplied) continue;
 
     if (shouldApply) {
       const originalParentLayer = terytToLayer[parentTeryt];
-      const mergedLayer = L.geoJSON(
-        { type: "Feature", properties: { JPT_KOD_JE: parentTeryt, JPT_NAZWA_: terytToName[parentTeryt] }, geometry },
-        { style: () => ({ fillOpacity: 0.9, color: "#ffffff", weight: 0.3 }) }
-      ).getLayers()[0];
       geoLayer.removeLayer(originalParentLayer);
-      bindFeatureLayer(parentTeryt, terytToName[parentTeryt], mergedLayer);
+      const mergedLayer = buildOverrideLayer(parentTeryt, terytToName[parentTeryt], geometry);
       geoLayer.addLayer(mergedLayer);
 
       const hiddenChildLayers = {};
@@ -351,8 +367,42 @@ async function applyGminaHistoricalOverrides(year) {
       delete appliedGminaOverrides[parentTeryt];
     }
   }
+
+  for (const dissolvedTeryt in gminyOverrides.merges) {
+    const { name, validUntil, geometry, shrinks } = gminyOverrides.merges[dissolvedTeryt];
+    const shouldApply = year <= validUntil;
+    const isApplied = !!appliedGminaOverrides[dissolvedTeryt];
+    if (shouldApply === isApplied) continue;
+
+    if (shouldApply) {
+      const insertedLayer = buildOverrideLayer(dissolvedTeryt, name, geometry);
+      geoLayer.addLayer(insertedLayer);
+
+      const shrunkAbsorbers = {};
+      for (const absorberTeryt in shrinks) {
+        shrunkAbsorbers[absorberTeryt] = terytToLayer[absorberTeryt];
+        geoLayer.removeLayer(terytToLayer[absorberTeryt]);
+        const shrunkLayer = buildOverrideLayer(absorberTeryt, terytToName[absorberTeryt], shrinks[absorberTeryt]);
+        geoLayer.addLayer(shrunkLayer);
+      }
+      appliedGminaOverrides[dissolvedTeryt] = { insertedLayer, shrunkAbsorbers };
+    } else {
+      const { insertedLayer, shrunkAbsorbers } = appliedGminaOverrides[dissolvedTeryt];
+      geoLayer.removeLayer(insertedLayer);
+      delete terytToLayer[dissolvedTeryt];
+      delete terytToName[dissolvedTeryt];
+      for (const absorberTeryt in shrunkAbsorbers) {
+        geoLayer.removeLayer(terytToLayer[absorberTeryt]);
+        geoLayer.addLayer(shrunkAbsorbers[absorberTeryt]);
+        terytToLayer[absorberTeryt] = shrunkAbsorbers[absorberTeryt];
+        terytToName[absorberTeryt] = shrunkAbsorbers[absorberTeryt].feature.properties.JPT_NAZWA_;
+      }
+      delete appliedGminaOverrides[dissolvedTeryt];
+    }
+  }
+
   // Recomputed since the swap can change which names collide (see
-  // renderBoundaries) -- cheap at the 2-entry scale this ever runs at.
+  // renderBoundaries) -- cheap at the handful-of-entries scale this runs at.
   nameCounts = {};
   for (const n of Object.values(terytToName)) nameCounts[n] = (nameCounts[n] || 0) + 1;
 }
