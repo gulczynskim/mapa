@@ -196,8 +196,6 @@ FILES = {
         "slices": {"default": {"default": {"k": "1644755", "m": "1644663"}}},
     },
     "gestosc_zaludnienia.json": {"level": POWIAT, "single": "60559"},
-    "dochody_powiat.json": {"level": POWIAT, "single": "60505"},
-    "dochody_gmina.json": {"level": GMINA, "single": "76973"},
 }
 
 

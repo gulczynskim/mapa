@@ -14,6 +14,11 @@
 //     future ones like liceum pupil counts or population 25-34 will.
 //   hasTotal: false (on an ageGroup/measure option) -- marks slices whose
 //     combined-sexes total can't be derived; disables "Ogółem" there.
+//   sexScope: "women" -- for a variable that ONLY conceptually exists for
+//     one sex (e.g. a screening program covering only women), not merely
+//     one where the other sex's data happens to be missing. Forces every
+//     view except Kobiety off (Ogółem, Mężczyźni, Różnica, Proporcje),
+//     store the value under "k" (see mammografia/cytologia below).
 //   topic: one of the TOPICS keys below -- groups the variable under
 //     "Temat" in both the map controls and the download panel.
 const TOPICS = {
@@ -23,6 +28,11 @@ const TOPICS = {
   ludnosc: "Ludność",
   zdrowie: "Zdrowie",
   rolnictwo: "Rolnictwo",
+  // Deliberate exception to the alphabetical Temat order everywhere else
+  // (see topicsInUse in app.js) -- a catch-all for variables that don't
+  // share a clean theme belongs at the end of the list, not wherever
+  // "Inne" would alphabetically fall.
+  inne: "Inne",
 };
 
 const VARIABLE_META = {
@@ -681,30 +691,126 @@ const VARIABLE_META = {
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [{ key: "default", label: "Wartość" }],
   },
-  dochody_powiat: {
-    label: "Dochody na 1 mieszkańca (powiat)",
+  wynagrodzenia: {
+    label: "Wynagrodzenia (powiat)",
     unit: "zł",
     topic: "rynek_pracy",
-    file: "data/dochody_powiat.json",
-    meaning: "Dochody budżetu powiatu na 1 mieszkańca. BDL nie publikuje tego wskaźnika w podziale na płeć.",
+    file: "data/wynagrodzenia.json",
+    meaning:
+      "Przeciętne miesięczne wynagrodzenie brutto w powiecie. BDL nie publikuje tego wskaźnika w " +
+      "podziale na płeć (dla wynagrodzeń wg płci zob. zmienna \"Wynagrodzenia\" oparta o publikację " +
+      "GUS, dostępną wg płci i miejsca zamieszkania). Zastępuje poprzednie \"Dochody na 1 mieszkańca\" " +
+      "(gmina/powiat).",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P2410, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote: "Temat BDL P2497, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [
+      { key: "default", label: "Przeciętne wynagrodzenie", unit: "zł" },
+      { key: "relative", label: "Wzgl. średniej krajowej (Polska=100)", unit: "%" },
+    ],
+  },
+  bezdomnosc_mieszkancy: {
+    label: "Mieszkańcy placówek opieki stacjonarnej wg płci",
+    unit: "osób",
+    topic: "inne",
+    file: "data/bezdomnosc_mieszkancy.json",
+    meaning:
+      "Liczba mieszkańców placówek stacjonarnej pomocy społecznej (domy pomocy społecznej, schroniska, " +
+      "noclegownie i inne), wg płci -- łącznie ze wszystkimi kategoriami mieszkańców, nie tylko osobami " +
+      "bezdomnymi (zob. osobna zmienna \"Bezdomni w placówkach opieki\" dla tej węższej kategorii).",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Temat BDL P1799 (pod G267): 1609986 (kobiety), 1609987 (mężczyźni), 72323 (ogółem) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Wszyscy mieszkańcy" }],
+    measures: [{ key: "default", label: "Wartość" }],
+    sharesMeaningful: true,
+  },
+  bezdomnosc_bezdomni: {
+    label: "Bezdomni w placówkach opieki",
+    unit: "osób",
+    topic: "inne",
+    file: "data/bezdomnosc_bezdomni.json",
+    meaning:
+      "Liczba osób bezdomnych przebywających w noclegowniach, domach i schroniskach dla bezdomnych. " +
+      "BDL nie publikuje tego wskaźnika w podziale na płeć.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote: "Temat BDL P1799 (pod G267), zmienna 195855, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [{ key: "default", label: "Wartość" }],
   },
-  dochody_gmina: {
-    label: "Dochody na 1 mieszkańca (gmina)",
-    unit: "zł",
-    topic: "rynek_pracy",
-    file: "data/dochody_gmina.json",
+  zgwalcenia: {
+    label: "Zgwałcenia -- przestępstwa stwierdzone",
+    unit: "przestępstw",
+    topic: "inne",
+    file: "data/zgwalcenia.json",
     meaning:
-      "Dochody budżetu gminy na 1 mieszkańca -- wszystkie typy gmin łącznie, w tym miasta na prawach " +
-      "powiatu. BDL nie publikuje tego wskaźnika w podziale na płeć.",
+      "Liczba przestępstw zgwałcenia stwierdzonych przez policję. BDL publikuje ten wskaźnik na poziomie " +
+      "powiatu dopiero od 2025 r. (jednorazowy punkt danych, nie szereg czasowy) i nie w podziale na płeć.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P2627, poziom gmina -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
-    levels: [{ key: "gmina", label: "Gmina" }],
+    accessNote: "Temat BDL P4601, zmienna 1749162, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [{ key: "default", label: "Wartość" }],
+  },
+  fundusz_alimentacyjny: {
+    label: "Fundusz alimentacyjny",
+    unit: "osób",
+    topic: "inne",
+    file: "data/fundusz_alimentacyjny.json",
+    meaning:
+      "Świadczeniobiorcy i dłużnicy funduszu alimentacyjnego. BDL nie publikuje tego wskaźnika w podziale " +
+      "na płeć. Dane dostępne tylko od 2022 r.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Temat BDL P4451, poziom powiat -- kody zmiennych: 1728280 (świadczeniobiorcy na 10 tys. ludności), " +
+      "1728281 (świadczeniobiorcy, śr. miesięczna), 1728282 (dłużnicy na 100 tys. ludności), 1728293 " +
+      "(dłużnicy z postępowaniem ws. uchylania się), 1728294 (% środków zwróconych), 1728296 (suma " +
+      "wydatkowana w roku) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [
+      { key: "recipients_per10k", label: "Świadczeniobiorcy na 10 tys. ludności", unit: "osób" },
+      { key: "recipients", label: "Świadczeniobiorcy (śr. miesięczna)", unit: "osób" },
+      { key: "debtors_per100k", label: "Dłużnicy na 100 tys. ludności", unit: "osób" },
+      { key: "debtors_evasion", label: "Dłużnicy z postępowaniem ws. uchylania się", unit: "osób" },
+      { key: "recovered_share", label: "% środków zwróconych przez dłużników", unit: "%" },
+      { key: "spent_total", label: "Suma wydatkowana z funduszu w roku", unit: "zł" },
+    ],
+  },
+  mammografia: {
+    label: "Mammografia -- pokrycie badaniami przesiewowymi",
+    unit: "%",
+    topic: "zdrowie",
+    file: "data/mammografia.json",
+    meaning:
+      "Odsetek kobiet w wieku objętym populacyjnym programem profilaktyki raka piersi, które faktycznie " +
+      "przebadano mammografią w danym roku (\"Liczba przebadanych kobiet ogółem\" / \"Roczna populacja do " +
+      "przebadania\"). Dotyczy wyłącznie kobiet -- dostępny jest tylko widok Kobiety.",
+    source: "Baza Analiz Systemowych i Wdrożeniowych (BASiW), Ministerstwo Zdrowia",
+    accessNote: "Plik data/Mammografia.xlsx, arkusz \"Mammografia\" -- zob. etl/convert_basiw_screening.py.",
+    levels: [{ key: "wojewodztwo", label: "Województwo" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Odsetek przebadanych" }],
+    sexScope: "women",
+  },
+  cytologia: {
+    label: "Cytologia -- pokrycie badaniami przesiewowymi",
+    unit: "%",
+    topic: "zdrowie",
+    file: "data/cytologia.json",
+    meaning:
+      "Odsetek kobiet w wieku objętym populacyjnym programem profilaktyki raka szyjki macicy, które " +
+      "faktycznie przebadano cytologią w danym roku (\"Liczba przebadanych kobiet ogółem\" / \"Roczna " +
+      "populacja do przebadania\"). Dotyczy wyłącznie kobiet -- dostępny jest tylko widok Kobiety.",
+    source: "Baza Analiz Systemowych i Wdrożeniowych (BASiW), Ministerstwo Zdrowia",
+    accessNote: "Plik data/Cytologia.xlsx, arkusz \"Cytologia\" -- zob. etl/convert_basiw_screening.py.",
+    levels: [{ key: "wojewodztwo", label: "Województwo" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [{ key: "default", label: "Odsetek przebadanych" }],
+    sexScope: "women",
   },
 };

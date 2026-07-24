@@ -125,6 +125,7 @@ let state = {
 // "% kobiet" (the share of women among officials/candidates) is a more
 // immediately legible starting point than a raw headcount difference.
 function defaultView(variable) {
+  if (VARIABLE_META[variable].sexScope === "women") return "women";
   return VARIABLE_META[variable].topic === "polityka" ? "shareWomen" : "diff";
 }
 
@@ -606,10 +607,12 @@ function populateCorrViewOptions(prefix) {
   const measure = document.getElementById(`corr-${prefix}-measure`).value;
   const totalOk = hasTotalFor(meta, ageGroup, measure);
   const sharesOk = meta.sharesMeaningful === true;
+  const womenOnly = meta.sexScope === "women";
 
   const keys = Object.keys(VIEWS).filter((key) => {
-    if (key === "total") return totalOk;
+    if (key === "total") return totalOk && !womenOnly;
     if (key === "shareWomen" || key === "shareMen") return sharesOk;
+    if (key === "men" || key === "diff" || key === "ratio" || key === "ratioInverse") return !womenOnly;
     return true;
   });
 
@@ -1425,9 +1428,14 @@ async function selectVariable(requested) {
 const PL_COLLATOR = new Intl.Collator("pl");
 
 function topicsInUse() {
-  return [...new Set(Object.values(VARIABLE_META).map((v) => v.topic))].sort((a, b) =>
-    PL_COLLATOR.compare(TOPICS[a], TOPICS[b])
-  );
+  // "inne" (see TOPICS in variables.js) is a deliberate exception to the
+  // alphabetical order every other topic follows -- a catch-all belongs at
+  // the end of the list, not wherever its label would alphabetically fall.
+  return [...new Set(Object.values(VARIABLE_META).map((v) => v.topic))].sort((a, b) => {
+    if (a === "inne") return 1;
+    if (b === "inne") return -1;
+    return PL_COLLATOR.compare(TOPICS[a], TOPICS[b]);
+  });
 }
 
 function variablesInTopic(topic) {
@@ -1612,20 +1620,36 @@ function updateViewAvailability() {
   const totalBtn = document.querySelector('#view-buttons button[data-view-key="total"]');
   if (!totalBtn) return;
   const meta = VARIABLE_META[state.variable];
+  // Not "the other sex's data happens to be missing" (that's hasSexData
+  // below) -- this variable only conceptually exists for women (e.g. a
+  // screening program), so Ogółem/Mężczyźni/diverging views are wrong to
+  // even offer, not just currently empty.
+  const womenOnly = meta.sexScope === "women";
 
-  const totalOk = hasTotalForCurrentSelection();
+  const totalOk = hasTotalForCurrentSelection() && !womenOnly;
   totalBtn.disabled = !totalOk;
-  totalBtn.title = totalOk ? "" : "Ogółem niedostępne dla tej grupy wieku/miary (patrz opis zmiennej)";
+  totalBtn.title = totalOk
+    ? ""
+    : womenOnly
+    ? "Zmienna dotyczy wyłącznie kobiet -- dostępny jest tylko widok Kobiety"
+    : "Ogółem niedostępne dla tej grupy wieku/miary (patrz opis zmiennej)";
 
   // Kobiety/Mężczyźni obviously need m/k, but so do the diverging views --
   // Różnica is k-m, both Proporcje are k/m or m/k -- so all five are gated
-  // on the same hasSexData() check, not just the two sequential ones.
+  // on the same hasSexData() check, not just the two sequential ones. A
+  // womenOnly variable is the one exception: Kobiety itself stays gated on
+  // real data (sexOk), but the other four are forced off regardless.
   const sexOk = hasSexData(state.variable);
   for (const key of ["women", "men", "diff", "ratio", "ratioInverse"]) {
     const btn = document.querySelector(`#view-buttons button[data-view-key="${key}"]`);
     if (!btn) continue;
-    btn.disabled = !sexOk;
-    btn.title = sexOk ? "" : "Ta zmienna nie ma danych w podziale na płeć -- dostępne jest tylko Ogółem";
+    const enabled = key === "women" ? sexOk : sexOk && !womenOnly;
+    btn.disabled = !enabled;
+    btn.title = enabled
+      ? ""
+      : womenOnly
+      ? "Zmienna dotyczy wyłącznie kobiet -- dostępny jest tylko widok Kobiety"
+      : "Ta zmienna nie ma danych w podziale na płeć -- dostępne jest tylko Ogółem";
   }
 
   // % kobiet / % mężczyzn compute k/(k+m) -- only meaningful when k and m
