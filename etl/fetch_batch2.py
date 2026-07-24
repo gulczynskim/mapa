@@ -52,7 +52,10 @@ FILES = {
     },
     "median_age.json": {
         "level": POWIAT,
-        "slices": {"default": {"default": {"k": "746291", "m": "746290"}}},
+        # og=746289 required: a combined-sex median can't be derived from the
+        # two sub-group medians (unlike counts, medians don't sum), so the
+        # API's own "ogółem" figure must be fetched directly, not computed.
+        "slices": {"default": {"default": {"og": "746289", "k": "746291", "m": "746290"}}},
     },
     "rolnictwo_pracujacy.json": {
         "level": POWIAT,

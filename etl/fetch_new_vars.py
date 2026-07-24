@@ -107,8 +107,17 @@ if __name__ == "__main__":
     print(f"liceum: {len(liceum_out)} regions -> {liceum_path}")
 
     print("--- Population 25-34 (P4253, NSP 2021): sum of 25-29 + 30-34 bands ---")
+    # IDs verified against BDL's own /variables/{id} n1 label (2026-07-24 fix):
+    # the previous mapping had m_2529/m_3034 pointing at the "ogółem" (both
+    # sexes) variables and k_2529/k_3034 pointing at "mężczyźni" -- the real
+    # "kobiety" variables (1644557/1644558) were never fetched. t is now taken
+    # from BDL's own ogółem variables directly rather than computed as m+k.
     all_rows = []
-    ids = {"m_2529": "1644517", "m_3034": "1644518", "k_2529": "1644537", "k_3034": "1644538"}
+    ids = {
+        "m_2529": "1644537", "m_3034": "1644538",
+        "k_2529": "1644557", "k_3034": "1644558",
+        "t_2529": "1644517", "t_3034": "1644518",
+    }
     for label, var_id in ids.items():
         raw = fetch_variable_data(var_id, unit_level=5)
         all_rows.extend(flatten(label, raw))
@@ -119,7 +128,8 @@ if __name__ == "__main__":
         vals = dict(zip(g["variable_id"], g["value"]))
         m = (vals.get("m_2529") or 0) + (vals.get("m_3034") or 0)
         k = (vals.get("k_2529") or 0) + (vals.get("k_3034") or 0)
-        out.setdefault(teryt, {})[str(int(year))] = {"default__default": {"t": m + k, "m": m, "k": k}}
+        t = (vals.get("t_2529") or 0) + (vals.get("t_3034") or 0)
+        out.setdefault(teryt, {})[str(int(year))] = {"default__default": {"t": t, "m": m, "k": k}}
     path = os.path.join(OUT_DIR, "population_25_34.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))

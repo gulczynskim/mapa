@@ -65,13 +65,19 @@ VARIABLE_GROUPS = {
         "subject_id": "P4253",
         "level": 5,
         "fields": {
-            "1644517": "pop_men_25_29",
-            "1644518": "pop_men_30_34",
-            "1644537": "pop_women_25_29",
-            "1644538": "pop_women_30_34",
+            "1644517": "pop_total_25_29",
+            "1644518": "pop_total_30_34",
+            "1644537": "pop_men_25_29",
+            "1644538": "pop_men_30_34",
+            "1644557": "pop_women_25_29",
+            "1644558": "pop_women_30_34",
         },
         "notes": "Basis for the 25-34 sex-ratio 'selective migration' proxy "
-                 "(demo_sh_men2534 in the notebook).",
+                 "(demo_sh_men2534 in the notebook). IDs corrected 2026-07-24 -- "
+                 "this catalog (inherited from the user's GUS_API.ipynb) had "
+                 "1644517/1644518 (actually 'ogółem') mislabeled as men, and "
+                 "1644537/1644538 (actually 'mężczyźni') mislabeled as women; "
+                 "the real 'kobiety' IDs (1644557/1644558) were missing entirely.",
     },
     "schools": {
         "subject_id": "P2144",

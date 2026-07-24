@@ -262,14 +262,17 @@ const VARIABLE_META = {
     topic: "ludnosc",
     file: "data/population_25_34.json",
     meaning:
-      "Liczba ludności w wieku 25-34 lata (suma grup 25-29 i 30-34), wg płci -- przybliżony " +
-      "wskaźnik migracji selektywnych młodych dorosłych. Jednorazowy pomiar z NSP 2021, nie " +
-      "dane roczne (BDL nie publikuje tej konkretnej grupy wieku w bieżącej, corocznej ewidencji " +
-      "ludności -- tylko szersze kategorie wieku produkcyjnego/przedprodukcyjnego/poprodukcyjnego).",
+      "Liczba ludności rezydującej w wieku 25-34 lata (suma grup 25-29 i 30-34), wg płci -- " +
+      "przybliżony wskaźnik migracji selektywnych młodych dorosłych. \"Ludność rezydująca\" to " +
+      "koncepcja BDL (subjekt P4253, \"Ludność rezydująca wg grup wieku i płci\") oparta o " +
+      "faktyczne miejsce zamieszkania w dniu spisu, nie o zameldowanie -- różni się od bieżącej, " +
+      "corocznej ewidencji ludności użytej w innych zmiennych tej mapy. Jednorazowy pomiar z " +
+      "NSP 2021 (stan na 31 marca 2021), nie dane roczne.",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
     accessNote:
-      "Kody zmiennych BDL: 1644517/1644518 (mężczyźni 25-29/30-34), 1644537/1644538 " +
-      "(kobiety 25-29/30-34), zsumowane -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "Kody zmiennych BDL: 1644517/1644518 (ogółem 25-29/30-34), 1644537/1644538 " +
+      "(mężczyźni 25-29/30-34), 1644557/1644558 (kobiety 25-29/30-34) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "25-34 lata" }],
     measures: [{ key: "default", label: "Wartość" }],
