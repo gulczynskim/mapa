@@ -46,8 +46,8 @@ const VARIABLE_META = {
       "urzędach pracy wśród ludności aktywnej zawodowo w wieku produkcyjnym. Dane roczne, powiaty.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
-      "Kody zmiennych BDL: 79214 (ogółem), 79215 (mężczyźni), 79216 (kobiety) -- " +
-      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "Temat BDL P2670, poziom powiat. Kody zmiennych: 79214 (ogółem), 79215 (mężczyźni), " +
+      "79216 (kobiety) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Wiek produkcyjny" }],
     measures: [{ key: "default", label: "Wartość" }],
@@ -60,15 +60,23 @@ const VARIABLE_META = {
     meaning:
       "Współczynnik aktywności zawodowej -- odsetek osób aktywnych zawodowo (pracujących " +
       "lub aktywnie poszukujących pracy) w danej grupie wieku. Jednorazowy pomiar z " +
-      "Narodowego Spisu Powszechnego 2021, nie dane roczne.",
+      "Narodowego Spisu Powszechnego 2021, nie dane roczne. Wszystkie grupy wieku (15+ i sześć " +
+      "przedziałów 10-letnich) mają wartość \"ogółem\" publikowaną wprost przez BDL.",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
     accessNote:
-      "Kody zmiennych BDL: 1670866/73/80 (15+, ogółem/mężczyźni/kobiety), 1670867/74/81 (15-24) -- " +
+      "Temat BDL P4309, poziom powiat. Kody zmiennych (ogółem/mężczyźni/kobiety): 1670866/73/80 " +
+      "(15+), 1670867/74/81 (15-24), 1670868/75/82 (25-34), 1670869/76/83 (35-44), 1670870/77/84 " +
+      "(45-54), 1670871/78/85 (55-64), 1670872/79/86 (65+) -- " +
       "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "15plus", label: "15 lat i więcej" },
-      { key: "15_24", label: "15-24 lata", hasTotal: false }, // no combined-group total computed for this slice
+      { key: "15_24", label: "15-24 lata" },
+      { key: "25_34", label: "25-34 lata" },
+      { key: "35_44", label: "35-44 lata" },
+      { key: "45_54", label: "45-54 lata" },
+      { key: "55_64", label: "55-64 lata" },
+      { key: "65plus", label: "65 lat i więcej" },
     ],
     measures: [{ key: "default", label: "Wartość" }],
   },
@@ -125,9 +133,9 @@ const VARIABLE_META = {
       "wartość z \"Radni gminy\" dla tych 66 miast zamiast mylącego zera.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
-      "Kody zmiennych BDL: 3094 (ogółem), 3095 (mężczyźni), 3096 (kobiety) -- " +
-      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}. Miasta na prawach powiatu podstawione " +
-      "z tematu P1312 (radni gminy) -- zob. etl/patch_city_powiats.py.",
+      "Temat BDL P1317, poziom powiat. Kody zmiennych: 3094 (ogółem), 3095 (mężczyźni), 3096 " +
+      "(kobiety) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}. Miasta na prawach powiatu " +
+      "podstawione z tematu P1312 (radni gminy) -- zob. etl/patch_city_powiats.py.",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Wszyscy radni" }],
     measures: [{ key: "default", label: "Wartość" }],
@@ -141,7 +149,7 @@ const VARIABLE_META = {
     meaning: "Liczba radnych w radach gmin, wg płci.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
-      "Kody zmiennych BDL: 6 (ogółem), 7 (mężczyźni), 8 (kobiety) -- " +
+      "Temat BDL P1312, poziom gmina. Kody zmiennych: 6 (ogółem), 7 (mężczyźni), 8 (kobiety) -- " +
       "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "gmina", label: "Gmina" }],
     ageGroups: [{ key: "default", label: "Wszyscy radni" }],
@@ -250,13 +258,13 @@ const VARIABLE_META = {
     topic: "edukacja",
     file: "data/liceum.json",
     meaning:
-      "Liczba uczniów i absolwentów liceów ogólnokształcących dla młodzieży (bez szkół " +
-      "specjalnych), wg płci.",
+      "Liczba uczniów (ogółem i w 1 klasie) oraz absolwentów liceów ogólnokształcących dla " +
+      "młodzieży (bez szkół specjalnych), wg płci.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
-      "Kody zmiennych BDL: uczniowie 270621 (mężczyźni) / 270655 (kobiety), absolwenci " +
-      "270638 (mężczyźni) / 270602 (kobiety), uczniowie w 1 klasie 378692 (mężczyźni) / " +
-      "378694 (kobiety) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "Temat BDL P2035, poziom powiat. Kody zmiennych: uczniowie 270621 (mężczyźni) / 270655 " +
+      "(kobiety), absolwenci 270638 (mężczyźni) / 270602 (kobiety), uczniowie w 1 klasie 378692 " +
+      "(mężczyźni) / 378694 (kobiety) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Młodzież licealna" }],
     measures: [
@@ -280,8 +288,8 @@ const VARIABLE_META = {
       "NSP 2021 (stan na 31 marca 2021), nie dane roczne.",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
     accessNote:
-      "Kody zmiennych BDL: 1644517/1644518 (ogółem 25-29/30-34), 1644537/1644538 " +
-      "(mężczyźni 25-29/30-34), 1644557/1644558 (kobiety 25-29/30-34) -- " +
+      "Temat BDL P4253, poziom powiat. Kody zmiennych: 1644517/1644518 (ogółem 25-29/30-34), " +
+      "1644537/1644538 (mężczyźni 25-29/30-34), 1644557/1644558 (kobiety 25-29/30-34) -- " +
       "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "25-34 lata" }],
@@ -417,7 +425,10 @@ const VARIABLE_META = {
       "medianie egzaminu ósmoklasisty.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
-      "Temat BDL P2730, poziom podregion -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "Temat BDL P2730, poziom podregion. Kody zmiennych (mężczyźni/kobiety): 101554/101555 (od " +
+      "urodzenia), 105836/105837 (od 15 lat), 105845/105846 (od 30 lat), 105854/105855 (od 45 lat), " +
+      "105863/105864 (od 60 lat), 101563/101564 (od 65 lat) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "podregion", label: "Podregion" }],
     ageGroups: [
       { key: "0", label: "Od urodzenia", hasTotal: false },
@@ -446,7 +457,10 @@ const VARIABLE_META = {
       "19-24) wprowadzony od 2010 -- nie sumują się do jednej spójnej piramidy wieku, traktuj je jako " +
       "niezależne kategorie.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P3447, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P3447, poziom powiat. 15 grup wieku x 2 płcie = 30 kodów zmiennych, zbyt liczne, by " +
+      "wypisać tu wszystkie -- pełna lista w etl/bdl_variables.py (klucz \"population_by_age\") -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "ogolem", label: "Wszystkie grupy wieku" },
@@ -475,7 +489,9 @@ const VARIABLE_META = {
     file: "data/median_age.json",
     meaning: "Wiek, poniżej i powyżej którego znajduje się połowa populacji (mediana), wg płci.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P3814, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P3814, poziom powiat. Kody zmiennych: 746289 (ogółem), 746290 (mężczyźni), 746291 " +
+      "(kobiety) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [{ key: "default", label: "Wartość" }],
@@ -492,7 +508,10 @@ const VARIABLE_META = {
       "indywidualne\" to podzbiór -- tylko gospodarstwa prywatne. Jednorazowy Powszechny Spis Rolny " +
       "2020, nie dane roczne.",
     source: "Bank Danych Lokalnych GUS (Powszechny Spis Rolny 2020)",
-    accessNote: "Temat BDL P4081, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P4081, poziom powiat. Kody zmiennych: 1623387 (kobiety, gospodarstwa rolne ogółem), " +
+      "1623386 (mężczyźni, gospodarstwa rolne ogółem), 1623390 (kobiety, gospodarstwa indywidualne), " +
+      "1623389 (mężczyźni, gospodarstwa indywidualne) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "gospodarstwa_rolne", label: "Gospodarstwa rolne ogółem" },
@@ -512,7 +531,10 @@ const VARIABLE_META = {
       "prowadzi gospodarstwo dzień po dniu, \"Użytkownik\" to formalny posiadacz/właściciel (bywa inną " +
       "osobą niż kierujący). Jednorazowy Powszechny Spis Rolny 2020.",
     source: "Bank Danych Lokalnych GUS (Powszechny Spis Rolny 2020)",
-    accessNote: "Temat BDL P4077, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P4077, poziom powiat. Kody zmiennych: 1623159 (kobiety, kierujący produkcją), " +
+      "1623152 (mężczyźni, kierujący produkcją), 1623180 (kobiety, użytkownik), 1623173 (mężczyźni, " +
+      "użytkownik) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "gospodarstwo", label: "Kierujący produkcją" },
@@ -530,7 +552,9 @@ const VARIABLE_META = {
       "Użytkownicy oraz członkowie ich rodzin pracujący w gospodarstwach indywidualnych, wg płci. " +
       "Jednorazowy Powszechny Spis Rolny 2020.",
     source: "Bank Danych Lokalnych GUS (Powszechny Spis Rolny 2020)",
-    accessNote: "Temat BDL P4272, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P4272, poziom powiat. Kody zmiennych: 1647648 (kobiety), 1647647 (mężczyźni) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [{ key: "default", label: "Wartość" }],
@@ -546,7 +570,10 @@ const VARIABLE_META = {
       "Uczniowie (ogółem i w 1 klasie) oraz absolwenci szkół policealnych, wg typu szkoły i płci. Nie " +
       "każdy typ szkoły ma dane dla wszystkich trzech miar -- brakujące kombinacje pokazują brak danych.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P2178, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P2178, poziom powiat. 5 typów szkół x do 3 miar x 2 płcie = ~35 kodów zmiennych, zbyt " +
+      "liczne, by wypisać tu wszystkie -- pełna lista w etl/bdl_variables.py (klucz " +
+      "\"szkoly_policealne\") -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "kolegium_bez_specjalnych", label: "W tym kolegium pracowników służb społecznych (bez specjalnych)" },
@@ -573,7 +600,10 @@ const VARIABLE_META = {
       "typu szkoły i płci. Nie każdy typ szkoły ma dane dla wszystkich trzech miar -- brakujące " +
       "kombinacje pokazują brak danych.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P2143, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P2143, poziom powiat. 6 typów szkół x do 3 miar x 2 płcie = ~36 kodów zmiennych, zbyt " +
+      "liczne, by wypisać tu wszystkie -- pełna lista w etl/bdl_variables.py (klucz " +
+      "\"zasadnicze_zawodowe\") -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "specjalne_przysposabiajace", label: "Szkoły specjalne przysposabiające do pracy" },
@@ -597,7 +627,10 @@ const VARIABLE_META = {
     file: "data/uczelnie.json",
     meaning: "Liczba studentów i absolwentów szkół wyższych, wg płci i powiatu siedziby uczelni.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P3226, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P3226, poziom powiat. Kody zmiennych: 377825 (studenci, kobiety), 377823 (studenci, " +
+      "mężczyźni), 377820 (absolwenci, kobiety), 377824 (absolwenci, mężczyźni) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [
@@ -620,7 +653,9 @@ const VARIABLE_META = {
       "ludności ogółem, bo to trafniejszy mianownik dla wypadków przy pracy. \"Pracujący wg sekcji " +
       "PKD\" ma dane dopiero od 2024 r., więc ta miara pokaże brak danych dla wcześniejszych lat.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P2276, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P2276, poziom powiat. Kody zmiennych: 58357 (kobiety), 58355 (mężczyźni) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [
@@ -639,7 +674,9 @@ const VARIABLE_META = {
       "\"Na 100 000 mieszkańców\": liczba ćwiczących podzielona przez ludność ogółem powiatu (zmienna " +
       "\"Ludność wg grup wieku\", grupa \"Wszystkie grupy wieku\", ta sama płeć) i pomnożona przez 100 000.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P2155, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P2155, poziom powiat. Kody zmiennych: 59629 (kobiety), 60313 (mężczyźni) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [
@@ -658,7 +695,10 @@ const VARIABLE_META = {
       "100 000 mieszkańców\": liczba w danej kategorii podzielona przez ludność ogółem powiatu (zmienna " +
       "\"Ludność wg grup wieku\", grupa \"Wszystkie grupy wieku\", ta sama płeć) i pomnożona przez 100 000.",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P3833, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P3833, poziom powiat. Kody zmiennych: 1365336 (kobiety, wszystkie), 1365335 " +
+      "(mężczyźni, wszystkie), 1365341 (kobiety, zakończone zgonem), 1365340 (mężczyźni, zakończone " +
+      "zgonem) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [
@@ -680,7 +720,10 @@ const VARIABLE_META = {
       "Narodowy Spis Powszechny 2021, nie dane roczne. Miara \"Odsetek\": liczba osób z danym poziomem " +
       "wykształcenia podzielona przez \"Wszystkie poziomy\" (dla tej samej płci) i pomnożona przez 100.",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
-    accessNote: "Temat BDL P4318, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P4318, poziom powiat. 10 poziomów wykształcenia x 2 płcie = 20 kodów zmiennych, zbyt " +
+      "liczne, by wypisać tu wszystkie -- pełna lista w etl/bdl_variables.py (klucz " +
+      "\"wyksztalcenie_nsp\") -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "ogolem", label: "Wszystkie poziomy" },
@@ -711,7 +754,11 @@ const VARIABLE_META = {
       "Powszechny 2021, nie dane roczne. Miara \"Odsetek\": liczba osób w danym stanie cywilnym " +
       "podzielona przez \"Wszystkie\" (dla tej samej płci) i pomnożona przez 100.",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
-    accessNote: "Temat BDL P4288, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P4288, poziom powiat. Kody zmiennych (kobiety/mężczyźni): 1652569/1652563 " +
+      "(wszystkie), 1652570/1652564 (kawalerowie/panny), 1652571/1652565 (żonaci/zamężne), " +
+      "1652572/1652566 (wdowcy/wdowy), 1652573/1652567 (rozwiedzeni), 1652574/1652568 (nieustalony) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
       { key: "ogolem", label: "Wszystkie" },
@@ -736,7 +783,9 @@ const VARIABLE_META = {
       "Ludność rezydująca ogółem, wg płci, z tematu BDL który udostępnia też podział na pojedyncze " +
       "roczniki wieku (0,1,2...) -- tu wgrany wyłącznie wariant \"ogółem\" (poza podziałem na roczniki).",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
-    accessNote: "Temat BDL P4254, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P4254, poziom powiat. Kody zmiennych: 1644755 (kobiety), 1644663 (mężczyźni) -- " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [{ key: "default", label: "Wartość" }],
@@ -760,12 +809,16 @@ const VARIABLE_META = {
     topic: "rynek_pracy",
     file: "data/wynagrodzenia.json",
     meaning:
-      "Przeciętne miesięczne wynagrodzenie brutto w powiecie. BDL nie publikuje tego wskaźnika w " +
+      "Przeciętne miesięczne wynagrodzenie brutto w powiecie. Miara \"Wzgl. średniej krajowej\" to " +
+      "osobna zmienna publikowana wprost przez BDL (nie liczona lokalnie): przeciętne wynagrodzenie " +
+      "powiatu jako odsetek średniej krajowej (Polska = 100). BDL nie publikuje tego wskaźnika w " +
       "podziale na płeć (dla wynagrodzeń wg płci zob. zmienna \"Wynagrodzenia\" oparta o publikację " +
       "GUS, dostępną wg płci i miejsca zamieszkania). Zastępuje poprzednie \"Dochody na 1 mieszkańca\" " +
       "(gmina/powiat).",
     source: "Bank Danych Lokalnych GUS",
-    accessNote: "Temat BDL P2497, poziom powiat -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    accessNote:
+      "Temat BDL P2497, poziom powiat. Kody zmiennych: 64428 (przeciętne wynagrodzenie), 64429 " +
+      "(wzgl. średniej krajowej) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [
@@ -842,7 +895,16 @@ const VARIABLE_META = {
     file: "data/fundusz_alimentacyjny.json",
     meaning:
       "Świadczeniobiorcy i dłużnicy funduszu alimentacyjnego. BDL nie publikuje tego wskaźnika w podziale " +
-      "na płeć. Dane dostępne tylko od 2022 r.",
+      "na płeć. Dane dostępne tylko od 2022 r. Sześć miar to sześć osobnych zmiennych publikowanych " +
+      "wprost przez BDL (nie liczonych lokalnie, w tym oba wskaźniki \"na 10 tys.\"/\"na 100 tys. " +
+      "ludności\" -- inaczej niż przy własnych miarach \"_per100k\" tej mapy, np. w zmiennej \"Wypadki " +
+      "przy pracy\"): \"Świadczeniobiorcy na 10 tys. ludności\" i \"Świadczeniobiorcy (śr. miesięczna)\" " +
+      "to liczba osób pobierających świadczenia z funduszu; \"Dłużnicy na 100 tys. ludności\" to ogólna " +
+      "liczba dłużników alimentacyjnych; \"Dłużnicy z postępowaniem ws. uchylania się\" to węższy " +
+      "podzbiór -- dłużnicy, wobec których toczy się postępowanie o uznanie za uchylającego się od " +
+      "zobowiązań alimentacyjnych; \"% środków zwróconych przez dłużników\" to odsetek wypłaconych " +
+      "świadczeń odzyskanych od dłużników w drodze egzekucji; \"Suma wydatkowana z funduszu w roku\" to " +
+      "łączna kwota świadczeń wypłaconych w danym roku.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P4451, poziom powiat -- kody zmiennych: 1728280 (świadczeniobiorcy na 10 tys. ludności), " +

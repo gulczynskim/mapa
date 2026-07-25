@@ -6,6 +6,29 @@ import requests
 
 BASE_URL = "https://bdl.stat.gov.pl/api/v1"
 
+# BDL tags every value with an attrId qualifying what "val" actually means --
+# most values are attrId 0/1 (plain value) or one of several "real value,
+# just with a footnote" flags (3/9/11/13/20/21/97: incomplete aggregate,
+# preliminary estimate, methodology change, low precision, city+powiat
+# combined -- all real numbers, keep as-is) or "genuinely zero" flags (94/98:
+# BDL's own docs give natural increase = 0 as the example -- a real zero
+# from balancing nonzero inputs) or "rounds to zero" flags (7/17: value
+# smaller than the presentation format -- still real, e.g. 0.001%). Confirmed
+# live against /attributes (2026-07): only these five mean the cell is
+# actually EMPTY, not a real zero -- BDL still reports val=0 for these, which
+# would otherwise silently misrepresent "no data" as "zero" on the map:
+#   4/14 -- tajemnica statystyczna / brak informacji (statistical secrecy or
+#           genuinely unable to fill the cell)
+#   91    -- same as 4, kept as a separate id for an older table revision
+#   15    -- "-" placeholder, gap from a presentation-level or unit-list change
+#   50    -- not yet published ("będzie dostępna")
+# Confirmed with a live example: BDL variable 1729439 (P4283, sekcja D,
+# grudzień), powiat kozienicki (071422707000) 2022 & 2024 both have
+# attrId=91/val=0 for mężczyźni AND kobiety while ogółem is a real nonzero
+# value in the same year -- exactly the "unjustified 0" bug this guards
+# against.
+MISSING_ATTR_IDS = {4, 14, 15, 50, 91}
+
 
 def _headers():
     api_key = os.environ.get("BDL_API_KEY")
@@ -52,18 +75,24 @@ def fetch_variable_data(variable_id, unit_level=5, year=None):
 
 
 def flatten(label, raw_results):
-    """Turn BDL's nested by-unit results into long-format rows: label, unit_id, unit_name, year, value."""
+    """Turn BDL's nested by-unit results into long-format rows: label, unit_id, unit_name, year, value.
+    value is None both when BDL's own "val" is null and when attrId marks the
+    cell as suppressed/unavailable (see MISSING_ATTR_IDS) -- callers never
+    need to look at attrId themselves."""
     rows = []
     for entry in raw_results:
         unit_id = entry.get("id")
         unit_name = entry.get("name")
         for v in entry.get("values", []):
+            val = v.get("val")
+            if v.get("attrId") in MISSING_ATTR_IDS:
+                val = None
             rows.append({
                 "variable_id": label,
                 "unit_id": unit_id,
                 "unit_name": unit_name,
                 "year": int(v["year"]),
-                "value": v.get("val"),
+                "value": val,
             })
     return rows
 
@@ -98,3 +127,31 @@ def unit_id_to_teryt(unit_id, level=5):
     if level == 4:
         return normalized[1:3] + normalized[4:6]
     return normalized[1:3] + normalized[6:8]
+
+
+def resolve_gmina_teryt(unit_id, unit_name):
+    """unit_id_to_teryt's positional slicing assumes standard post-2002 gmina
+    unit_ids -- it mis-decodes BDL's separate pre-2002 "Warszawa" legacy block
+    (e.g. id 071412831041 named "Warszawa - Centrum do 2001") into fake-
+    looking but plausible 7-digit codes sharing a "1431..." prefix. Those
+    aren't real TERYT gminas; the block mixes one citywide-total row with
+    individual (now nonexistent) dzielnica rows at the same nominal level.
+
+    Any gmina-level (level=6) fetch needs to run its unit_name through this
+    first, not just unit_id_to_teryt directly -- the citywide row
+    ("M.st.Warszawa do <year>") is the direct predecessor of today's single
+    Warszawa gmina (1465011, confirmed continuous from 2002 onward), remapped
+    there; the dzielnica/union/undetermined rows have no current single-
+    gmina equivalent and resolve to None (caller should drop those rows),
+    matching the "exclude Warsaw's district races entirely, don't roll them
+    up" convention already used for the PKW election data.
+    """
+    if unit_name and unit_name.startswith("M.st.Warszawa do "):
+        return "1465011"
+    if unit_name and (
+        unit_name.startswith("Warszawa - ")
+        or unit_name.startswith("Związek gmin dzielnic Warszawy")
+        or unit_name.startswith("GMINY-DZIELNICY WARSZAWY")
+    ):
+        return None
+    return unit_id_to_teryt(unit_id, level=6)
