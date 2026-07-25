@@ -1,106 +1,62 @@
 """
-No boundary source in this project publishes voivodeship (województwo) polygons
-directly. Unlike podregiony, no BDL parentId lookup is needed here: a powiat's
-voivodeship teryt is just the first 2 digits of its own 4-digit teryt, so we can
-dissolve data/powiaty.json straight into 16 groups by that prefix.
+Fetches voivodeship (województwo) boundaries directly from GUGiK PRG's own
+WFS layer (ms:A01_Granice_wojewodztw) instead of dissolving powiat polygons.
+
+Unlike podregiony (a NUTS-3-ish statistical grouping with no independent
+boundary source -- see build_podregiony.py, which must still dissolve),
+województwo is a real administrative level and PRG publishes it directly,
+same WFS service family as the ms:A02_Granice_powiatow / ms:A03_Granice_gmin
+layers fix_coastal_boundaries.py already fetches. Confirmed live
+(2026-07-25): the layer returns the same JPT_KOD_JE (16 two-digit TERYT
+codes) / JPT_NAZWA_ (lowercase name) schema as those layers.
+
+This sidesteps the seam-mismatch sliver problem entirely -- no dissolve
+means no internal powiat-to-powiat seams to mismatch in the first place --
+and inherits GUGiK's own generalization for this scale, instead of the
+full powiat-resolution vertex density the old dissolve approach carried
+over. Only 16 features nationwide, so unlike the gmina/powiat fetches this
+needs no bbox splitting -- one whole-country request is enough.
+
+One consequence: this layer's coastline/land-border is now an independent
+digitization from the powiat layer's (which carries the hand-patched
+coastal fixes in fix_coastal_boundaries.py) -- they won't coincide
+pixel-for-pixel at extreme zoom anymore. That's expected for a genuinely
+generalized cartographic product at this scale, and a much smaller gap
+than the sliver/generalization problems this replaces.
 """
 
 import json
 import os
 
-from shapely.geometry import MultiPolygon, shape, mapping
-from shapely.ops import unary_union
-from shapely.validation import make_valid
+from shapely.geometry import mapping
+
+from fix_coastal_boundaries import build_admin_geom, fetch_prg_bbox, round_coords
 
 OUT_DIR = "../data"
 
-# The source powiat polygons (third-party GeoJSON) don't share exact vertex
-# coordinates along every internal border -- individually invisible (each
-# powiat is drawn as its own opaque layer), but dissolving several of them
-# together at the coast turns those mismatches into extra disjoint
-# MultiPolygon parts. Confirmed live (2026-07-24): every voivodeship's
-# dissolve has a clean order-of-magnitude gap between real islands/spits
-# (>=0.0026 sq deg -- e.g. the Wolin/Uznam pieces around Świnoujście, the
-# Vistula Spit piece east of the Elbląg Canal cut) and this seam noise
-# (<=0.00053 sq deg everywhere checked). This threshold sits in that gap.
-# Hel is NOT at risk from this filter either way: it's a peninsula attached
-# to the mainland by a land bridge, i.e. part of the main polygon, never a
-# separate MultiPolygon part to begin with.
-MIN_FRAGMENT_AREA = 0.001
-
-# Standard TERYT voivodeship codes -- stable, no API lookup needed.
-VOIVODESHIP_NAMES = {
-    "02": "Dolnośląskie",
-    "04": "Kujawsko-Pomorskie",
-    "06": "Lubelskie",
-    "08": "Lubuskie",
-    "10": "Łódzkie",
-    "12": "Małopolskie",
-    "14": "Mazowieckie",
-    "16": "Opolskie",
-    "18": "Podkarpackie",
-    "20": "Podlaskie",
-    "22": "Pomorskie",
-    "24": "Śląskie",
-    "26": "Świętokrzyskie",
-    "28": "Warmińsko-Mazurskie",
-    "30": "Wielkopolskie",
-    "32": "Zachodniopomorskie",
-}
+# Whole-country bbox in one shot -- only 16 features, no need to tile.
+POLAND_BBOX = (49.0, 14.0, 55.0, 24.2)
 
 if __name__ == "__main__":
-    powiaty = json.load(open(os.path.join(OUT_DIR, "powiaty.json"), encoding="utf-8"))
-
-    groups = {}  # woj_teryt -> [geoms]
-    unmatched = []
-    for feature in powiaty["features"]:
-        powiat_teryt = feature["properties"]["JPT_KOD_JE"]
-        woj_teryt = powiat_teryt[:2]
-        if woj_teryt not in VOIVODESHIP_NAMES:
-            unmatched.append(powiat_teryt)
-            continue
-        # Real-world boundary polygons routinely have self-intersections too
-        # small to see -- unary_union refuses to touch them ("side location
-        # conflict"), so repair each one individually first (same fix as
-        # build_podregiony.py).
-        groups.setdefault(woj_teryt, []).append(make_valid(shape(feature["geometry"])))
-
-    if unmatched:
-        print(f"WARNING: {len(unmatched)} powiat boundary features had no voivodeship match: {unmatched}")
+    prg = fetch_prg_bbox(POLAND_BBOX, "ms:A01_Granice_wojewodztw")
 
     features = []
-    for woj_teryt, geoms in sorted(groups.items()):
-        dissolved = unary_union(geoms)
-        # unary_union on real (if make_valid-repaired) boundary data can spit
-        # out a GeometryCollection with degenerate zero-area LineString/Point
-        # artifacts at seams alongside the real polygon(s) -- confirmed live
-        # for Pomorskie after swapping in higher-precision coastline data for
-        # two of its powiats. Genuinely separate landmasses (e.g. the piece
-        # of the Vistula Spit cut off by the shipping canal) survive this
-        # filter fine since they're real, non-degenerate Polygon parts.
-        if dissolved.geom_type == "GeometryCollection":
-            polys = [g for g in dissolved.geoms if g.geom_type in ("Polygon", "MultiPolygon") and g.area > 0]
-            dissolved = polys[0] if len(polys) == 1 else MultiPolygon(
-                [p for g in polys for p in (g.geoms if g.geom_type == "MultiPolygon" else [g])]
-            )
-        # Seam-mismatch slivers (see MIN_FRAGMENT_AREA above) survive the
-        # GeometryCollection cleanup above since they're non-degenerate
-        # (positive-area) Polygon parts -- drop them here by size instead.
-        if dissolved.geom_type == "MultiPolygon":
-            kept = [p for p in dissolved.geoms if p.area > MIN_FRAGMENT_AREA]
-            dissolved = kept[0] if len(kept) == 1 else MultiPolygon(kept)
+    for kod, entry in sorted(prg.items()):
+        geom = build_admin_geom(entry["parts"])
         features.append(
             {
                 "type": "Feature",
-                "properties": {"JPT_KOD_JE": woj_teryt, "JPT_NAZWA_": VOIVODESHIP_NAMES[woj_teryt]},
-                "geometry": mapping(dissolved),
+                # PRG returns lowercase names (e.g. "dolnośląskie") -- .title()
+                # to match the app's existing "Dolnośląskie"-style casing.
+                "properties": {"JPT_KOD_JE": kod, "JPT_NAZWA_": entry["name"].title()},
+                "geometry": round_coords(mapping(geom)),
             }
         )
 
     out = {
         "type": "FeatureCollection",
         "meta": {
-            "derivedFrom": "data/powiaty.json (JW https://github.com/waszkiewiczja/GeoJSON-Polska-Wojewodztwa-Powiaty-Gminy), dissolved by voivodeship (first 2 digits of powiat TERYT)",
+            "derivedFrom": "GUGiK PRG WFS ms:A01_Granice_wojewodztw (direct fetch, no dissolve)",
             "usage": "Free to use",
         },
         "features": features,

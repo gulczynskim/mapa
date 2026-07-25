@@ -10,12 +10,25 @@ e.g. Powiat bocheński -> PODREGION KRAKOWSKI).
 This guarantees podregion polygons exactly tile the powiat polygons already
 on the map (same source, same vertices) -- no seams or mismatched borders
 from combining two independently-drawn boundary datasets.
+
+Unlike wojewodztwa (which now fetch a real PRG boundary layer directly --
+see build_wojewodztwa.py -- since podregiony have no such source and must
+still be dissolved), the seam-mismatch sliver problem here is fixed at the
+source with shapely.set_precision(): every input powiat polygon is snapped
+onto a common coordinate grid *before* unary_union, so vertices that are
+"almost" identical between two neighboring powiats become exactly
+identical and the shared edge cancels out cleanly, instead of leaving a
+thin ribbon-shaped sliver for unary_union to produce and then filtering it
+out by area afterward. GRID_SIZE (1e-7 deg, ~1cm at this latitude) is sized
+to close floating-point/digitization noise between two copies of the same
+nominal vertex without moving real detail.
 """
 
 import json
 import os
 
 import requests
+from shapely import set_precision
 from shapely.geometry import MultiPolygon, shape, mapping
 from shapely.ops import unary_union
 from shapely.validation import make_valid
@@ -23,15 +36,26 @@ from shapely.validation import make_valid
 from bdl_client import unit_id_to_teryt
 
 OUT_DIR = "../data"
+GRID_SIZE = 1e-7
 
-# Same seam-mismatch sliver issue as build_wojewodztwa.py's dissolve (the
-# source powiat polygons don't share exact vertices along every internal
-# border) -- confirmed live (2026-07-25): 6 of 73 podregiony came out as
-# MultiPolygon with extra disjoint parts (up to 21 for Podregion Szczeciński),
-# rendering as stray "powiat border" lines/shapes on the map since each part
-# gets its own outline. Same clean order-of-magnitude gap as wojewodztwa
-# between real islands/spits (>=0.0026 sq deg) and seam artifacts
-# (<=0.00053 sq deg) confirmed here too, so the same threshold applies.
+# Kept as a defensive backstop after precision snapping, not the primary
+# fix anymore -- confirmed live (2026-07-25): before this file dissolved
+# powiat polygons unsnapped, 6 of 73 podregiony came out as MultiPolygon
+# with extra disjoint parts (up to 21 for Podregion Szczeciński), rendering
+# as stray "powiat border" lines/shapes on the map since each part gets its
+# own outline. Same clean order-of-magnitude gap as wojewodztwa's old
+# dissolve between real islands/spits (>=0.0026 sq deg) and seam artifacts
+# (<=0.00053 sq deg) held here too.
+#
+# Caveat: GRID_SIZE assumes the mismatch is floating-point/digitization
+# noise between two copies of the same source. The 13 coastal powiats
+# (fix_coastal_boundaries.py) were patched from GUGiK PRG while their
+# neighbors are still the original third-party GeoJSON repo -- a genuinely
+# different digitization, possibly meters apart, not millimeters. If
+# slivers persist specifically at those seams after snapping, this
+# MIN_FRAGMENT_AREA filter is still here to catch them -- but the real fix
+# at that point is unifying the powiat source (re-fetch all of
+# data/powiaty.json from PRG's A02 layer), not enlarging GRID_SIZE.
 MIN_FRAGMENT_AREA = 0.001
 
 
@@ -80,8 +104,10 @@ if __name__ == "__main__":
         g = groups.setdefault(podregion_teryt, {"name": name, "geoms": []})
         # Real-world boundary polygons routinely have self-intersections too
         # small to see -- unary_union refuses to touch them ("side location
-        # conflict"), so repair each one individually first.
-        g["geoms"].append(make_valid(shape(feature["geometry"])))
+        # conflict"), so repair each one individually first. Snap onto a
+        # common grid after repairing so neighboring powiats' shared-border
+        # vertices collapse to exactly the same point (see GRID_SIZE above).
+        g["geoms"].append(set_precision(make_valid(shape(feature["geometry"])), GRID_SIZE))
 
     if unmatched:
         print(f"WARNING: {len(unmatched)} powiat boundary features had no crosswalk entry: {unmatched}")
