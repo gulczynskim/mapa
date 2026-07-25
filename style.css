@@ -378,6 +378,20 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
   align-items: center;
   gap: 0.4rem;
 }
+.dim-select-all {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+  margin-top: 0.4rem;
+}
+label.dim-select-all:has(+ .download-variables) {
+  margin-bottom: 0.6rem;
+}
 .download-years input {
   width: 90px;
   padding: 0.35rem;

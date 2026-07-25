@@ -923,7 +923,7 @@ const VARIABLE_META = {
     ],
   },
   mammografia: {
-    label: "Pokrycie badaniami przesiewowymi -- Mammografia",
+    label: "Pokrycie badaniami przesiewowymi – Mammografia",
     unit: "%",
     topic: "zdrowie",
     file: "data/mammografia.json",
@@ -939,7 +939,7 @@ const VARIABLE_META = {
     sexScope: "women",
   },
   cytologia: {
-    label: "Pokrycie badaniami przesiewowymi -- Cytologia",
+    label: "Pokrycie badaniami przesiewowymi – Cytologia",
     unit: "%",
     topic: "zdrowie",
     file: "data/cytologia.json",

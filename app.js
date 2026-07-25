@@ -56,6 +56,24 @@ const MISSING_COLOR = "#d9d8d2";
 // every rendered boundary layer AND the exported PNG/SVG's polygon stroke,
 // so the two stay visually consistent.
 const BORDER_COLOR = "#9a9a9a";
+// A single fixed weight/opacity looked "dirty" at powiat/gmina (2479 gmina
+// polygons means a LOT of grey ink per unit area at the same weight a
+// 16-feature wojewodztwo layer uses) -- thinned and lightened for the two
+// dense levels, while podregion/wojewodztwo (few, large regions, borders
+// were never the problem there) get a bolder, fully solid line instead so
+// the map doesn't read as flat at the coarse end just because the fine end
+// got quieter. Same {weight, opacity} shape as Leaflet's own path options,
+// used directly in style callbacks below; the SVG export path reads it too
+// (stroke-width/stroke-opacity) so exported images match what's on screen.
+const BORDER_STYLES = {
+  powiat: { weight: 0.15, opacity: 0.5 },
+  gmina: { weight: 0.15, opacity: 0.5 },
+  podregion: { weight: 0.6, opacity: 1 },
+  wojewodztwo: { weight: 0.6, opacity: 1 },
+};
+function borderStyleFor(level) {
+  return BORDER_STYLES[level] ?? { weight: 0.3, opacity: 1 };
+}
 
 // "Różnica" = kobiety - mężczyźni. Kept as a fixed, mechanical convention --
 // NOT a built-in judgment about which sex is disadvantaged, since that
@@ -127,11 +145,15 @@ let state = {
 
 // Every variable defaults to showing the gender GAP (Różnica K-M) first
 // rather than a raw total -- that's the map's whole reason for existing.
-// Polityka is the one exception: for political representation specifically,
-// "% kobiet" (the share of women among officials/candidates) is a more
-// immediately legible starting point than a raw headcount difference.
+// Two named exceptions, both by user request rather than the general rule:
+// Polityka (political representation) opens on "% kobiet" -- the share of
+// women among officials/candidates is a more immediately legible starting
+// point there than a raw headcount difference. Uczelnie (students/
+// graduates) opens on "% mężczyzn" instead -- men's share of higher
+// education is the more notable gap for this one.
 function defaultView(variable) {
   if (VARIABLE_META[variable].sexScope === "women") return "women";
+  if (variable === "uczelnie") return "shareMen";
   return VARIABLE_META[variable].topic === "polityka" ? "shareWomen" : "diff";
 }
 
@@ -286,7 +308,7 @@ function bindFeatureLayer(teryt, name, layer) {
   layer.bindTooltip("", { className: "region-tooltip", sticky: true });
 }
 
-function renderBoundaries(data) {
+function renderBoundaries(data, level) {
   if (geoLayer) map.removeLayer(geoLayer);
   // Fresh per level: a stale teryt from the previous level would either not
   // exist here (search/rankings silently show nothing for it) or, worse,
@@ -294,8 +316,9 @@ function renderBoundaries(data) {
   terytToLayer = {};
   terytToName = {};
   appliedGminaOverrides = {};
+  const border = borderStyleFor(level);
   geoLayer = L.geoJSON(data, {
-    style: () => ({ fillOpacity: 0.9, color: BORDER_COLOR, weight: 0.3 }),
+    style: () => ({ fillOpacity: 0.9, color: BORDER_COLOR, weight: border.weight, opacity: border.opacity }),
     onEachFeature: (feature, layer) =>
       bindFeatureLayer(feature.properties.JPT_KOD_JE, feature.properties.JPT_NAZWA_, layer),
   }).addTo(map);
@@ -313,9 +336,10 @@ function renderBoundaries(data) {
 // -- shared by both the split and merge branches below, which each need to
 // swap in or insert a layer that isn't part of the originally-loaded GeoJSON.
 function buildOverrideLayer(teryt, name, geometry) {
+  const border = borderStyleFor("gmina"); // only meaningful at gmina level, see comment above
   const layer = L.geoJSON(
     { type: "Feature", properties: { JPT_KOD_JE: teryt, JPT_NAZWA_: name }, geometry },
-    { style: () => ({ fillOpacity: 0.9, color: BORDER_COLOR, weight: 0.3 }) }
+    { style: () => ({ fillOpacity: 0.9, color: BORDER_COLOR, weight: border.weight, opacity: border.opacity }) }
   ).getLayers()[0];
   bindFeatureLayer(teryt, name, layer);
   return layer;
@@ -433,7 +457,7 @@ async function loadBoundaries(level) {
 async function ensureLevel(level) {
   if (level === currentLevel) return;
   const data = await loadBoundaries(level);
-  renderBoundaries(data);
+  renderBoundaries(data, level);
   currentLevel = level;
   document.getElementById("search-input").value = "";
   document.getElementById("search-results").innerHTML = "";
@@ -504,7 +528,7 @@ async function init() {
   });
   map.addControl(new ResetViewControl());
 
-  renderBoundaries(loadedBoundaries[VARIABLE_META[state.variable].levels[0].key]);
+  renderBoundaries(loadedBoundaries[VARIABLE_META[state.variable].levels[0].key], VARIABLE_META[state.variable].levels[0].key);
   currentLevel = VARIABLE_META[state.variable].levels[0].key;
 
   // Safety net for any highlight or tooltip that outlives its hover (missed
@@ -820,59 +844,6 @@ function logBoundariesSequential(domain, n) {
   return Array.from({ length: n + 1 }, (_, i) => Math.exp(lnMin + (i / n) * (lnMax - lnMin)));
 }
 
-// Shared by all three diverging modes below. Each ARM (below/above center)
-// is spaced using only that arm's own real distances-from-center -- one
-// extreme outlier above center no longer stretches the below-center arm
-// too (it used to: a single shared spread mirrored onto both sides is what
-// made the wage-gap "Różnica" view look almost entirely white, 88% of
-// counties landed in one bucket).
-//
-// Critically, a POPULATED arm is spaced between its own true MIN and MAX
-// distance, not between 0 (center) and its max -- otherwise the boundary
-// closest to center is an arbitrary fraction of the max, not a real value,
-// which silently reintroduces the exact bug this was meant to fix: for a
-// genuinely one-sided variable (life expectancy's K-M is never negative --
-// women never live shorter than men), the empty arm still needs to
-// collapse to *something*, and collapsing it to `center` leaves a
-// nonzero-width "near equality" bucket sitting between `center` and the
-// populated arm's true minimum -- which is exactly as wrong as the
-// original bug, just one level more subtle (a legend that LOOKS collapsed
-// but still starts at 0/1 instead of the real smallest gap). Collapsing
-// the empty arm to the POPULATED arm's own innermost boundary instead
-// closes that gap to zero width too, so legendBuckets() hides all of it.
-//
-// `dists` are already-computed positive distances-from-center in whatever
-// space this mode spaces evenly in (raw for linear, log-magnitude for
-// ratio-style views, symlog-magnitude for difference-style views);
-// `combine(distance, sign)` turns a spaced distance back into an actual
-// boundary value (sign is -1 for the below-center arm, +1 for above).
-function spacedDivergingBoundaries(belowDists, aboveDists, n, combine) {
-  const half = (n + 1) / 2; // n is always odd (a diverging palette needs a true center bucket)
-  const evenSpace = (dists) => {
-    const lo = Math.min(...dists);
-    const hi = Math.max(...dists);
-    return Array.from({ length: half }, (_, j) => (hi === lo ? lo : lo + (j / (half - 1)) * (hi - lo)));
-  };
-  if (belowDists.length === 0 && aboveDists.length === 0) {
-    const c = combine(0, 1);
-    return Array.from({ length: n + 1 }, () => c);
-  }
-  if (belowDists.length === 0 || aboveDists.length === 0) {
-    const belowEmpty = belowDists.length === 0;
-    const populated = belowEmpty ? aboveDists : belowDists;
-    const inner = evenSpace(populated); // ascending distance, [0] = arm's own true minimum
-    const populatedBoundaries = belowEmpty
-      ? inner.map((d) => combine(d, 1))
-      : inner.slice().reverse().map((d) => combine(d, -1));
-    const anchor = populatedBoundaries[belowEmpty ? 0 : half - 1];
-    const pad = Array.from({ length: n + 1 - half }, () => anchor);
-    return belowEmpty ? [...pad, ...populatedBoundaries] : [...populatedBoundaries, ...pad];
-  }
-  const belowB = evenSpace(belowDists).reverse().map((d) => combine(d, -1));
-  const aboveB = evenSpace(aboveDists).map((d) => combine(d, 1));
-  return [...belowB, ...aboveB];
-}
-
 // Shared by linear and log/symlog diverging modes (NOT quantile below,
 // which has a real, stated reason to scale each arm independently -- an
 // outlier on one side shouldn't wash out the other side's spread). Linear
@@ -900,22 +871,17 @@ function spacedDivergingBoundaries(belowDists, aboveDists, n, combine) {
 // center data point happened to be (which is what produced the "0 to 0"
 // middle bin E8 matematyka's linear legend showed, and the 0.9993/1.0007
 // near-miss on the log ratio scale).
+// belowDists/aboveDists are assumed genuinely two-sided here -- paletteFor()
+// below routes a one-sided domain (e.g. life expectancy's K-M, never
+// negative) to the sequential palette/boundaries instead of calling this at
+// all, so a real center-to-white-to-extreme diverging spread is never asked
+// to represent data that only exists on one side of center. The
+// belowDists.length===0 fallback below only fires for a domain with NO real
+// data at all (nothing rendered yet / a slice with zero non-null values).
 function symmetricDivergingBoundaries(belowDists, aboveDists, n, combine) {
-  const belowEmpty = belowDists.length === 0;
-  const aboveEmpty = aboveDists.length === 0;
-  if (belowEmpty && aboveEmpty) {
+  if (belowDists.length === 0 && aboveDists.length === 0) {
     const c = combine(0, 1);
     return Array.from({ length: n + 1 }, () => c);
-  }
-  // One-sided data (e.g. life expectancy's K-M, never negative): nothing
-  // real to mirror on the empty side, so spend the FULL step count
-  // sweeping center..max on the side that actually has data instead of
-  // reserving half of it for a symmetric-but-empty mirror image.
-  if (belowEmpty || aboveEmpty) {
-    const maxDist = Math.max(...(belowEmpty ? aboveDists : belowDists));
-    return belowEmpty
-      ? Array.from({ length: n + 1 }, (_, i) => combine((i / n) * maxDist, 1))
-      : Array.from({ length: n + 1 }, (_, i) => combine(((n - i) / n) * maxDist, -1));
   }
   const radius = Math.max(...belowDists, ...aboveDists);
   return Array.from({ length: n + 1 }, (_, i) => {
@@ -935,11 +901,9 @@ function linearBoundariesDiverging(domain, view, n) {
 // Diverging, "quantile" mode: each arm's boundaries sit at real quantiles
 // of that arm's own distribution (not evenly spaced), so one extreme
 // outlier no longer stretches every other county on that arm into the
-// pale near-center buckets. Same one-sided handling as
-// spacedDivergingBoundaries above, just with `quantile()` standing in for
-// the even-spacing -- quantile(dists, 0) is already that arm's true
-// minimum, so the "start at the real min, not at center" fix falls out
-// naturally here rather than needing an explicit anchor step.
+// pale near-center buckets. Assumes a genuinely two-sided domain, same as
+// symmetricDivergingBoundaries above -- paletteFor() routes one-sided
+// domains to the sequential palette/boundaries before this is ever called.
 function quantileBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
   const half = (n + 1) / 2;
@@ -948,15 +912,6 @@ function quantileBoundariesDiverging(domain, view, n) {
   const sideQuantiles = (dists) => Array.from({ length: half }, (_, j) => quantile(dists, j / (half - 1)));
 
   if (below.length === 0 && above.length === 0) return Array.from({ length: n + 1 }, () => center);
-  if (below.length === 0 || above.length === 0) {
-    const belowEmpty = below.length === 0;
-    const populated = belowEmpty ? above : below;
-    const inner = sideQuantiles(populated);
-    const populatedBoundaries = belowEmpty ? inner.map((d) => center + d) : inner.slice().reverse().map((d) => center - d);
-    const anchor = populatedBoundaries[belowEmpty ? 0 : half - 1];
-    const pad = Array.from({ length: n + 1 - half }, () => anchor);
-    return belowEmpty ? [...pad, ...populatedBoundaries] : [...populatedBoundaries, ...pad];
-  }
   const left = sideQuantiles(below).reverse().map((d) => center - d);
   const right = sideQuantiles(above).map((d) => center + d);
   return [...left, ...right];
@@ -1020,11 +975,61 @@ function stepsForView(view) {
   return view.reverseDiverging ? [...DIVERGING_STEPS].reverse() : DIVERGING_STEPS;
 }
 
+// Single source of truth for "which colors AND which boundaries does this
+// view/domain combination use" -- the two must be decided TOGETHER, not
+// separately (stepsForView then colorBoundaries): a one-sided diverging
+// domain needs a different PALETTE, not just different boundary math, so
+// whichever steps get used have to be the exact ones the boundaries were
+// computed for. colorFor, updateLegend, and the PNG/SVG export legend all
+// call this instead of the two separately, so they can never drift apart.
+//
+// A one-sided domain (e.g. life expectancy's K-M, never negative -- women
+// never live shorter than men in any powiat/podregion) used to still get
+// the full two-hue DIVERGING_STEPS palette assigned by raw bucket index:
+// boundaries correctly swept center..max on the populated side, but bucket
+// 0 was always DIVERGING_STEPS[0] (blue) and the middle bucket was always
+// white regardless of where the real data actually sat -- confirmed live,
+// life_expectancy's Różnica (5.7-10.2 year gap, every powiat) painted its
+// SMALLEST real gap white (falsely reading as "near equality") and never
+// used blue at all (no real value was ever low enough to reach it), wasting
+// half the palette's resolution on an empty range. Switched to a plain
+// sequential scale over the raw one-sided values (min real value = palest,
+// max = fullest -- same treatment as the Kobiety/Mężczyźni magnitude views,
+// reusing their exact palettes so hue-to-sex meaning stays consistent
+// everywhere) whenever a domain doesn't actually straddle center.
+function paletteFor(domain, view) {
+  if (view.kind === "sequential") {
+    const steps = stepsForView(view);
+    return { steps, boundaries: colorBoundaries(domain, view, steps) };
+  }
+  const center = view.center ?? 0;
+  const hasBelow = domain.some((v) => v < center);
+  const hasAbove = domain.some((v) => v >= center);
+  if (hasBelow === hasAbove) {
+    // Either genuinely two-sided (both true), or no real data at all
+    // (both false) -- the latter already collapses to one repeated
+    // center/white value inside colorBoundaries, no special-casing needed.
+    const steps = stepsForView(view);
+    return { steps, boundaries: colorBoundaries(domain, view, steps) };
+  }
+  // reverseDiverging flips which raw side means "more women" (red) vs "more
+  // men" (blue) -- same convention stepsForView already applies to the
+  // two-sided palette (see ratioInverse's comment near VIEWS above).
+  const redSide = view.reverseDiverging ? hasBelow : hasAbove;
+  const steps = redSide ? SEQUENTIAL_STEPS_RED : SEQUENTIAL_STEPS_BLUE;
+  const n = steps.length;
+  let boundaries;
+  if (state.colorScale === "log") boundaries = logBoundariesSequential(domain, n);
+  else if (state.colorScale === "quantile") boundaries = quantileBoundariesSequential(domain, n);
+  else boundaries = linearBoundariesSequential(domain, n);
+  return { steps, boundaries };
+}
+
 function colorFor(value, domain) {
   const view = VIEWS[state.view];
   if (value === null) return MISSING_COLOR;
-  const steps = stepsForView(view);
-  return steps[bucketIndex(value, colorBoundaries(domain, view, steps))];
+  const { steps, boundaries } = paletteFor(domain, view);
+  return steps[bucketIndex(value, boundaries)];
 }
 
 function highlight(layer) {
@@ -1041,7 +1046,8 @@ function highlight(layer) {
 // us for real: any mouseout was capable of whiting out the entire map, not
 // just the hovered polygon.
 function baseStyleFor(value, domain) {
-  return { fillColor: colorFor(value, domain), fillOpacity: 0.9, color: BORDER_COLOR, weight: 0.3 };
+  const border = borderStyleFor(state.level);
+  return { fillColor: colorFor(value, domain), fillOpacity: 0.9, color: BORDER_COLOR, weight: border.weight, opacity: border.opacity };
 }
 
 // Polish locale throughout the UI: comma decimal separator, space thousands
@@ -1141,7 +1147,6 @@ function legendBuckets(view, boundaries, steps) {
 // direction, so bare numbers are enough.
 function updateLegend(domain) {
   const view = VIEWS[state.view];
-  const steps = stepsForView(view);
   const scaleEl = document.getElementById("legend-scale");
   const labelsEl = document.getElementById("legend-labels");
   if (domain.length === 0) {
@@ -1149,7 +1154,7 @@ function updateLegend(domain) {
     labelsEl.innerHTML = "";
     return;
   }
-  const boundaries = colorBoundaries(domain, view, steps);
+  const { steps, boundaries } = paletteFor(domain, view);
   const { buckets, ticks } = legendBuckets(view, boundaries, steps);
   scaleEl.innerHTML = buckets
     .map((b) => `<span style="flex:none;width:${((b.hi - b.lo) * 100).toFixed(3)}%;background:${b.color}"></span>`)
@@ -1237,11 +1242,18 @@ function exportTitle() {
 // sidebar line. Color scale/scope are deliberately NOT here -- see
 // exportScaleSentence() below, which reads as its own sentence under the
 // legend instead of another " · "-joined fragment up here.
+// Export-only plural forms of the level labels ("Powiat" -> "Powiaty") --
+// the sidebar's own "Poziom agregacji: Powiat" line (updateMeta()) is
+// specifying an aggregation TYPE, singular reads correctly there, but the
+// export subtitle is describing what the whole rendered map shows, where
+// the plural is the natural phrasing ("Powiaty" as in "this map covers
+// powiats", not one specific powiat).
+const EXPORT_LEVEL_LABEL_PLURAL = { powiat: "Powiaty", gmina: "Gminy", podregion: "Podregiony", wojewodztwo: "Województwa" };
 function exportFeatureParts() {
   const meta = VARIABLE_META[state.variable];
   const view = VIEWS[state.view];
   const level = meta.levels.find((o) => o.key === state.level) || meta.levels[0];
-  const parts = [String(state.year), level.label];
+  const parts = [String(state.year), EXPORT_LEVEL_LABEL_PLURAL[level.key] ?? level.label];
   if (meta.ageGroups.length > 1) {
     const ag = meta.ageGroups.find((o) => o.key === state.ageGroup);
     if (ag) parts.push(ag.label);
@@ -1328,13 +1340,12 @@ function wrapParts(parts, fontSize, maxWidth) {
 
 // Full-width legend (unlike the cramped sidebar copy) so the tick labels --
 // up to 9 of them, for the 8-bucket sequential scale -- have room to
-// breathe. Uses the same legendBuckets() as the sidebar legend, so a
-// diverging view's collapsed (zero-width, one-sided) buckets are hidden
-// here too instead of exporting an image with duplicate tick labels.
+// breathe. Uses the same legendBuckets()/paletteFor() as the sidebar
+// legend, so the exported image always matches what's on screen (including
+// a one-sided diverging view's single-hue palette, see paletteFor).
 function buildExportLegendSvg(x, y, width, textColor) {
   const view = VIEWS[state.view];
-  const steps = stepsForView(view);
-  const boundaries = colorBoundaries(lastDomain, view, steps);
+  const { steps, boundaries } = paletteFor(lastDomain, view);
   const { buckets, ticks } = legendBuckets(view, boundaries, steps);
   const swatchH = 16;
   let out = buckets
@@ -1429,9 +1440,10 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const textColor = cs.getPropertyValue("--text-primary").trim();
 
   let polys = "";
+  const exportBorder = borderStyleFor(state.level);
   geoLayer.eachLayer((layer) => {
     const fill = layer.options.fillColor || MISSING_COLOR;
-    polys += `<path d="${latlngsToPathData(layer.getLatLngs())}" fill="${fill}" fill-rule="evenodd" stroke="${BORDER_COLOR}" stroke-width="0.3" />`;
+    polys += `<path d="${latlngsToPathData(layer.getLatLngs())}" fill="${fill}" fill-rule="evenodd" stroke="${BORDER_COLOR}" stroke-width="${exportBorder.weight}" stroke-opacity="${exportBorder.opacity}" />`;
   });
 
   const titleSvg = `<text x="${mapW / 2}" y="${EXPORT_TITLE_PAD_TOP + titleFontSize}" font-size="${titleFontSize.toFixed(1)}" font-weight="600" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(titleText)}</text>`;
@@ -1523,7 +1535,7 @@ async function selectVariable(requested) {
   // different level -- guarded by seq too, so a slower, now-stale call can
   // never clobber a newer call's already-rendered level.
   if (meta.levels[0].key !== currentLevel) {
-    renderBoundaries(loadedBoundaries[meta.levels[0].key]);
+    renderBoundaries(loadedBoundaries[meta.levels[0].key], meta.levels[0].key);
     currentLevel = meta.levels[0].key;
     document.getElementById("search-input").value = "";
     document.getElementById("search-results").innerHTML = "";
@@ -1933,6 +1945,48 @@ function updateRankings(domain) {
 }
 
 // --- Download panel ---
+
+// "Zaznacz wszystko" master checkbox for one Pobierz-dane list -- clicking
+// it checks/unchecks every checkbox currently rendered inside `containerId`
+// (found live at click time, not a fixed snapshot, so it still works after
+// the container's contents change). The master's own checked/indeterminate
+// state stays in sync with whatever the individual checkboxes are doing,
+// via a delegated `change` listener on the container itself -- that keeps
+// working even after the container's innerHTML is replaced wholesale
+// (rebuilding is how download-level/agegroup/measure refresh), since the
+// listener lives on the container element, not the checkboxes.
+//
+// A programmatic innerHTML rebuild does NOT fire `change` events, though,
+// so it can't resync the master by itself -- callers that replace a
+// container's contents (updateDownloadDimensionOptions) must call the
+// returned `sync` function afterward to catch up.
+function wireSelectAll(masterId, containerId, onToggle) {
+  const master = document.getElementById(masterId);
+  const container = document.getElementById(containerId);
+  const boxes = () => [...container.querySelectorAll('input[type="checkbox"]')];
+  const sync = () => {
+    const bs = boxes();
+    const checkedCount = bs.filter((b) => b.checked).length;
+    master.checked = bs.length > 0 && checkedCount === bs.length;
+    master.indeterminate = checkedCount > 0 && checkedCount < bs.length;
+  };
+  master.addEventListener("change", () => {
+    boxes().forEach((b) => (b.checked = master.checked));
+    onToggle?.();
+  });
+  container.addEventListener("change", (e) => {
+    if (e.target !== master) sync();
+  });
+  sync();
+  return sync;
+}
+
+// sync functions for the three dimension lists' "Zaznacz wszystko" masters
+// -- re-run at the end of updateDownloadDimensionOptions(), after it
+// rebuilds their containers, so the masters reflect the fresh checkboxes'
+// actual (preserved-where-possible) checked state rather than going stale.
+let downloadDimSelectAllSyncs = [];
+
 // Variable selection is two nested expandable lists (Temat -> Zmienna),
 // mirroring the map's own Temat/Zmienna controls but independent of them --
 // this is its own multi-select, not tied to whatever's on the map. The
@@ -1957,6 +2011,18 @@ function buildDownloadPanel() {
   container.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
     cb.addEventListener("change", updateDownloadDimensionOptions);
   });
+
+  // Wired once (buildDownloadPanel only ever runs once, at init) -- re-
+  // wiring on every call would stack duplicate listeners on these static
+  // master checkboxes, which live in index.html, not inside the rebuilt
+  // container innerHTML.
+  wireSelectAll("download-variables-select-all", "download-variables", updateDownloadDimensionOptions);
+  downloadDimSelectAllSyncs = [
+    wireSelectAll("download-level-select-all", "download-level"),
+    wireSelectAll("download-agegroup-select-all", "download-agegroup"),
+    wireSelectAll("download-measure-select-all", "download-measure"),
+  ];
+
   updateDownloadDimensionOptions();
 }
 
@@ -1989,6 +2055,10 @@ function updateDownloadDimensionOptions() {
       })
       .join("");
   }
+
+  // Rebuilding the three containers above doesn't fire `change` events, so
+  // their "Zaznacz wszystko" masters need an explicit resync now.
+  downloadDimSelectAllSyncs.forEach((sync) => sync());
 }
 
 function checkedLabels(containerId) {
