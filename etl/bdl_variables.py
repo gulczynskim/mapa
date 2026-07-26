@@ -214,6 +214,50 @@ BDL_VARIABLES = {
             },
         },
     },
+    # Raw BDL-fetched slices only -- licea_ogolnoksztalcace and zasadnicze_zawodowe
+    # ageGroups, plus the "razem" sum and "_udzial" share measures, are added
+    # afterward by build_szkolnictwo_ponadpodstawowe.py (copied from
+    # liceum.json/zasadnicze_zawodowe.json and computed, not fetched from BDL
+    # again) -- see that script's docstring for the full ageGroup list and why
+    # "technika" and "artystyczne_dajace_uprawnienia" stay two separate BDL
+    # fetches here rather than one pre-combined id (BDL's own combined
+    # "Technika (wraz z ogolnoksztalcacymi artystycznymi)" total, P3480, has no
+    # sex breakdown at all).
+    "szkolnictwo_ponadpodstawowe": {
+        "topic": "P2144/P2179/P3762/P3764",
+        "level": POWIAT,
+        "file": "szkolnictwo_ponadpodstawowe.json",
+        "slices": {
+            "technika": {
+                "uczniowie": {"t": "51991", "m": "270423", "k": "270271"},
+                "uczniowie_1_klasa": {"t": "382752", "m": "383484", "k": "382770"},
+                "absolwenci": {"t": "51882", "m": "270394", "k": "270383"},
+            },
+            "artystyczne_dajace_uprawnienia": {
+                "uczniowie": {"t": "272502", "m": "272516", "k": "272480"},
+                "uczniowie_1_klasa": {"t": "380934", "m": "380926", "k": "380930"},
+                "absolwenci": {"t": "272449", "m": "272478", "k": "272485"},
+            },
+            "branzowe_I_st": {
+                "uczniowie": {"t": "569055", "m": "569091", "k": "569064"},
+                "uczniowie_1_klasa": {"t": "569116", "m": "569134", "k": "569125"},
+                "absolwenci": {"t": "569073", "m": "569100", "k": "569082"},
+            },
+            # No "uczniowie_1_klasa" id exists for licea profilowane -- BDL
+            # never published a 1st-class breakdown for this (largely phased-
+            # out) school type, confirmed live: absent from /variables for
+            # this n1, not just unfetched.
+            "licea_profilowane": {
+                "uczniowie": {"t": "52125", "m": "270446", "k": "270232"},
+                "absolwenci": {"t": "52229", "m": "270172", "k": "270333"},
+            },
+            "artystyczne_niedajace_uprawnien": {
+                "uczniowie": {"t": "55054", "m": "270115", "k": "270132"},
+                "uczniowie_1_klasa": {"t": "380932", "m": "380924", "k": "380928"},
+                "absolwenci": {"t": "55058", "m": "270137", "k": "270105"},
+            },
+        },
+    },
     "uczelnie": {
         "topic": "P3226",
         "level": POWIAT,

@@ -163,9 +163,10 @@
 
     <section class="panel">
       <h2>Pobierz dane</h2>
-      <p class="corr-note">Wybierz zmienne, zakres lat oraz poziomy/grupy wieku/miary, które mają się
+      <p class="corr-note">Wybierz zmienne, zakres lat oraz poziomy/grupy wieku/miary/widoki, które mają się
         znaleźć w pliku CSV (można zaznaczyć wiele opcji). Kombinacje niedostępne dla danej zmiennej
-        są pomijane; jeśli żadna z zaznaczonych opcji nie pasuje, użyta zostanie domyślna.</p>
+        są pomijane; jeśli żadna z zaznaczonych opcji nie pasuje, użyta zostanie domyślna. Kobiety,
+        Mężczyźni i Ogółem są eksportowane zawsze — zaznaczone widoki dodają dodatkowe kolumny.</p>
       <label class="dim-select-all"><input type="checkbox" id="download-variables-select-all"> Zaznacz wszystkie zmienne</label>
       <div id="download-variables" class="download-variables"></div>
       <div class="download-dims">
@@ -183,6 +184,11 @@
           <summary>Miara</summary>
           <label class="dim-select-all"><input type="checkbox" id="download-measure-select-all"> Zaznacz wszystko</label>
           <div id="download-measure" class="dim-options"></div>
+        </details>
+        <details class="download-dim">
+          <summary>Widok</summary>
+          <label class="dim-select-all"><input type="checkbox" id="download-view-select-all"> Zaznacz wszystko</label>
+          <div id="download-view" class="dim-options"></div>
         </details>
       </div>
       <div class="download-years">

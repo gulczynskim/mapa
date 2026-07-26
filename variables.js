@@ -561,7 +561,7 @@ const VARIABLE_META = {
     sharesMeaningful: true,
   },
   szkoly_policealne: {
-    label: "Szkoły policealne",
+    label: "Uczniowie i absolwenci szkół policealnych",
     unit: "osób",
     topic: "edukacja",
     file: "data/szkoly_policealne.json",
@@ -576,9 +576,9 @@ const VARIABLE_META = {
       "\"szkoly_policealne\") – https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
-      { key: "kolegium_bez_specjalnych", label: "W tym kolegium pracowników służb społecznych (bez specjalnych)" },
+      { key: "ogolem_z_kolegiami", label: "Ogółem" },
+      { key: "kolegium_bez_specjalnych", label: "Ogółem (bez specjalnych)" },
       { key: "pomaturalne_doroslych", label: "Pomaturalne dla dorosłych" },
-      { key: "ogolem_z_kolegiami", label: "Ogółem (w tym kolegia pracowników służb społecznych)" },
       { key: "pomaturalne_mlodziezy", label: "Pomaturalne dla młodzieży" },
       { key: "specjalne", label: "Specjalne" },
     ],
@@ -606,17 +606,78 @@ const VARIABLE_META = {
       "\"zasadnicze_zawodowe\") – https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
-      { key: "specjalne_przysposabiajace", label: "Szkoły specjalne przysposabiające do pracy" },
       { key: "ponadpodstawowe_przysposabiajace", label: "Ponadpodstawowe przysposabiające do pracy (specjalne)" },
-      { key: "zawodowe_mlodziezy_specjalne", label: "Zawodowe dla młodzieży (specjalne)" },
-      { key: "zawodowe_doroslych", label: "Zawodowe dla dorosłych" },
       { key: "ponadpodstawowe_zasadnicze_doroslych", label: "Ponadpodstawowe zasadnicze dla dorosłych" },
+      { key: "specjalne_przysposabiajace", label: "Szkoły specjalne przysposabiające do pracy" },
+      { key: "zawodowe_doroslych", label: "Zawodowe dla dorosłych" },
       { key: "zawodowe_mlodziezy_bez_specjalnych", label: "Zawodowe dla młodzieży (bez specjalnych)" },
+      { key: "zawodowe_mlodziezy_specjalne", label: "Zawodowe dla młodzieży (specjalne)" },
     ],
     measures: [
       { key: "uczniowie", label: "Uczniowie" },
       { key: "uczniowie_1_klasa", label: "Uczniowie w 1 klasie" },
       { key: "absolwenci", label: "Absolwenci" },
+    ],
+    sharesMeaningful: true,
+  },
+  szkolnictwo_ponadpodstawowe: {
+    label: "Uczniowie i absolwenci szkół ponadpodstawowych (wg typu szkoły)",
+    unit: "osób",
+    topic: "edukacja",
+    file: "data/szkolnictwo_ponadpodstawowe.json",
+    agegroupLabel: "Typ szkoły",
+    meaning:
+      "Uczniowie (ogółem i w 1 klasie) oraz absolwenci ponadpodstawowych szkół dziennych dla " +
+      "młodzieży (bez szkół specjalnych), wg typu szkoły i płci. Nie każdy typ ma dane dla " +
+      "wszystkich trzech miar ani wszystkich lat – licea profilowane tylko 2004-2014 (wygaszone), " +
+      "zasadnicze szkoły zawodowe tylko do ok. 2019, szkoły branżowe I stopnia dopiero od 2017 " +
+      "(reforma zastąpiła zasadnicze zawodowe branżowymi) – brakujące kombinacje pokazują brak danych. " +
+      "\"Technika\" to samodzielny typ (bez ogólnokształcących szkół artystycznych) – te liczone są " +
+      "osobno jako własny typ (\"Ogólnokształcące szkoły artystyczne dające uprawnienia zawodowe\"), " +
+      "zgodnie z tym jak BDL je oddzielnie raportuje.\n" +
+      "\"Razem\": suma liceów ogólnokształcących, techników, ogólnokształcących szkół artystycznych " +
+      "dających uprawnienia zawodowe, szkół branżowych I stopnia, liceów profilowanych i zasadniczych " +
+      "szkół zawodowych (każda płeć liczona osobno) – NIE obejmuje szkół artystycznych niedających " +
+      "uprawnień zawodowych ani szkół policealnych (to inny etap kształcenia, osobna zmienna na tej " +
+      "mapie). Brakujący typ w danym roku/powiecie liczony jest jako 0 przy sumowaniu (osobno dla " +
+      "kobiet i mężczyzn), chyba że WSZYSTKIE typy brakują naraz – wtedy suma również jest brakiem danych.\n" +
+      "Miara \"Udział\" (dostępna tylko dla Techników, Liceów ogólnokształcących i Szkół branżowych " +
+      "I stopnia): jaki odsetek łącznej liczby uczniów/uczniów w 1 klasie/absolwentów tych TRZECH " +
+      "typów przypada na dany typ, liczony osobno dla każdej płci. Przy tym wyliczeniu \"Technika\" " +
+      "obejmuje też ogólnokształcące szkoły artystyczne dające uprawnienia zawodowe (mimo że mają " +
+      "swój własny, osobny wiersz powyżej) – potwierdzone na danych krajowych za 2022: technika " +
+      "(710 241 uczniów) + te szkoły artystyczne (14 476) ≈ gotowa suma \"techników łącznie z " +
+      "ogólnokształcącymi artystycznymi\", którą BDL publikuje wprost (725 616, różnica ok. 0,1%). " +
+      "\"% kobiet\"/\"% mężczyzn\" są wyłączone dla miary \"Udział\" – to już jest udział w podziale na " +
+      "płeć, drugi taki podział nie miałby sensu.",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Poziom powiat. Licea ogólnokształcące: temat P2035 (te same kody co zmienna \"Uczniowie i " +
+      "absolwenci liceów\"). Zasadnicze szkoły zawodowe: temat P2143, typ \"zawodowe dla młodzieży " +
+      "(bez specjalnych)\" (te same kody co zmienna \"Zasadnicze szkoły zawodowe\"). Technika i licea " +
+      "profilowane: temat P2144. Szkoły artystyczne (oba typy): temat P2179. Szkoły branżowe I " +
+      "stopnia: uczniowie/absolwenci temat P3762, uczniowie w 1 klasie temat P3764. Pełna lista " +
+      "kodów w etl/bdl_variables.py (klucz \"szkolnictwo_ponadpodstawowe\") oraz etl/build_" +
+      "szkolnictwo_ponadpodstawowe.py (scalanie liceum/zasadniczych zawodowych, suma \"Razem\", " +
+      "miara \"Udział\") – https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "licea_ogolnoksztalcace", label: "Licea ogólnokształcące" },
+      { key: "licea_profilowane", label: "Licea profilowane" },
+      { key: "artystyczne_dajace_uprawnienia", label: "Ogólnokształcące szkoły artystyczne dające uprawnienia zawodowe" },
+      { key: "razem", label: "Razem (licea ogólnokształcące, technika, branżowe I st., licea profilowane, zasadnicze zawodowe)" },
+      { key: "artystyczne_niedajace_uprawnien", label: "Szkoły artystyczne niedające uprawnień zawodowych" },
+      { key: "branzowe_I_st", label: "Szkoły branżowe I stopnia" },
+      { key: "technika", label: "Technika" },
+      { key: "zasadnicze_zawodowe", label: "Zasadnicze szkoły zawodowe" },
+    ],
+    measures: [
+      { key: "uczniowie", label: "Uczniowie" },
+      { key: "uczniowie_udzial", label: "Uczniowie – udział (technika/licea ogólnokształcące/branżowe I st.)", unit: "%" },
+      { key: "uczniowie_1_klasa", label: "Uczniowie w 1 klasie" },
+      { key: "uczniowie_1_klasa_udzial", label: "Uczniowie w 1 klasie – udział (technika/licea ogólnokształcące/branżowe I st.)", unit: "%" },
+      { key: "absolwenci", label: "Absolwenci" },
+      { key: "absolwenci_udzial", label: "Absolwenci – udział (technika/licea ogólnokształcące/branżowe I st.)", unit: "%" },
     ],
     sharesMeaningful: true,
   },

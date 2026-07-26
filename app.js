@@ -10,6 +10,15 @@ const BOUNDARY_FILES = {
   wojewodztwo: "data/wojewodztwa.json",
 };
 
+// Single anchor hex per hue, shared by every place that grades a hue toward
+// white at an arbitrary bucket count (shadesTowardWhite below) -- the
+// quantile color scale (see QUANTILE_BUCKETS) uses these directly instead of
+// the fixed-length SEQUENTIAL_STEPS_*/DIVERGING_STEPS arrays below, since it
+// always needs exactly 7 buckets regardless of view.
+const RED_HUE = "#e34948";
+const BLUE_HUE = "#2a78d6";
+const NEUTRAL_HUE = "#332f1f";
+
 // 8 buckets for magnitude views (per user request for finer resolution than
 // the earlier 6) -- evenly spaced steps from the validated blue ramp.
 // Kept as the "Mężczyźni" hue -- see SEQUENTIAL_STEPS_RED below, its "Kobiety"
@@ -126,6 +135,13 @@ const VIEWS = {
 const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
 
 const COLOR_SCALES = { linear: "Liniowa (równe przedziały)", log: "Logarytmiczna", quantile: "Kwantyle" };
+// The quantile scale always has exactly 7 buckets, regardless of view --
+// unlike linear/log (which reuse whichever fixed SEQUENTIAL_STEPS_*/
+// DIVERGING_STEPS array the view calls for, 8 or 7 entries respectively),
+// quantile boundaries are data-driven per variable, so a fixed bucket count
+// keeps "how many colors on the legend" consistent across every variable
+// instead of varying with which kind of view happens to be selected.
+const QUANTILE_BUCKETS = 7;
 // "year": domain from the currently-shown year only. "all": domain pooled
 // across every year (for the current variable/level/ageGroup/measure/view),
 // so scrubbing the year slider recolors polygons without renormalizing the
@@ -944,20 +960,20 @@ function shadesTowardWhite(hexColor, n) {
 
 // Diverging, "quantile" mode: unlike linear/log (unchanged, still per-arm
 // symmetric around center, see symmetricDivergingBoundaries above), this
-// divides the WHOLE domain into 5 straight quantiles -- ignoring sign for
-// the split itself. Colors then follow an "appropriate scale" (2026-07-27
-// correction to an earlier flat-3-color attempt): any bucket that actually
-// SPANS center is white regardless of position, but buckets on the same
-// side are graded by distance from center -- palest closest to center,
-// full saturation at the most extreme -- using the same red/blue hue
-// convention as every other view (more women = red, more men = blue,
-// flipped for reverseDiverging). The number of buckets on each side isn't
-// fixed (a skewed domain can put 4 on one side and just 1 on the other),
-// so the grading is generated for however many actually land there, not
-// sampled from a fixed-length array.
+// divides the WHOLE domain into QUANTILE_BUCKETS straight quantiles --
+// ignoring sign for the split itself. Colors then follow an "appropriate
+// scale" (2026-07-27 correction to an earlier flat-3-color attempt): any
+// bucket that actually SPANS center is white regardless of position, but
+// buckets on the same side are graded by distance from center -- palest
+// closest to center, full saturation at the most extreme -- using the same
+// red/blue hue convention as every other view (more women = red, more men =
+// blue, flipped for reverseDiverging). The number of buckets on each side
+// isn't fixed (a skewed domain can put most of them on one side and just one
+// on the other), so the grading is generated for however many actually land
+// there, not sampled from a fixed-length array.
 function quantileDivergingPalette(domain, view) {
   const center = view.center ?? 0;
-  const n = 5;
+  const n = QUANTILE_BUCKETS;
   if (domain.length === 0) {
     return { steps: Array.from({ length: n }, () => "#ffffff"), boundaries: Array.from({ length: n + 1 }, () => center) };
   }
@@ -983,10 +999,8 @@ function quantileDivergingPalette(domain, view) {
   }
   belowIdxs.reverse();
 
-  const redHue = "#e34948";
-  const blueHue = "#2a78d6";
-  const aboveShades = shadesTowardWhite(aboveIsRed ? redHue : blueHue, aboveIdxs.length);
-  const belowShades = shadesTowardWhite(aboveIsRed ? blueHue : redHue, belowIdxs.length);
+  const aboveShades = shadesTowardWhite(aboveIsRed ? RED_HUE : BLUE_HUE, aboveIdxs.length);
+  const belowShades = shadesTowardWhite(aboveIsRed ? BLUE_HUE : RED_HUE, belowIdxs.length);
 
   const steps = Array.from({ length: n }, () => "#ffffff");
   aboveIdxs.forEach((idx, rank) => (steps[idx] = aboveShades[rank]));
@@ -1019,16 +1033,15 @@ function logBoundariesDiverging(domain, view, n) {
 // buckets -- shared by colorFor (to assign a color) and updateLegend (to
 // label exactly where each color starts/ends), so the two can never drift
 // apart the way they briefly did for the ratio view.
-// NOTE: diverging + "quantile" never reaches here -- paletteFor() below
-// intercepts that specific combination earlier (quantileDivergingPalette
-// needs to pick colors and boundaries together, not colors from a fixed
-// palette), so this function only ever sees diverging domains in
-// linear/log mode.
+// NOTE: "quantile" never reaches here -- paletteFor() below always
+// intercepts that scale earlier, for both sequential and diverging views
+// (it needs to pick colors and boundaries together at a fixed
+// QUANTILE_BUCKETS count, not colors sampled from a fixed-length palette
+// array), so this function only ever sees linear/log mode.
 function colorBoundaries(domain, view, steps) {
   const n = steps.length;
   if (view.kind === "sequential") {
     if (state.colorScale === "log") return logBoundariesSequential(domain, n);
-    if (state.colorScale === "quantile") return quantileBoundariesSequential(domain, n);
     return linearBoundariesSequential(domain, n);
   }
   if (state.colorScale === "log") return logBoundariesDiverging(domain, view, n);
@@ -1056,6 +1069,17 @@ function stepsForView(view) {
   return view.reverseDiverging ? [...DIVERGING_STEPS].reverse() : DIVERGING_STEPS;
 }
 
+// Which single hue a sequential-shaped view grades toward white -- used only
+// for the quantile scale (see QUANTILE_BUCKETS), which generates its palette
+// on the fly via shadesTowardWhite rather than sampling a fixed-length
+// SEQUENTIAL_STEPS_* array, since it always needs exactly QUANTILE_BUCKETS
+// entries regardless of how many the linear/log arrays happen to have.
+function hueForView(view) {
+  if (view.sexColor === "k") return RED_HUE;
+  if (view.sexColor === "m") return BLUE_HUE;
+  return NEUTRAL_HUE;
+}
+
 // Single source of truth for "which colors AND which boundaries does this
 // view/domain combination use" -- the two must be decided TOGETHER, not
 // separately (stepsForView then colorBoundaries): a one-sided diverging
@@ -1080,6 +1104,10 @@ function stepsForView(view) {
 // everywhere) whenever a domain doesn't actually straddle center.
 function paletteFor(domain, view) {
   if (view.kind === "sequential") {
+    if (state.colorScale === "quantile") {
+      const steps = shadesTowardWhite(hueForView(view), QUANTILE_BUCKETS);
+      return { steps, boundaries: quantileBoundariesSequential(domain, QUANTILE_BUCKETS) };
+    }
     const steps = stepsForView(view);
     return { steps, boundaries: colorBoundaries(domain, view, steps) };
   }
@@ -1098,12 +1126,13 @@ function paletteFor(domain, view) {
   // men" (blue) -- same convention stepsForView already applies to the
   // two-sided palette (see ratioInverse's comment near VIEWS above).
   const redSide = view.reverseDiverging ? hasBelow : hasAbove;
+  if (state.colorScale === "quantile") {
+    const steps = shadesTowardWhite(redSide ? RED_HUE : BLUE_HUE, QUANTILE_BUCKETS);
+    return { steps, boundaries: quantileBoundariesSequential(domain, QUANTILE_BUCKETS) };
+  }
   const steps = redSide ? SEQUENTIAL_STEPS_RED : SEQUENTIAL_STEPS_BLUE;
   const n = steps.length;
-  let boundaries;
-  if (state.colorScale === "log") boundaries = logBoundariesSequential(domain, n);
-  else if (state.colorScale === "quantile") boundaries = quantileBoundariesSequential(domain, n);
-  else boundaries = linearBoundariesSequential(domain, n);
+  const boundaries = state.colorScale === "log" ? logBoundariesSequential(domain, n) : linearBoundariesSequential(domain, n);
   return { steps, boundaries };
 }
 
@@ -1432,12 +1461,22 @@ function exportFileBaseName() {
 }
 
 const EXPORT_PAD_X = 20;
-const EXPORT_FOOTER_H = 26; // credit bar, flush against the map's bottom edge
-const EXPORT_SCALE_SENTENCE_H = 30; // one line describing the color scale, under the legend
+// Credit bar (2026-07-27: moved between the subtitle and the map -- was
+// flush against the map's bottom edge before the legend moved beside the
+// map instead of below it).
+const EXPORT_CREDIT_H = 26;
+const EXPORT_SCALE_SENTENCE_LINE_H = 18; // one WRAPPED line describing the color scale, in the legend panel beside the map
 const EXPORT_TITLE_PAD_TOP = 22;
 const EXPORT_TITLE_PAD_BOTTOM = 10;
 const EXPORT_FEATURES_LINE_H = 24; // one line of the year/level/measure/.../source text
 const EXPORT_FEATURES_PAD_BOTTOM = 16;
+// Legend panel now sits beside the map (2026-07-27) instead of below it, so
+// the exported image is wider rather than taller. Fixed width, independent
+// of the map's own (crop-dependent) width -- swatches/labels never need to
+// shrink or grow with it the way the header text does.
+const EXPORT_LEGEND_GAP = 24; // gap between the map's right edge and the legend panel
+const EXPORT_LEGEND_PANEL_W = 300;
+const EXPORT_LEGEND_SCALE_GAP = 14; // gap between the last swatch row and the wrapped scale sentence below it
 
 // A long title, or a long source citation among exportFeatureParts() (e.g.
 // "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)"), can push
@@ -1457,26 +1496,30 @@ function fitFontSize(text, baseSize, minSize, maxWidth) {
   return Math.max(minSize, baseSize * (maxWidth / w));
 }
 
-// Greedily packs `parts` (joined with " · ") onto as many lines as needed
-// to fit maxWidth, instead of a fixed one-or-two -- exportFeatureParts() can
-// now return up to 7 parts (year/level/ageGroup/measure/view/scale/scope/
+// Greedily packs `parts` (joined with `separator`) onto as many lines as
+// needed to fit maxWidth, instead of a fixed one-or-two -- exportFeatureParts()
+// can return up to 7 parts (year/level/ageGroup/measure/view/scale/scope/
 // source), more than a single midpoint-split could ever fit even at the
 // font-size floor. A single part wider than maxWidth on its own (e.g. a
 // long source citation) still just overflows its own line -- fitFontSize
 // already shrunk the font as far as it reasonably can before this runs.
-function wrapParts(parts, fontSize, maxWidth) {
+// `separator` defaults to " · " (the features-list convention) -- also used
+// with " " to word-wrap exportScaleSentence()'s plain sentence in the
+// legend panel, now that it sits in a narrower column beside the map
+// instead of a full-width line below it.
+function wrapParts(parts, fontSize, maxWidth, separator = " · ") {
   const lines = [];
   let current = [];
   for (const part of parts) {
-    const candidate = [...current, part].join(" · ");
+    const candidate = [...current, part].join(separator);
     if (current.length > 0 && measureTextWidth(candidate, fontSize) > maxWidth) {
-      lines.push(current.join(" · "));
+      lines.push(current.join(separator));
       current = [part];
     } else {
       current.push(part);
     }
   }
-  if (current.length > 0) lines.push(current.join(" · "));
+  if (current.length > 0) lines.push(current.join(separator));
   return lines;
 }
 
@@ -1527,24 +1570,22 @@ function exportLegendHeight(n) {
 }
 
 // Vertical block legend (graficzna_prezentacja_danych_stat_s95.pdf p.95),
-// matching the sidebar's own style -- highest value at the top. Centered
-// as a whole (swatch + its label together) within `width`, same as the
-// old continuous bar was.
-function buildExportLegendSvg(x, y, width, textColor) {
+// matching the sidebar's own style -- highest value at the top. Left-aligned
+// at `x` (2026-07-27: legend moved beside the map into its own side panel,
+// so it no longer needs to center itself within a wider shared-width block
+// the way the old below-the-map layout did).
+function buildExportLegendSvg(x, y, textColor) {
   if (lastDomain.length === 0) return ""; // e.g. life_expectancy's "Ogółem" (hasTotal: false) -- no real value anywhere
   const view = VIEWS[state.view];
   const { steps, boundaries } = paletteFor(lastDomain, view);
   const blocks = legendBlockList(view, boundaries, steps);
   if (blocks.length === 0) return "";
-  const maxLabelW = Math.max(...blocks.map((b) => measureTextWidth(b.label, 13)));
-  const blockW = EXPORT_LEGEND_SWATCH_W + EXPORT_LEGEND_LABEL_PAD + maxLabelW;
-  const startX = x + Math.max(0, (width - blockW) / 2);
   const rowH = EXPORT_LEGEND_SWATCH_H + EXPORT_LEGEND_ROW_GAP;
   return blocks
     .map((b, i) => {
       const by = y + i * rowH;
-      const rect = `<rect x="${startX.toFixed(1)}" y="${by.toFixed(1)}" width="${EXPORT_LEGEND_SWATCH_W}" height="${EXPORT_LEGEND_SWATCH_H}" fill="${b.color}" stroke="${BORDER_COLOR}" stroke-width="0.75" />`;
-      const labelX = startX + EXPORT_LEGEND_SWATCH_W + EXPORT_LEGEND_LABEL_PAD;
+      const rect = `<rect x="${x.toFixed(1)}" y="${by.toFixed(1)}" width="${EXPORT_LEGEND_SWATCH_W}" height="${EXPORT_LEGEND_SWATCH_H}" fill="${b.color}" stroke="${BORDER_COLOR}" stroke-width="0.75" />`;
+      const labelX = x + EXPORT_LEGEND_SWATCH_W + EXPORT_LEGEND_LABEL_PAD;
       const labelY = by + EXPORT_LEGEND_SWATCH_H / 2 + 4;
       const text = `<text x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="13" font-family="system-ui, sans-serif" fill="${textColor}">${escapeXml(b.label)}</text>`;
       return rect + text;
@@ -1563,13 +1604,6 @@ function buildExportLegendSvg(x, y, width, textColor) {
 // latitude regardless of longitude; same idea for X and west/east.
 const EXPORT_CROP_PAD_Y = 12;
 const EXPORT_CROP_PAD_X = 12;
-// The legend doesn't need to span the map's full (often quite wide) width
-// to be readable -- capped and centered instead, so a handful of swatches
-// (common now that one-sided diverging scales collapse to 3-4 real ones,
-// see legendBuckets) don't balloon into oversized blocks next to the much
-// narrower description/credit text lines above them.
-const EXPORT_LEGEND_MAX_W = 360;
-
 function buildExportSvg({ pixelScale = 1 } = {}) {
   const mapEl = document.getElementById("map");
   const fullMapW = mapEl.clientWidth;
@@ -1609,15 +1643,30 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const featureLines = wrapParts(featureParts, featuresFontSize, availW);
   const featuresH = featureLines.length * EXPORT_FEATURES_LINE_H + EXPORT_FEATURES_PAD_BOTTOM;
 
+  // Credit bar now sits between the subtitle (features) and the map itself
+  // (2026-07-27), rather than below the map -- mapY is the map's own top,
+  // used both for the polys transform and to line up the legend panel
+  // beside it.
   const headerH = titleH + featuresH;
+  const mapY = headerH + EXPORT_CREDIT_H;
+
+  // Legend panel sits beside the map (2026-07-27) instead of below it, at a
+  // FIXED width (EXPORT_LEGEND_PANEL_W) independent of the map's own crop-
+  // dependent width. The scale sentence is wrapped (word-by-word, via
+  // wrapParts' " " separator) rather than assumed to fit one line, since the
+  // panel is narrower than the map's full width was.
+  const legendX = mapW + EXPORT_LEGEND_GAP;
+  const legendBlockCount = exportLegendBlockCount();
+  const legendSwatchesH = exportLegendHeight(legendBlockCount);
   const scaleSentenceText = exportScaleSentence();
-  const scaleSentenceFontSize = fitFontSize(scaleSentenceText, 13, 11, availW);
-  // Block legend height depends on how many classes the current view/scale
-  // actually has (e.g. 5 for diverging quantile, up to 8 for sequential) --
-  // computed once here so the rest of the layout below the map can be sized
-  // correctly, then reused (not recomputed) by buildExportLegendSvg's own draw.
-  const legendH = exportLegendHeight(exportLegendBlockCount());
-  const totalH = headerH + mapH + EXPORT_FOOTER_H + legendH + EXPORT_SCALE_SENTENCE_H;
+  const scaleSentenceFontSize = fitFontSize(scaleSentenceText, 13, 11, EXPORT_LEGEND_PANEL_W);
+  const scaleSentenceLines = wrapParts(scaleSentenceText.split(" "), scaleSentenceFontSize, EXPORT_LEGEND_PANEL_W, " ");
+  const scaleSentenceGap = legendSwatchesH > 0 ? EXPORT_LEGEND_SCALE_GAP : 0;
+  const scaleSentenceY0 = mapY + legendSwatchesH + scaleSentenceGap;
+  const legendPanelH = legendSwatchesH + scaleSentenceGap + scaleSentenceLines.length * EXPORT_SCALE_SENTENCE_LINE_H;
+
+  const totalW = legendX + EXPORT_LEGEND_PANEL_W;
+  const totalH = Math.max(mapY + mapH, mapY + legendPanelH);
 
   // Resolved to concrete hex/rgb here, not left as var(--x) -- the exported
   // file has no stylesheet of its own to resolve custom properties against,
@@ -1639,20 +1688,20 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
     .map((line, i) => `<text x="${mapW / 2}" y="${titleH + EXPORT_FEATURES_LINE_H * 0.75 + i * EXPORT_FEATURES_LINE_H}" font-size="${featuresFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(line)}</text>`)
     .join("");
 
-  const footerY = headerH + mapH;
-  const legendY = footerY + EXPORT_FOOTER_H;
-  const legendW = Math.min(availW, EXPORT_LEGEND_MAX_W);
-  const legendX = EXPORT_PAD_X + (availW - legendW) / 2;
-  const legendSvg = buildExportLegendSvg(legendX, legendY + 6, legendW, textColor);
-  const scaleSentenceSvg = `<text x="${mapW / 2}" y="${legendY + legendH + 8}" font-size="${scaleSentenceFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(scaleSentenceText)}</text>`;
+  const creditSvg = `<rect x="0" y="${headerH}" width="${mapW}" height="${EXPORT_CREDIT_H}" fill="${surfaceColor}" />
+    <text x="${mapW / 2}" y="${headerH + EXPORT_CREDIT_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>`;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(mapW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${mapW} ${totalH}">
-    <rect x="0" y="0" width="${mapW}" height="${totalH}" fill="${pageColor}" />
+  const legendSvg = buildExportLegendSvg(legendX, mapY, textColor);
+  const scaleSentenceSvg = scaleSentenceLines
+    .map((line, i) => `<text x="${legendX}" y="${scaleSentenceY0 + i * EXPORT_SCALE_SENTENCE_LINE_H + 11}" font-size="${scaleSentenceFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}">${escapeXml(line)}</text>`)
+    .join("");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(totalW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${totalW} ${totalH}">
+    <rect x="0" y="0" width="${totalW}" height="${totalH}" fill="${pageColor}" />
     ${titleSvg}
     ${featuresSvg}
-    <g transform="translate(${(-cropLeft).toFixed(1)}, ${(headerH - cropTop).toFixed(1)})">${polys}</g>
-    <rect x="0" y="${footerY}" width="${mapW}" height="${EXPORT_FOOTER_H}" fill="${surfaceColor}" />
-    <text x="${mapW / 2}" y="${footerY + EXPORT_FOOTER_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>
+    ${creditSvg}
+    <g transform="translate(${(-cropLeft).toFixed(1)}, ${(mapY - cropTop).toFixed(1)})">${polys}</g>
     ${legendSvg}
     ${scaleSentenceSvg}
   </svg>`;
@@ -1910,14 +1959,23 @@ function hasTotalFor(meta, ageGroup, measure) {
   return (ageGroupOpt?.hasTotal ?? true) && (measureOpt?.hasTotal ?? true);
 }
 
-// Measures ending "_per100k" (see etl/add_derived_measures.py) are already
-// a population-adjusted rate -- %kobiet/%mężczyzn would divide two such
-// rates rather than two raw headcounts, not the same meaningful "share of a
-// count" computation sharesMeaningful was designed for. Checked in addition
+// Measures ending "_per100k" (see etl/add_derived_measures.py) are already a
+// population-adjusted rate, and measures ending "_udzial" (see
+// etl/build_szkolnictwo_ponadpodstawowe.py) are already a share split by sex
+// (technika/licea ogólnokształcące/branżowe I st.'s share of their own
+// combined total, computed separately for k and m) -- %kobiet/%mężczyzn
+// would divide two such already-derived numbers rather than two raw
+// headcounts, not the same meaningful "share of a count" computation
+// sharesMeaningful was designed for. Deliberately a DIFFERENT suffix than
+// "_odsetek" (stan_cywilny_nsp/pkd_zatrudnienie's composition-of-a-whole
+// share, where %kobiet/%mężczyzn stays meaningful and must keep working) --
+// name kept as "isRateMeasure" for now despite covering two suffixes, since
+// every caller already routes through this one function; splitting the name
+// isn't worth it for what's still a single boolean gate. Checked in addition
 // to (not instead of) the variable-level sharesMeaningful flag, in both the
 // map's own view buttons and the correlation tool's per-axis view list.
 function isRateMeasure(measure) {
-  return measure.endsWith("_per100k");
+  return measure.endsWith("_per100k") || measure.endsWith("_udzial");
 }
 
 function hasTotalForCurrentSelection() {
@@ -2212,6 +2270,18 @@ function buildDownloadPanel() {
     wireSelectAll("download-measure-select-all", "download-measure"),
   ];
 
+  // Widok isn't per-variable like Poziom/Grupa wieku/Miara (VIEWS is one
+  // global object, not modeled per-variable in VARIABLE_META), so unlike
+  // those three it's built once, statically, here -- no
+  // updateDownloadDimensionOptions-style dynamic filtering needed. Checked
+  // by default, matching the sibling lists' own "nothing checked yet ->
+  // treat as all checked" convention.
+  const viewContainer = document.getElementById("download-view");
+  viewContainer.innerHTML = Object.keys(VIEWS)
+    .map((key) => `<label class="dim-option"><input type="checkbox" value="${key}" checked> ${VIEWS[key].label}</label>`)
+    .join("");
+  wireSelectAll("download-view-select-all", "download-view");
+
   updateDownloadDimensionOptions();
 }
 
@@ -2254,6 +2324,22 @@ function checkedLabels(containerId) {
   return [...document.querySelectorAll(`#${containerId} input:checked`)].map((cb) => cb.value);
 }
 
+// CSV header slug per Widok view -- ASCII snake_case, matching the existing
+// header convention (kobiety/mezczyzni/ogolem/teryt/...). Kept distinct from
+// those three fixed base columns (which are always exported regardless of
+// what's checked here) via a "widok_" prefix, so checking e.g. "Kobiety"
+// in the Widok list can never collide with the base "kobiety" column.
+const VIEW_CSV_SLUGS = {
+  women: "widok_kobiety",
+  men: "widok_mezczyzni",
+  total: "widok_ogolem",
+  diff: "widok_roznica_k_m",
+  ratio: "widok_proporcja_k_m",
+  ratioInverse: "widok_proporcja_m_k",
+  shareWomen: "widok_pct_kobiet",
+  shareMen: "widok_pct_mezczyzn",
+};
+
 function resolveDimension(variable, dim, chosenKey) {
   const options = VARIABLE_META[variable][dim];
   return options.some((o) => o.key === chosenKey) ? chosenKey : options[0].key;
@@ -2280,6 +2366,7 @@ async function downloadCsv() {
 
   const chosenAgeGroups = checkedLabels("download-agegroup");
   const chosenMeasures = checkedLabels("download-measure");
+  const chosenViews = [...document.querySelectorAll("#download-view input:checked")].map((cb) => cb.value);
   const yearFrom = document.getElementById("download-year-from").value;
   const yearTo = document.getElementById("download-year-to").value;
 
@@ -2292,7 +2379,19 @@ async function downloadCsv() {
     return hits.length ? hits : [options[0]];
   };
 
-  const rows = [["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"]];
+  // shareWomen/shareMen replicate the same gate the map's own view buttons
+  // use (updateViewAvailability/isRateMeasure, ~line 685/2034) -- disabled
+  // there for a measure that isn't a raw headcount, so blank them here too
+  // rather than exporting a k/(k+m) share that isn't a meaningful operation
+  // for that measure.
+  const viewApplies = (viewKey, meta, measureKey) => {
+    if (viewKey !== "shareWomen" && viewKey !== "shareMen") return true;
+    return meta.sharesMeaningful === true && !isRateMeasure(measureKey);
+  };
+
+  const header = ["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"];
+  for (const viewKey of chosenViews) header.push(VIEW_CSV_SLUGS[viewKey]);
+  const rows = [header];
   for (const variable of variables) {
     const data = loadedData[variable] || {};
     const meta = VARIABLE_META[variable];
@@ -2308,7 +2407,12 @@ async function downloadCsv() {
             if (yearTo && y > Number(yearTo)) continue;
             const d = data[teryt][year][key];
             if (!d) continue;
-            rows.push([meta.label, levelLabel, ageGroupOpt.label, measureOpt.label, teryt, name, year, d.k, d.m, d.t]);
+            const row = [meta.label, levelLabel, ageGroupOpt.label, measureOpt.label, teryt, name, year, d.k, d.m, d.t];
+            for (const viewKey of chosenViews) {
+              const v = viewApplies(viewKey, meta, measureOpt.key) ? VIEWS[viewKey].pick(d) : null;
+              row.push(v === null || v === undefined || !Number.isFinite(v) ? "" : v);
+            }
+            rows.push(row);
           }
         }
       }
