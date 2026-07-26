@@ -220,6 +220,24 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
   font-size: 0.75rem;
   color: var(--text-secondary);
 }
+/* Vertical block legend (graficzna_prezentacja_danych_stat_s95.pdf p.95):
+   highest class at the top, lowest at the bottom -- legendBlockList()
+   already returns blocks in that order, so this is a plain column, no
+   reversing needed here. */
+.legend-blocks { display: flex; flex-direction: column; gap: 2px; }
+.legend-block { display: flex; align-items: center; gap: 0.5rem; }
+.legend-swatch {
+  width: 28px;
+  height: 20px;
+  flex: none;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.legend-range { font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+
+/* PRESERVED FOR POSSIBLE REVERT -- the continuous-bar legend this replaced
+   (see updateLegendContinuous() in app.js). Not applied to any element in
+   the current markup. */
 .legend-scale { display: flex; height: 10px; border-radius: 3px; overflow: hidden; margin-bottom: 0.3rem; }
 .legend-scale span { flex: 1; }
 .legend-labels {

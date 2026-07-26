@@ -928,23 +928,70 @@ function linearBoundariesDiverging(domain, view, n) {
   return symmetricDivergingBoundaries(below, above, n, (d, sign) => center + sign * d);
 }
 
-// Diverging, "quantile" mode: each arm's boundaries sit at real quantiles
-// of that arm's own distribution (not evenly spaced), so one extreme
-// outlier no longer stretches every other county on that arm into the
-// pale near-center buckets. Assumes a genuinely two-sided domain, same as
-// symmetricDivergingBoundaries above -- paletteFor() routes one-sided
-// domains to the sequential palette/boundaries before this is ever called.
-function quantileBoundariesDiverging(domain, view, n) {
-  const center = view.center ?? 0;
-  const half = (n + 1) / 2;
-  const below = domain.filter((v) => v < center).map((v) => center - v).sort((a, b) => a - b);
-  const above = domain.filter((v) => v >= center).map((v) => v - center).sort((a, b) => a - b);
-  const sideQuantiles = (dists) => Array.from({ length: half }, (_, j) => quantile(dists, j / (half - 1)));
+// N shades of `hexColor` from pale (near white) to full saturation, evenly
+// spaced -- same color-mix-toward-white idiom as DIVERGING_STEPS/
+// SEQUENTIAL_STEPS_RED above, generalized to an arbitrary count instead of
+// a fixed array, since quantileDivergingPalette below doesn't know ahead of
+// time how many buckets will land on a given side. n===1 returns just the
+// pure hue (nothing to grade against).
+function shadesTowardWhite(hexColor, n) {
+  if (n <= 1) return [hexColor];
+  return Array.from({ length: n }, (_, i) => {
+    const pct = Math.round(25 + (i * (100 - 25)) / (n - 1));
+    return pct >= 100 ? hexColor : `color-mix(in oklch, ${hexColor} ${pct}%, #ffffff)`;
+  });
+}
 
-  if (below.length === 0 && above.length === 0) return Array.from({ length: n + 1 }, () => center);
-  const left = sideQuantiles(below).reverse().map((d) => center - d);
-  const right = sideQuantiles(above).map((d) => center + d);
-  return [...left, ...right];
+// Diverging, "quantile" mode: unlike linear/log (unchanged, still per-arm
+// symmetric around center, see symmetricDivergingBoundaries above), this
+// divides the WHOLE domain into 5 straight quantiles -- ignoring sign for
+// the split itself. Colors then follow an "appropriate scale" (2026-07-27
+// correction to an earlier flat-3-color attempt): any bucket that actually
+// SPANS center is white regardless of position, but buckets on the same
+// side are graded by distance from center -- palest closest to center,
+// full saturation at the most extreme -- using the same red/blue hue
+// convention as every other view (more women = red, more men = blue,
+// flipped for reverseDiverging). The number of buckets on each side isn't
+// fixed (a skewed domain can put 4 on one side and just 1 on the other),
+// so the grading is generated for however many actually land there, not
+// sampled from a fixed-length array.
+function quantileDivergingPalette(domain, view) {
+  const center = view.center ?? 0;
+  const n = 5;
+  if (domain.length === 0) {
+    return { steps: Array.from({ length: n }, () => "#ffffff"), boundaries: Array.from({ length: n + 1 }, () => center) };
+  }
+  const sorted = [...domain].sort((a, b) => a - b);
+  const boundaries = Array.from({ length: n + 1 }, (_, i) => quantile(sorted, i / n));
+  const aboveIsRed = !view.reverseDiverging;
+
+  const classOf = (i) => {
+    if (boundaries[i] >= center) return "above";
+    if (boundaries[i + 1] <= center) return "below";
+    return "white";
+  };
+  // Ascending bucket index is ascending VALUE -- for the "above" arm that's
+  // also ascending distance from center (closest-to-center first), but for
+  // the "below" arm it's DESCENDING distance (most extreme/negative first),
+  // so that side's index list is reversed before grading closest-first.
+  const aboveIdxs = [];
+  const belowIdxs = [];
+  for (let i = 0; i < n; i++) {
+    const c = classOf(i);
+    if (c === "above") aboveIdxs.push(i);
+    else if (c === "below") belowIdxs.push(i);
+  }
+  belowIdxs.reverse();
+
+  const redHue = "#e34948";
+  const blueHue = "#2a78d6";
+  const aboveShades = shadesTowardWhite(aboveIsRed ? redHue : blueHue, aboveIdxs.length);
+  const belowShades = shadesTowardWhite(aboveIsRed ? blueHue : redHue, belowIdxs.length);
+
+  const steps = Array.from({ length: n }, () => "#ffffff");
+  aboveIdxs.forEach((idx, rank) => (steps[idx] = aboveShades[rank]));
+  belowIdxs.forEach((idx, rank) => (steps[idx] = belowShades[rank]));
+  return { steps, boundaries };
 }
 
 // Diverging, "log" mode: ratio-style views (center > 0, e.g. K/M) keep the
@@ -972,6 +1019,11 @@ function logBoundariesDiverging(domain, view, n) {
 // buckets -- shared by colorFor (to assign a color) and updateLegend (to
 // label exactly where each color starts/ends), so the two can never drift
 // apart the way they briefly did for the ratio view.
+// NOTE: diverging + "quantile" never reaches here -- paletteFor() below
+// intercepts that specific combination earlier (quantileDivergingPalette
+// needs to pick colors and boundaries together, not colors from a fixed
+// palette), so this function only ever sees diverging domains in
+// linear/log mode.
 function colorBoundaries(domain, view, steps) {
   const n = steps.length;
   if (view.kind === "sequential") {
@@ -980,7 +1032,6 @@ function colorBoundaries(domain, view, steps) {
     return linearBoundariesSequential(domain, n);
   }
   if (state.colorScale === "log") return logBoundariesDiverging(domain, view, n);
-  if (state.colorScale === "quantile") return quantileBoundariesDiverging(domain, view, n);
   return linearBoundariesDiverging(domain, view, n);
 }
 
@@ -1038,7 +1089,8 @@ function paletteFor(domain, view) {
   if (hasBelow === hasAbove) {
     // Either genuinely two-sided (both true), or no real data at all
     // (both false) -- the latter already collapses to one repeated
-    // center/white value inside colorBoundaries, no special-casing needed.
+    // center/white value, no special-casing needed either way.
+    if (state.colorScale === "quantile") return quantileDivergingPalette(domain, view);
     const steps = stepsForView(view);
     return { steps, boundaries: colorBoundaries(domain, view, steps) };
   }
@@ -1087,10 +1139,15 @@ function baseStyleFor(value, domain) {
 // (wages, headcounts) and the extra precision isn't meaningful there. Never
 // used for the CSV export, which stays machine-readable with plain "." decimals.
 function formatPl(n, maxFractionDigits) {
-  if (Math.abs(n) >= 1000) {
-    return n.toLocaleString("pl-PL", { maximumFractionDigits: 0, useGrouping: false });
-  }
-  return n.toLocaleString("pl-PL", { maximumFractionDigits: maxFractionDigits ?? 2, useGrouping: true });
+  const formatted =
+    Math.abs(n) >= 1000
+      ? n.toLocaleString("pl-PL", { maximumFractionDigits: 0, useGrouping: false })
+      : n.toLocaleString("pl-PL", { maximumFractionDigits: maxFractionDigits ?? 2, useGrouping: true });
+  // A small negative value that rounds to zero at this precision (e.g.
+  // -0.03 at 1 decimal) still carries its original sign into
+  // toLocaleString, showing a bare "-0" -- there's no such thing as a
+  // negative zero to display, so strip the sign in that one case.
+  return /^-0([,.]0*)?$/.test(formatted) ? formatted.slice(1) : formatted;
 }
 
 function formatValue(v) {
@@ -1134,6 +1191,23 @@ function legendValueFormat(v) {
   return formatPl(v, VIEWS[state.view].decimals);
 }
 
+// Real per-bucket {color, lo, hi} triples -- lo/hi are the actual boundary
+// VALUES (not screen positions), shared by both legend styles below.
+// Diverging views can leave a whole arm collapsed to zero-width buckets
+// sitting exactly at `center` in the fully-empty-domain case (see
+// symmetricDivergingBoundaries) -- those are dropped so neither legend
+// style shows a real (non-collapsed) bucket with lo === hi.
+function realBuckets(view, boundaries, steps) {
+  if (view.kind !== "diverging") {
+    return steps.map((c, i) => ({ color: c, lo: boundaries[i], hi: boundaries[i + 1] }));
+  }
+  const real = [];
+  for (let i = 0; i < steps.length; i++) {
+    if (boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1] });
+  }
+  return real;
+}
+
 // Every bucket gets EQUAL on-screen width regardless of scale mode -- the
 // quantile/log/diverging boundary values are real and unevenly spaced by
 // design (that's the whole point of a quantile scale), but rendering swatch
@@ -1143,25 +1217,16 @@ function legendValueFormat(v) {
 // overlap; the tick VALUES are still the real boundary values, only their
 // on-screen position is now index-based, not value-proportional.
 //
-// Diverging views are different from sequential ones in one respect: a
-// per-arm spread (see linear/logBoundariesDiverging) can leave one whole arm
-// collapsed to zero-width buckets sitting exactly at `center`, when all the
-// real data is on the other side (life expectancy's K-M is never negative --
-// women never live shorter than men). Rendering those anyway would show
-// several identical duplicate tick labels for a range that never occurs, so
-// those are dropped before assigning the (still uniform) positions below.
+// PRESERVED FOR POSSIBLE REVERT (2026-07-27): this continuous-bar style was
+// replaced by a block legend (legendBlockList/updateLegend/
+// buildExportLegendSvg below) per user request, in favor of the "od-do"
+// block convention in graficzna_prezentacja_danych_stat_s95.pdf p.95. Not
+// called from anywhere now -- kept only in case the continuous style is
+// wanted back. If reviving it, wire updateLegendContinuous/
+// buildExportLegendSvgContinuous back into updateAll()/buildExportSvg() in
+// place of the current calls.
 function legendBuckets(view, boundaries, steps) {
-  if (view.kind !== "diverging") {
-    const n = steps.length;
-    return {
-      buckets: steps.map((c, i) => ({ color: c, lo: i / n, hi: (i + 1) / n })),
-      ticks: boundaries.map((v, i) => ({ value: v, pos: i / n })),
-    };
-  }
-  const real = [];
-  for (let i = 0; i < steps.length; i++) {
-    if (boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1] });
-  }
+  const real = realBuckets(view, boundaries, steps);
   const n = real.length;
   if (n === 0) return { buckets: [], ticks: [] };
   return {
@@ -1170,12 +1235,43 @@ function legendBuckets(view, boundaries, steps) {
   };
 }
 
+// Formats one bucket's "od-do" (from-to) label following
+// graficzna_prezentacja_danych_stat_s95.pdf p.95's stated convention: the
+// upper bound is the real boundary value, but the LOWER bound is nudged up
+// by one display-precision increment (e.g. 10,1 rather than repeating the
+// previous class's 10,0) -- "zdecydowanie częściej stosuje się niewielkie
+// przesunięcie wartości granicy kolejnego przedziału", the PDF's stated
+// more-common practice over literally repeating shared boundary values.
+// The very lowest bucket overall keeps its exact lower bound (nothing
+// below it to disambiguate against).
+function bucketRangeLabel(lo, hi, isLowest) {
+  const decimals = VIEWS[state.view].decimals;
+  const increment = Math.pow(10, -decimals);
+  const loLabel = legendValueFormat(isLowest ? lo : lo + increment);
+  return `${loLabel} – ${legendValueFormat(hi)}`;
+}
+
+// High-to-low ordered block list (color + range label) for the vertical
+// block legend -- graficzna_prezentacja_danych_stat_s95.pdf p.95 requires
+// the highest values at the TOP, lowest at the BOTTOM, so callers building
+// a top-down list (both the sidebar and the SVG export) can iterate this
+// array directly with no further reordering.
+function legendBlockList(view, boundaries, steps) {
+  const real = realBuckets(view, boundaries, steps);
+  return real
+    .map((b, i) => ({ color: b.color, label: bucketRangeLabel(b.lo, b.hi, i === 0) }))
+    .reverse();
+}
+
 // One tick per color boundary (N colors -> N+1 ticks, minus any collapsed
 // by legendBuckets), so every edge between two swatches has a visible
 // number showing exactly where it falls -- not just the overall min/max.
 // Sign (diff) or position relative to 1 (ratio) already conveys the M-vs-K
 // direction, so bare numbers are enough.
-function updateLegend(domain) {
+// PRESERVED FOR POSSIBLE REVERT (2026-07-27) -- superseded by the block
+// legend below (updateLegend). Not called from anywhere; see legendBuckets'
+// comment for how to wire it back in if the continuous style is wanted again.
+function updateLegendContinuous(domain) {
   const view = VIEWS[state.view];
   const scaleEl = document.getElementById("legend-scale");
   const labelsEl = document.getElementById("legend-labels");
@@ -1200,6 +1296,23 @@ function updateLegend(domain) {
       const cls = (label.match(/\d/g) || []).length > 4 ? ' class="tick-long"' : "";
       return `<span style="${pos}"${cls}>${label}</span>`;
     })
+    .join("");
+}
+
+// Vertical block legend (graficzna_prezentacja_danych_stat_s95.pdf p.95):
+// one rectangle per class, highest value at the top -- legendBlockList()
+// already returns blocks in that order.
+function updateLegend(domain) {
+  const view = VIEWS[state.view];
+  const blocksEl = document.getElementById("legend-blocks");
+  if (domain.length === 0) {
+    blocksEl.innerHTML = "";
+    return;
+  }
+  const { steps, boundaries } = paletteFor(domain, view);
+  const blocks = legendBlockList(view, boundaries, steps);
+  blocksEl.innerHTML = blocks
+    .map((b) => `<div class="legend-block"><span class="legend-swatch" style="background:${b.color}"></span><span class="legend-range">${b.label}</span></div>`)
     .join("");
 }
 
@@ -1307,7 +1420,7 @@ function exportFeatureParts() {
 const EXPORT_SCALE_ADJ = { linear: "liniowa (równe przedziały)", log: "logarytmiczna", quantile: "kwantylowa" };
 const EXPORT_SCALE_SCOPE_PHRASE = { year: "dla danego roku", all: "wspólna dla wszystkich dostępnych lat" };
 function exportScaleSentence() {
-  return `Skala ${EXPORT_SCALE_ADJ[state.colorScale]} ${EXPORT_SCALE_SCOPE_PHRASE[state.colorScaleScope]}.`;
+  return `Skala ${EXPORT_SCALE_ADJ[state.colorScale]} ${EXPORT_SCALE_SCOPE_PHRASE[state.colorScaleScope]}`;
 }
 
 function exportFileBaseName() {
@@ -1320,7 +1433,6 @@ function exportFileBaseName() {
 
 const EXPORT_PAD_X = 20;
 const EXPORT_FOOTER_H = 26; // credit bar, flush against the map's bottom edge
-const EXPORT_LEGEND_H = 60; // swatches + tick labels
 const EXPORT_SCALE_SENTENCE_H = 30; // one line describing the color scale, under the legend
 const EXPORT_TITLE_PAD_TOP = 22;
 const EXPORT_TITLE_PAD_BOTTOM = 10;
@@ -1368,12 +1480,10 @@ function wrapParts(parts, fontSize, maxWidth) {
   return lines;
 }
 
-// Full-width legend (unlike the cramped sidebar copy) so the tick labels --
-// up to 9 of them, for the 8-bucket sequential scale -- have room to
-// breathe. Uses the same legendBuckets()/paletteFor() as the sidebar
-// legend, so the exported image always matches what's on screen (including
-// a one-sided diverging view's single-hue palette, see paletteFor).
-function buildExportLegendSvg(x, y, width, textColor) {
+// PRESERVED FOR POSSIBLE REVERT (2026-07-27) -- superseded by the vertical
+// block legend below (buildExportLegendSvg), to match the sidebar's own
+// switch (see legendBuckets' comment). Not called from anywhere now.
+function buildExportLegendSvgContinuous(x, y, width, textColor) {
   const view = VIEWS[state.view];
   const { steps, boundaries } = paletteFor(lastDomain, view);
   const { buckets, ticks } = legendBuckets(view, boundaries, steps);
@@ -1388,15 +1498,58 @@ function buildExportLegendSvg(x, y, width, textColor) {
       const tx = x + t.pos * width;
       const anchor = i === 0 ? "start" : i === n ? "end" : "middle";
       const label = legendValueFormat(t.value);
-      // Same reasoning as the sidebar legend: a run of 5+ digit ticks
-      // (thousands of złoty, headcounts) can overlap its neighbors,
-      // especially now that the legend itself is capped narrower than the
-      // map (see EXPORT_LEGEND_MAX_W) -- shrink just those.
       const fontSize = (label.match(/\d/g) || []).length > 4 ? 10 : 12;
       return `<text x="${tx.toFixed(1)}" y="${tickY}" font-size="${fontSize}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="${anchor}">${escapeXml(label)}</text>`;
     })
     .join("");
   return out;
+}
+
+const EXPORT_LEGEND_SWATCH_W = 46;
+const EXPORT_LEGEND_SWATCH_H = 22;
+const EXPORT_LEGEND_ROW_GAP = 5;
+const EXPORT_LEGEND_LABEL_PAD = 10; // between swatch and its range label
+
+// How tall the vertical block legend will be for the CURRENT view/domain --
+// buildExportSvg needs this before it can lay out everything below the
+// legend (scale sentence, total canvas height), so it's split out from the
+// drawing function itself rather than measured after the fact.
+function exportLegendBlockCount() {
+  if (lastDomain.length === 0) return 0; // e.g. life_expectancy's "Ogółem" (hasTotal: false) -- no real value anywhere
+  const view = VIEWS[state.view];
+  const { steps, boundaries } = paletteFor(lastDomain, view);
+  return legendBlockList(view, boundaries, steps).length;
+}
+
+function exportLegendHeight(n) {
+  if (n === 0) return 0; // e.g. life_expectancy's "Ogółem" (hasTotal: false) -- no real value anywhere
+  return n * EXPORT_LEGEND_SWATCH_H + (n - 1) * EXPORT_LEGEND_ROW_GAP;
+}
+
+// Vertical block legend (graficzna_prezentacja_danych_stat_s95.pdf p.95),
+// matching the sidebar's own style -- highest value at the top. Centered
+// as a whole (swatch + its label together) within `width`, same as the
+// old continuous bar was.
+function buildExportLegendSvg(x, y, width, textColor) {
+  if (lastDomain.length === 0) return ""; // e.g. life_expectancy's "Ogółem" (hasTotal: false) -- no real value anywhere
+  const view = VIEWS[state.view];
+  const { steps, boundaries } = paletteFor(lastDomain, view);
+  const blocks = legendBlockList(view, boundaries, steps);
+  if (blocks.length === 0) return "";
+  const maxLabelW = Math.max(...blocks.map((b) => measureTextWidth(b.label, 13)));
+  const blockW = EXPORT_LEGEND_SWATCH_W + EXPORT_LEGEND_LABEL_PAD + maxLabelW;
+  const startX = x + Math.max(0, (width - blockW) / 2);
+  const rowH = EXPORT_LEGEND_SWATCH_H + EXPORT_LEGEND_ROW_GAP;
+  return blocks
+    .map((b, i) => {
+      const by = y + i * rowH;
+      const rect = `<rect x="${startX.toFixed(1)}" y="${by.toFixed(1)}" width="${EXPORT_LEGEND_SWATCH_W}" height="${EXPORT_LEGEND_SWATCH_H}" fill="${b.color}" stroke="${BORDER_COLOR}" stroke-width="0.75" />`;
+      const labelX = startX + EXPORT_LEGEND_SWATCH_W + EXPORT_LEGEND_LABEL_PAD;
+      const labelY = by + EXPORT_LEGEND_SWATCH_H / 2 + 4;
+      const text = `<text x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="13" font-family="system-ui, sans-serif" fill="${textColor}">${escapeXml(b.label)}</text>`;
+      return rect + text;
+    })
+    .join("");
 }
 
 // pixelScale only widens the <svg> width/height attributes, not the
@@ -1459,7 +1612,12 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const headerH = titleH + featuresH;
   const scaleSentenceText = exportScaleSentence();
   const scaleSentenceFontSize = fitFontSize(scaleSentenceText, 13, 11, availW);
-  const totalH = headerH + mapH + EXPORT_FOOTER_H + EXPORT_LEGEND_H + EXPORT_SCALE_SENTENCE_H;
+  // Block legend height depends on how many classes the current view/scale
+  // actually has (e.g. 5 for diverging quantile, up to 8 for sequential) --
+  // computed once here so the rest of the layout below the map can be sized
+  // correctly, then reused (not recomputed) by buildExportLegendSvg's own draw.
+  const legendH = exportLegendHeight(exportLegendBlockCount());
+  const totalH = headerH + mapH + EXPORT_FOOTER_H + legendH + EXPORT_SCALE_SENTENCE_H;
 
   // Resolved to concrete hex/rgb here, not left as var(--x) -- the exported
   // file has no stylesheet of its own to resolve custom properties against,
@@ -1486,7 +1644,7 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const legendW = Math.min(availW, EXPORT_LEGEND_MAX_W);
   const legendX = EXPORT_PAD_X + (availW - legendW) / 2;
   const legendSvg = buildExportLegendSvg(legendX, legendY + 6, legendW, textColor);
-  const scaleSentenceSvg = `<text x="${mapW / 2}" y="${legendY + EXPORT_LEGEND_H + 8}" font-size="${scaleSentenceFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(scaleSentenceText)}</text>`;
+  const scaleSentenceSvg = `<text x="${mapW / 2}" y="${legendY + legendH + 8}" font-size="${scaleSentenceFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(scaleSentenceText)}</text>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(mapW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${mapW} ${totalH}">
     <rect x="0" y="0" width="${mapW}" height="${totalH}" fill="${pageColor}" />
