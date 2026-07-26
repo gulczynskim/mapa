@@ -46,6 +46,8 @@ after liceum.json/zasadnicze_zawodowe.json change.
 import json
 import os
 
+from add_derived_measures import _divide
+
 OUT_DIR = "../data"
 TARGET_FILE = "szkolnictwo_ponadpodstawowe.json"
 MEASURES = ["uczniowie", "uczniowie_1_klasa", "absolwenci"]
@@ -89,12 +91,6 @@ def combine(*parts):
     return out
 
 
-def _divide(numerator, denominator):
-    if numerator is None or denominator is None or denominator == 0:
-        return None
-    return numerator / denominator * 100
-
-
 def add_razem(target):
     """razem = licea_ogolnoksztalcace + (technika + artystyczne_dajace_uprawnienia)
     + branzowe_I_st + licea_profilowane + zasadnicze_zawodowe, per measure."""
@@ -133,7 +129,7 @@ def add_udzial(target):
                     if not _has_any_value(raw):
                         continue
                     slices[f"{age_group}__{measure}_udzial"] = {
-                        sex: _divide(numerator.get(sex), denom.get(sex)) for sex in ("t", "m", "k")
+                        sex: _divide(numerator.get(sex), denom.get(sex), 100) for sex in ("t", "m", "k")
                     }
 
 

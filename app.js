@@ -107,29 +107,33 @@ function bothOrNull(a, b, fn) {
   return a === null || b === null ? null : fn(a, b);
 }
 
+// csvSlug: ASCII snake_case header name for this view's optional CSV export
+// column (see downloadCsv/buildDownloadPanel) -- "widok_"-prefixed so a
+// checked "Kobiety"/"Mężczyźni"/"Ogółem" Widok column can never collide with
+// the CSV's own always-present kobiety/mezczyzni/ogolem base columns.
 const VIEWS = {
-  women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k, decimals: 1, sexColor: "k" },
-  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m, decimals: 1, sexColor: "m" },
-  total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t, decimals: 1 },
-  diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => bothOrNull(d.k, d.m, (k, m) => k - m), center: 0, decimals: 1 },
+  women: { label: "Kobiety", kind: "sequential", pick: (d) => d.k, decimals: 1, sexColor: "k", csvSlug: "widok_kobiety" },
+  men: { label: "Mężczyźni", kind: "sequential", pick: (d) => d.m, decimals: 1, sexColor: "m", csvSlug: "widok_mezczyzni" },
+  total: { label: "Ogółem", kind: "sequential", pick: (d) => d.t, decimals: 1, csvSlug: "widok_ogolem" },
+  diff: { label: "Różnica (K - M)", kind: "diverging", pick: (d) => bothOrNull(d.k, d.m, (k, m) => k - m), center: 0, decimals: 1, csvSlug: "widok_roznica_k_m" },
   // logScale: a ratio can never go negative, and 2x / 0.5x are equally far
   // from "equal" multiplicatively -- linear spread around center=1 would
   // let the color scale (and any tick derived from it) drift negative,
   // which is meaningless for a ratio. Symmetrize in log space instead.
-  ratio: { label: "Proporcja (K / M)", kind: "diverging", pick: (d) => bothOrNull(d.k, d.m, (k, m) => k / m), center: 1, logScale: true, decimals: 2, unit: "" },
+  ratio: { label: "Proporcja (K / M)", kind: "diverging", pick: (d) => bothOrNull(d.k, d.m, (k, m) => k / m), center: 1, logScale: true, decimals: 2, unit: "", csvSlug: "widok_proporcja_k_m" },
   // reverseDiverging: DIVERGING_STEPS always runs blue(low)->red(high) by
   // raw position. That's correct for "diff" (K-M > 0 means more women =
   // red, natural ordering) and "ratio" (K/M > 1 also means more women =
   // red), but M/K > 1 means more MEN -- which should be blue, not red. Flip
   // which end of the ramp gets used so a county where men dominate is
   // always blue here too, never red just because the raw ratio is "high".
-  ratioInverse: { label: "Proporcja (M / K)", kind: "diverging", pick: (d) => bothOrNull(d.m, d.k, (m, k) => m / k), center: 1, logScale: true, decimals: 2, unit: "", reverseDiverging: true },
+  ratioInverse: { label: "Proporcja (M / K)", kind: "diverging", pick: (d) => bothOrNull(d.m, d.k, (m, k) => m / k), center: 1, logScale: true, decimals: 2, unit: "", reverseDiverging: true, csvSlug: "widok_proporcja_m_k" },
   // Useful for compositional data (e.g. share of women among elected
   // officials or students) where the natural "total" is a headcount, not a
   // percentage -- these compute the share directly from k/m regardless of
   // what the variable's own unit is.
-  shareWomen: { label: "% kobiet", kind: "sequential", pick: (d) => bothOrNull(d.k, d.m, (k, m) => (k / (k + m)) * 100), decimals: 1, unit: "%", sexColor: "k" },
-  shareMen: { label: "% mężczyzn", kind: "sequential", pick: (d) => bothOrNull(d.m, d.k, (m, k) => (m / (m + k)) * 100), decimals: 1, unit: "%", sexColor: "m" },
+  shareWomen: { label: "% kobiet", kind: "sequential", pick: (d) => bothOrNull(d.k, d.m, (k, m) => (k / (k + m)) * 100), decimals: 1, unit: "%", sexColor: "k", csvSlug: "widok_pct_kobiet" },
+  shareMen: { label: "% mężczyzn", kind: "sequential", pick: (d) => bothOrNull(d.m, d.k, (m, k) => (m / (m + k)) * 100), decimals: 1, unit: "%", sexColor: "m", csvSlug: "widok_pct_mezczyzn" },
 };
 
 const POLAND_BOUNDS = L.latLngBounds([48.9, 13.8], [55.0, 24.2]);
@@ -142,6 +146,18 @@ const COLOR_SCALES = { linear: "Liniowa (równe przedziały)", log: "Logarytmicz
 // keeps "how many colors on the legend" consistent across every variable
 // instead of varying with which kind of view happens to be selected.
 const QUANTILE_BUCKETS = 7;
+// Precomputed once at module load, keyed by hue -- paletteFor()'s two
+// sequential-shaped quantile branches run inside colorFor(), which is
+// called once per rendered polygon (up to ~2479 at gmina level) on every
+// redraw/hover/click. shadesTowardWhite(hue, QUANTILE_BUCKETS) is a pure
+// function of these two always-fixed inputs, so building its 7-entry array
+// fresh on every one of those calls was pure waste -- three arrays, built
+// once, cover every possible hue paletteFor can ask for.
+const QUANTILE_STEPS_BY_HUE = {
+  [RED_HUE]: shadesTowardWhite(RED_HUE, QUANTILE_BUCKETS),
+  [BLUE_HUE]: shadesTowardWhite(BLUE_HUE, QUANTILE_BUCKETS),
+  [NEUTRAL_HUE]: shadesTowardWhite(NEUTRAL_HUE, QUANTILE_BUCKETS),
+};
 // "year": domain from the currently-shown year only. "all": domain pooled
 // across every year (for the current variable/level/ageGroup/measure/view),
 // so scrubbing the year slider recolors polygons without renormalizing the
@@ -682,7 +698,7 @@ function populateCorrViewOptions(prefix) {
   const ageGroup = document.getElementById(`corr-${prefix}-agegroup`).value;
   const measure = document.getElementById(`corr-${prefix}-measure`).value;
   const totalOk = hasTotalFor(meta, ageGroup, measure);
-  const sharesOk = meta.sharesMeaningful === true && !isRateMeasure(measure);
+  const sharesOk = canShowShares(meta, measure);
   const womenOnly = meta.sexScope === "women";
 
   const keys = Object.keys(VIEWS).filter((key) => {
@@ -1102,12 +1118,18 @@ function hueForView(view) {
 // max = fullest -- same treatment as the Kobiety/Mężczyźni magnitude views,
 // reusing their exact palettes so hue-to-sex meaning stays consistent
 // everywhere) whenever a domain doesn't actually straddle center.
+// Shared by both quantile branches below that treat their domain as plain
+// sequential values (the real sequential-kind case, and the one-sided
+// diverging-as-sequential case) -- the two differed only in which hue they
+// looked up, everything else (precomputed steps + quantile boundaries at
+// the fixed QUANTILE_BUCKETS count) was identical.
+function quantileSequentialPalette(domain, hue) {
+  return { steps: QUANTILE_STEPS_BY_HUE[hue], boundaries: quantileBoundariesSequential(domain, QUANTILE_BUCKETS) };
+}
+
 function paletteFor(domain, view) {
   if (view.kind === "sequential") {
-    if (state.colorScale === "quantile") {
-      const steps = shadesTowardWhite(hueForView(view), QUANTILE_BUCKETS);
-      return { steps, boundaries: quantileBoundariesSequential(domain, QUANTILE_BUCKETS) };
-    }
+    if (state.colorScale === "quantile") return quantileSequentialPalette(domain, hueForView(view));
     const steps = stepsForView(view);
     return { steps, boundaries: colorBoundaries(domain, view, steps) };
   }
@@ -1126,10 +1148,7 @@ function paletteFor(domain, view) {
   // men" (blue) -- same convention stepsForView already applies to the
   // two-sided palette (see ratioInverse's comment near VIEWS above).
   const redSide = view.reverseDiverging ? hasBelow : hasAbove;
-  if (state.colorScale === "quantile") {
-    const steps = shadesTowardWhite(redSide ? RED_HUE : BLUE_HUE, QUANTILE_BUCKETS);
-    return { steps, boundaries: quantileBoundariesSequential(domain, QUANTILE_BUCKETS) };
-  }
+  if (state.colorScale === "quantile") return quantileSequentialPalette(domain, redSide ? RED_HUE : BLUE_HUE);
   const steps = redSide ? SEQUENTIAL_STEPS_RED : SEQUENTIAL_STEPS_BLUE;
   const n = steps.length;
   const boundaries = state.colorScale === "log" ? logBoundariesSequential(domain, n) : linearBoundariesSequential(domain, n);
@@ -1161,6 +1180,16 @@ function baseStyleFor(value, domain) {
   return { fillColor: colorFor(value, domain), fillOpacity: 0.9, color: BORDER_COLOR, weight: border.weight, opacity: border.opacity };
 }
 
+// A small negative value that rounds to zero at whatever precision just got
+// applied (e.g. -0.03 at 1 decimal) still carries its original sign into
+// toLocaleString, showing a bare "-0" -- there's no such thing as a negative
+// zero to display, so strip the sign in that one case. Shared by every
+// Polish-locale number formatter below (formatPl, legendValueFormat) so the
+// same regex doesn't drift between copies.
+function stripNegativeZero(formatted) {
+  return /^-0([,.]0*)?$/.test(formatted) ? formatted.slice(1) : formatted;
+}
+
 // Polish locale throughout the UI: comma decimal separator, space thousands
 // (e.g. "1,5" not "1.5"; "10 000" not "10,000") -- EXCEPT at four digits and
 // above, where both the separator and decimals are dropped ("10000" not
@@ -1172,11 +1201,7 @@ function formatPl(n, maxFractionDigits) {
     Math.abs(n) >= 1000
       ? n.toLocaleString("pl-PL", { maximumFractionDigits: 0, useGrouping: false })
       : n.toLocaleString("pl-PL", { maximumFractionDigits: maxFractionDigits ?? 2, useGrouping: true });
-  // A small negative value that rounds to zero at this precision (e.g.
-  // -0.03 at 1 decimal) still carries its original sign into
-  // toLocaleString, showing a bare "-0" -- there's no such thing as a
-  // negative zero to display, so strip the sign in that one case.
-  return /^-0([,.]0*)?$/.test(formatted) ? formatted.slice(1) : formatted;
+  return stripNegativeZero(formatted);
 }
 
 function formatValue(v) {
@@ -1216,8 +1241,18 @@ async function updateAll() {
   updateUrl();
 }
 
+// Deliberately does NOT reuse formatPl() -- that function drops decimals
+// (and thousands grouping) entirely once |n| >= 1000, which is fine for a
+// single readout (tooltip/sidebar current value) but breaks a LEGEND, where
+// every bucket boundary needs the SAME number of decimal digits to read as
+// one consistent scale. Fixing minimumFractionDigits === maximumFractionDigits
+// === the view's own decimals guarantees that -- e.g. "999,5 – 1 500,0", not
+// "999,5 – 1500" (formatPl would drop both the decimal and the grouping on
+// the second number just because it crossed 1000).
 function legendValueFormat(v) {
-  return formatPl(v, VIEWS[state.view].decimals);
+  const decimals = VIEWS[state.view].decimals;
+  const formatted = v.toLocaleString("pl-PL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: true });
+  return stripNegativeZero(formatted);
 }
 
 // Real per-bucket {color, lo, hi} triples -- lo/hi are the actual boundary
@@ -1978,6 +2013,17 @@ function isRateMeasure(measure) {
   return measure.endsWith("_per100k") || measure.endsWith("_udzial");
 }
 
+// Single source of truth for "does %kobiet/%mężczyzn make sense here" --
+// the map's own view buttons, the correlation tool's per-axis view list, and
+// the CSV export panel all need the exact same gate; written once here so a
+// future change to either half of the check (sharesMeaningful or
+// isRateMeasure) can't drift between call sites the way three independent
+// copies of this expression eventually would. Named distinctly from the
+// local `sharesOk` variable each of those call sites assigns its result to.
+function canShowShares(meta, measure) {
+  return meta.sharesMeaningful === true && !isRateMeasure(measure);
+}
+
 function hasTotalForCurrentSelection() {
   return hasTotalFor(VARIABLE_META[state.variable], state.ageGroup, state.measure);
 }
@@ -2060,7 +2106,7 @@ function updateViewAvailability() {
   // disabled unless the variable opts in with sharesMeaningful: true --
   // and even then, disabled again for this variable's own "_per100k"
   // measures specifically, which are themselves already a rate.
-  const sharesOk = meta.sharesMeaningful === true && !isRateMeasure(state.measure);
+  const sharesOk = canShowShares(meta, state.measure);
   for (const key of ["shareWomen", "shareMen"]) {
     const btn = document.querySelector(`#view-buttons button[data-view-key="${key}"]`);
     if (!btn) continue;
@@ -2324,22 +2370,6 @@ function checkedLabels(containerId) {
   return [...document.querySelectorAll(`#${containerId} input:checked`)].map((cb) => cb.value);
 }
 
-// CSV header slug per Widok view -- ASCII snake_case, matching the existing
-// header convention (kobiety/mezczyzni/ogolem/teryt/...). Kept distinct from
-// those three fixed base columns (which are always exported regardless of
-// what's checked here) via a "widok_" prefix, so checking e.g. "Kobiety"
-// in the Widok list can never collide with the base "kobiety" column.
-const VIEW_CSV_SLUGS = {
-  women: "widok_kobiety",
-  men: "widok_mezczyzni",
-  total: "widok_ogolem",
-  diff: "widok_roznica_k_m",
-  ratio: "widok_proporcja_k_m",
-  ratioInverse: "widok_proporcja_m_k",
-  shareWomen: "widok_pct_kobiet",
-  shareMen: "widok_pct_mezczyzn",
-};
-
 function resolveDimension(variable, dim, chosenKey) {
   const options = VARIABLE_META[variable][dim];
   return options.some((o) => o.key === chosenKey) ? chosenKey : options[0].key;
@@ -2366,7 +2396,7 @@ async function downloadCsv() {
 
   const chosenAgeGroups = checkedLabels("download-agegroup");
   const chosenMeasures = checkedLabels("download-measure");
-  const chosenViews = [...document.querySelectorAll("#download-view input:checked")].map((cb) => cb.value);
+  const chosenViews = checkedLabels("download-view");
   const yearFrom = document.getElementById("download-year-from").value;
   const yearTo = document.getElementById("download-year-to").value;
 
@@ -2380,17 +2410,16 @@ async function downloadCsv() {
   };
 
   // shareWomen/shareMen replicate the same gate the map's own view buttons
-  // use (updateViewAvailability/isRateMeasure, ~line 685/2034) -- disabled
-  // there for a measure that isn't a raw headcount, so blank them here too
-  // rather than exporting a k/(k+m) share that isn't a meaningful operation
-  // for that measure.
+  // use (canShowShares) -- disabled there for a measure that isn't a raw
+  // headcount, so blank them here too rather than exporting a k/(k+m) share
+  // that isn't a meaningful operation for that measure.
   const viewApplies = (viewKey, meta, measureKey) => {
     if (viewKey !== "shareWomen" && viewKey !== "shareMen") return true;
-    return meta.sharesMeaningful === true && !isRateMeasure(measureKey);
+    return canShowShares(meta, measureKey);
   };
 
   const header = ["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"];
-  for (const viewKey of chosenViews) header.push(VIEW_CSV_SLUGS[viewKey]);
+  for (const viewKey of chosenViews) header.push(VIEWS[viewKey].csvSlug);
   const rows = [header];
   for (const variable of variables) {
     const data = loadedData[variable] || {};
