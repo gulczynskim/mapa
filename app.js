@@ -1447,8 +1447,8 @@ function exportTitle() {
 // the app) -- age group and measure stay conditional on the variable
 // actually offering a choice, same condition updateMeta() uses for its own
 // sidebar line. Color scale/scope are deliberately NOT here -- see
-// exportScaleSentence() below, which reads as its own sentence under the
-// legend instead of another " · "-joined fragment up here.
+// exportScaleSentenceLines() below, which reads as its own caption under
+// the legend instead of another " · "-joined fragment up here.
 // Export-only plural forms of the level labels ("Powiat" -> "Powiaty") --
 // the sidebar's own "Poziom agregacji: Powiat" line (updateMeta()) is
 // specifying an aggregation TYPE, singular reads correctly there, but the
@@ -1473,18 +1473,31 @@ function exportFeatureParts() {
   return parts;
 }
 
-// One plain-language sentence describing the color scale, meant to sit
-// under the legend in the exported image (not up in exportFeatureParts() --
-// this reads as a caption for the legend specifically, not another item in
-// the variable/year/measure list). COLOR_SCALES/SCALE_SCOPES (used
-// elsewhere for the sidebar's own button labels) are noun phrases, not
-// grammatically adjectives agreeing with "Skala" (feminine) -- "Skala
-// Kwantyle" wouldn't parse as Polish, so this needs its own adjective forms
-// rather than reusing those labels directly.
-const EXPORT_SCALE_ADJ = { linear: "liniowa (równe przedziały)", log: "logarytmiczna", quantile: "kwantylowa" };
+// Plain-language description of the color scale, meant to sit under the
+// legend in the exported image (not up in exportFeatureParts() -- this
+// reads as a caption for the legend specifically, not another item in the
+// variable/year/measure list). COLOR_SCALES/SCALE_SCOPES (used elsewhere
+// for the sidebar's own button labels) are noun phrases, not grammatically
+// adjectives agreeing with "Skala" (feminine) -- "Skala Kwantyle" wouldn't
+// parse as Polish, so this needs its own adjective forms rather than
+// reusing those labels directly.
+const EXPORT_SCALE_ADJ = { linear: "liniowa", log: "logarytmiczna", quantile: "kwantylowa" };
+// Only linear has a parenthetical qualifier -- log/quantile scales don't
+// need one, so this is null for those rather than an empty string (callers
+// check truthiness to decide whether a middle line exists at all).
+const EXPORT_SCALE_ADJ_PAREN = { linear: "(równe przedziały)", log: null, quantile: null };
 const EXPORT_SCALE_SCOPE_PHRASE = { year: "dla danego roku", all: "wspólna dla wszystkich dostępnych lat" };
-function exportScaleSentence() {
-  return `Skala ${EXPORT_SCALE_ADJ[state.colorScale]} ${EXPORT_SCALE_SCOPE_PHRASE[state.colorScaleScope]}`;
+// Returns the description as an ARRAY of lines with fixed, deliberate break
+// points ("Skala liniowa" / "(równe przedziały)" / "dla danego roku") --
+// always broken this way regardless of whether a shorter combination would
+// fit on fewer lines, per explicit user request, rather than word-wrapping
+// reactively only when a single joined line overflows the panel width.
+function exportScaleSentenceLines() {
+  const lines = [`Skala ${EXPORT_SCALE_ADJ[state.colorScale]}`];
+  const paren = EXPORT_SCALE_ADJ_PAREN[state.colorScale];
+  if (paren) lines.push(paren);
+  lines.push(EXPORT_SCALE_SCOPE_PHRASE[state.colorScaleScope]);
+  return lines;
 }
 
 function exportFileBaseName() {
@@ -1538,10 +1551,8 @@ function fitFontSize(text, baseSize, minSize, maxWidth) {
 // font-size floor. A single part wider than maxWidth on its own (e.g. a
 // long source citation) still just overflows its own line -- fitFontSize
 // already shrunk the font as far as it reasonably can before this runs.
-// `separator` defaults to " · " (the features-list convention) -- also used
-// with " " to word-wrap exportScaleSentence()'s plain sentence in the
-// legend panel, now that it sits in a narrower column beside the map
-// instead of a full-width line below it.
+// `separator` defaults to " · " (the features-list convention); accepts any
+// separator a future caller needs to wrap a differently-joined list.
 function wrapParts(parts, fontSize, maxWidth, separator = " · ") {
   const lines = [];
   let current = [];
@@ -1657,12 +1668,19 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const cropRight = Math.min(fullMapW, shapeRightX + EXPORT_CROP_PAD_X);
   const mapH = cropBottom - cropTop;
   const mapW = cropRight - cropLeft;
-  const availW = mapW - EXPORT_PAD_X * 2;
+
+  // Total canvas width is known up front (legend panel is a FIXED width,
+  // independent of the map's own crop-dependent width) -- title/subtitle/
+  // credit are centered and sized against this full width, not just the
+  // map's own column, per explicit user request that they span the whole
+  // exported image including the legend panel beside it.
+  const totalW = mapW + EXPORT_LEGEND_GAP + EXPORT_LEGEND_PANEL_W;
+  const availW = totalW - EXPORT_PAD_X * 2;
 
   const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
   const creditFontSize = fitFontSize(creditText, 12, 9, availW);
 
-  // Title: the variable name alone, large, centered above the map.
+  // Title: the variable name alone, large, centered over the whole image.
   const titleText = exportTitle();
   const titleFontSize = fitFontSize(titleText, 26, 18, availW);
   const titleH = EXPORT_TITLE_PAD_TOP + titleFontSize + EXPORT_TITLE_PAD_BOTTOM;
@@ -1678,30 +1696,35 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const featureLines = wrapParts(featureParts, featuresFontSize, availW);
   const featuresH = featureLines.length * EXPORT_FEATURES_LINE_H + EXPORT_FEATURES_PAD_BOTTOM;
 
-  // Credit bar now sits between the subtitle (features) and the map itself
+  // Credit bar sits between the subtitle (features) and the map itself
   // (2026-07-27), rather than below the map -- mapY is the map's own top,
-  // used both for the polys transform and to line up the legend panel
-  // beside it.
+  // used both for the polys transform and to vertically center the legend
+  // panel against the map's own height.
   const headerH = titleH + featuresH;
   const mapY = headerH + EXPORT_CREDIT_H;
 
   // Legend panel sits beside the map (2026-07-27) instead of below it, at a
-  // FIXED width (EXPORT_LEGEND_PANEL_W) independent of the map's own crop-
-  // dependent width. The scale sentence is wrapped (word-by-word, via
-  // wrapParts' " " separator) rather than assumed to fit one line, since the
-  // panel is narrower than the map's full width was.
+  // FIXED width (EXPORT_LEGEND_PANEL_W). The scale description always
+  // breaks at the same fixed points ("Skala liniowa" / "(równe przedziały)"
+  // / "dla danego roku") regardless of whether a shorter combination would
+  // fit on fewer lines -- see exportScaleSentenceLines() -- rather than
+  // word-wrapping reactively only when it overflows.
   const legendX = mapW + EXPORT_LEGEND_GAP;
   const legendBlockCount = exportLegendBlockCount();
   const legendSwatchesH = exportLegendHeight(legendBlockCount);
-  const scaleSentenceText = exportScaleSentence();
-  const scaleSentenceFontSize = fitFontSize(scaleSentenceText, 13, 11, EXPORT_LEGEND_PANEL_W);
-  const scaleSentenceLines = wrapParts(scaleSentenceText.split(" "), scaleSentenceFontSize, EXPORT_LEGEND_PANEL_W, " ");
+  const scaleSentenceLines = exportScaleSentenceLines();
+  const longestScaleLine = scaleSentenceLines.reduce((a, b) => (measureTextWidth(b, 13) > measureTextWidth(a, 13) ? b : a));
+  const scaleSentenceFontSize = fitFontSize(longestScaleLine, 13, 11, EXPORT_LEGEND_PANEL_W);
   const scaleSentenceGap = legendSwatchesH > 0 ? EXPORT_LEGEND_SCALE_GAP : 0;
-  const scaleSentenceY0 = mapY + legendSwatchesH + scaleSentenceGap;
   const legendPanelH = legendSwatchesH + scaleSentenceGap + scaleSentenceLines.length * EXPORT_SCALE_SENTENCE_LINE_H;
+  // Legend panel is vertically centered against the MAP's own height (not
+  // the whole canvas) -- per explicit user request. Clamped to mapY so an
+  // unusually tall panel (many quantile buckets + a long scope phrase)
+  // never renders above the map's own top.
+  const legendY = mapY + Math.max(0, (mapH - legendPanelH) / 2);
+  const scaleSentenceY0 = legendY + legendSwatchesH + scaleSentenceGap;
 
-  const totalW = legendX + EXPORT_LEGEND_PANEL_W;
-  const totalH = Math.max(mapY + mapH, mapY + legendPanelH);
+  const totalH = Math.max(mapY + mapH, legendY + legendPanelH);
 
   // Resolved to concrete hex/rgb here, not left as var(--x) -- the exported
   // file has no stylesheet of its own to resolve custom properties against,
@@ -1718,15 +1741,15 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
     polys += `<path d="${latlngsToPathData(layer.getLatLngs())}" fill="${fill}" fill-rule="evenodd" stroke="${BORDER_COLOR}" stroke-width="${exportBorder.weight}" stroke-opacity="${exportBorder.opacity}" />`;
   });
 
-  const titleSvg = `<text x="${mapW / 2}" y="${EXPORT_TITLE_PAD_TOP + titleFontSize}" font-size="${titleFontSize.toFixed(1)}" font-weight="600" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(titleText)}</text>`;
+  const titleSvg = `<text x="${totalW / 2}" y="${EXPORT_TITLE_PAD_TOP + titleFontSize}" font-size="${titleFontSize.toFixed(1)}" font-weight="600" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(titleText)}</text>`;
   const featuresSvg = featureLines
-    .map((line, i) => `<text x="${mapW / 2}" y="${titleH + EXPORT_FEATURES_LINE_H * 0.75 + i * EXPORT_FEATURES_LINE_H}" font-size="${featuresFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(line)}</text>`)
+    .map((line, i) => `<text x="${totalW / 2}" y="${titleH + EXPORT_FEATURES_LINE_H * 0.75 + i * EXPORT_FEATURES_LINE_H}" font-size="${featuresFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(line)}</text>`)
     .join("");
 
-  const creditSvg = `<rect x="0" y="${headerH}" width="${mapW}" height="${EXPORT_CREDIT_H}" fill="${surfaceColor}" />
-    <text x="${mapW / 2}" y="${headerH + EXPORT_CREDIT_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>`;
+  const creditSvg = `<rect x="0" y="${headerH}" width="${totalW}" height="${EXPORT_CREDIT_H}" fill="${surfaceColor}" />
+    <text x="${totalW / 2}" y="${headerH + EXPORT_CREDIT_H / 2 + 4}" font-size="${creditFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>`;
 
-  const legendSvg = buildExportLegendSvg(legendX, mapY, textColor);
+  const legendSvg = buildExportLegendSvg(legendX, legendY, textColor);
   const scaleSentenceSvg = scaleSentenceLines
     .map((line, i) => `<text x="${legendX}" y="${scaleSentenceY0 + i * EXPORT_SCALE_SENTENCE_LINE_H + 11}" font-size="${scaleSentenceFontSize.toFixed(1)}" font-family="system-ui, sans-serif" fill="${textColor}">${escapeXml(line)}</text>`)
     .join("");
