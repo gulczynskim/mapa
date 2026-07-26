@@ -180,6 +180,11 @@ let terytToLayer = {};
 let terytToName = {};
 let nameCounts = {}; // name -> how many teryts share it, precomputed per level (see renderBoundaries)
 let lastDomain = [];
+// Touch devices have no mouseout -- a tap's highlight has to be undone
+// manually by the NEXT tap (or by the map-level click-to-reset handler
+// below), rather than by the mouse leaving the polygon. Tracks whichever
+// layer a tap (not a mouseover) most recently highlighted.
+let tapHighlightedLayer = null;
 
 // Gmina-only (see applyGminaHistoricalOverrides): the only two gmina splits
 // in the site's data range (both 2025-01-01) need their pre-split shape
@@ -303,6 +308,28 @@ function bindFeatureLayer(teryt, name, layer) {
     mouseout: (e) => {
       e.target.setStyle(baseStyleFor(mapValueFor(teryt), lastDomain));
       e.target.closeTooltip();
+    },
+    // Touch devices fire click but never mouseover, so without this a tap
+    // never highlighted anything -- confirmed live on a phone-sized
+    // viewport. stopPropagation is required, not defensive: this event
+    // would otherwise bubble to the map's own click handler below, which
+    // resets every layer to its base style and would immediately undo the
+    // highlight this just applied. openTooltip is explicit for the same
+    // reason setTooltipContent's search-jump caller needs it explicit --
+    // mouseover auto-opens a bound tooltip, click does not. Also stands in
+    // for the mouseout a touch device never fires: undoes whichever OTHER
+    // layer a previous tap highlighted, since nothing else will.
+    click: (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (tapHighlightedLayer && tapHighlightedLayer !== e.target) {
+        const prevTeryt = tapHighlightedLayer.feature.properties.JPT_KOD_JE;
+        tapHighlightedLayer.setStyle(baseStyleFor(mapValueFor(prevTeryt), lastDomain));
+        tapHighlightedLayer.closeTooltip();
+      }
+      tapHighlightedLayer = e.target;
+      highlight(e.target);
+      setTooltipContent(e.target, teryt, name);
+      e.target.openTooltip();
     },
   });
   layer.bindTooltip("", { className: "region-tooltip", sticky: true });
@@ -532,13 +559,16 @@ async function init() {
   currentLevel = VARIABLE_META[state.variable].levels[0].key;
 
   // Safety net for any highlight or tooltip that outlives its hover (missed
-  // mouseout, or the persistent highlight left by a search jump): clicking
-  // anywhere on the map repaints every layer and closes all tooltips.
+  // mouseout, or the persistent highlight left by a search jump or a tap):
+  // clicking anywhere on the map itself (not on a region -- those stop
+  // propagation, see bindFeatureLayer) repaints every layer and closes all
+  // tooltips.
   map.on("click", () => {
     geoLayer.eachLayer((layer) => {
       layer.setStyle(baseStyleFor(mapValueFor(layer.feature.properties.JPT_KOD_JE), lastDomain));
       layer.closeTooltip();
     });
+    tapHighlightedLayer = null;
   });
 
   buildTopicSelect();
@@ -1186,7 +1216,7 @@ function updateMeta() {
   const lines = [
     `Poziom agregacji: ${levelsStr}`,
     `Lata: ${yearsStr}`,
-    `Grupa wieku: ${ageGroupsStr}`,
+    `${meta.agegroupLabel || "Grupa wieku"}: ${ageGroupsStr}`,
   ];
   if (meta.measures.length > 1) {
     lines.push(`Miara: ${meta.measures.map((o) => o.label).join(", ")}`);
@@ -1915,6 +1945,7 @@ function buildSearch() {
         highlight(layer);
         setTooltipContent(layer, teryt, name); // bypasses mouseover, so needs it set explicitly
         layer.openTooltip();
+        tapHighlightedLayer = layer; // so a later tap on a different region (see bindFeatureLayer) knows to undo this one too
         input.value = "";
         list.innerHTML = "";
       });
