@@ -716,7 +716,7 @@ function populateCorrViewOptions(prefix) {
 
 async function populateCorrDimensions(prefix) {
   const variable = document.getElementById(`corr-${prefix}-var`).value;
-  if (!variable) return; // this axis's current Temat has no variable compatible with corrLevel
+  if (!variable) return; // this axis's current Temat has no variable at all (shouldn't happen for a real topic)
   await loadVariable(variable);
   const meta = VARIABLE_META[variable];
   populateDimensionSelect(document.getElementById(`corr-${prefix}-level`), meta.levels, meta.levels[0].key);
@@ -730,31 +730,32 @@ function levelOf(variableKey) {
   return VARIABLE_META[variableKey].levels[0].key;
 }
 
-// Both correlation axes must share a level: two variables from different
-// levels can never actually correlate (a 4-digit powiat TERYT and a
-// 7-digit gmina TERYT are never equal strings), which used to fail
-// silently at runtime as "too little data" with no indication why.
-// corrLevel locks to whichever axis's variable was picked most recently.
-//
-// Temat dropdowns always list every topic, on both axes, unconditionally --
-// only the Zmienna list within a topic is filtered to corrLevel. Trying to
-// also hide/filter Temat itself created a real bug: whichever axis wasn't
-// just edited could get its Temat options silently narrowed, so the next
-// time THAT axis was used as the "driver" it would still be filtered by a
-// stale corrLevel and could crash picking an option that no longer existed
-// for it. A plain empty Zmienna list (still connected to a full Temat list)
-// is a simpler, honestly-empty state instead: it says "nothing in this
-// topic matches the other axis right now" without ever removing choices
-// the user might come back to.
-let corrLevel = null;
-
+// Both axes' Zmienna dropdowns always list every variable in the current
+// Temat, at any level -- NOT filtered to match the other axis. An earlier
+// version locked both axes to a shared "corrLevel" (whichever axis was
+// edited most recently) and filtered the OTHER axis's list down to only
+// same-level variables, which was meant to stop two variables from
+// different levels being compared (a 4-digit powiat TERYT and a 4-digit
+// PODREGION TERYT can collide as the SAME string for an unrelated pair of
+// real places -- worse than "too little data", a genuinely wrong
+// correlation) -- but it also meant that once corrLevel locked to
+// "powiat" (the overwhelmingly common case on first load), gmina/
+// podregion/wojewodztwo variables disappeared from BOTH dropdowns
+// entirely, with no way to ever select one again (confirmed live 2026-07-27
+// as a real, reported bug: "I cannot choose variables that have a
+// different level than Powiat"). The level-mismatch guard now lives at
+// comparison time instead (see runCorrelation's early return) -- same
+// protection against a wrong/silent result, but every variable stays
+// selectable on both axes at all times.
 function corrVariablesFor(topic) {
-  return variablesInTopic(topic).filter((k) => corrLevel === null || levelOf(k) === corrLevel);
+  return variablesInTopic(topic);
 }
 
-// Rebuilds one axis's Zmienna list for its CURRENT Temat, filtered to
-// corrLevel. Returns whether anything was available, so callers can skip
-// locking onto an empty selection instead of crashing on it.
+// Rebuilds one axis's Zmienna list for its CURRENT Temat. Returns whether
+// anything was available, so callers can skip locking onto an empty
+// selection instead of crashing on it (variablesInTopic should never
+// actually be empty for a real topic, but this keeps the same defensive
+// shape the caller already expects).
 function refreshCorrVariableOptions(prefix) {
   const topic = document.getElementById(`corr-${prefix}-topic`).value;
   const varSelect = document.getElementById(`corr-${prefix}-var`);
@@ -767,15 +768,13 @@ function refreshCorrVariableOptions(prefix) {
 
 // Landing point for "this axis's variable is now settled" -- whether that
 // came from picking a Zmienna directly or picking a Temat (which reseeds
-// Zmienna to that topic's first compatible option). Locks corrLevel to
-// match, then re-filters the OTHER axis's Zmienna list so the pair can
-// never end up on two different levels.
+// Zmienna to that topic's first option). Only refreshes THIS axis's own
+// dimensions -- the other axis's variable/options are never touched by
+// this anymore (see corrVariablesFor's comment for why).
 async function handleCorrVariableChange(prefix) {
   const value = document.getElementById(`corr-${prefix}-var`).value;
-  if (!value) return; // this axis's current topic has no compatible variable -- nothing to lock onto
-  corrLevel = levelOf(value);
-  refreshCorrVariableOptions(prefix === "x" ? "y" : "x");
-  await Promise.all([populateCorrDimensions("x"), populateCorrDimensions("y")]);
+  if (!value) return;
+  await populateCorrDimensions(prefix);
 }
 
 async function buildCorrelationSelectors() {
@@ -791,24 +790,18 @@ async function buildCorrelationSelectors() {
     document.getElementById(`corr-${prefix}-measure`).addEventListener("change", () => { refreshCorrYears(prefix); populateCorrViewOptions(prefix); });
   }
 
-  // Seed X freely (first topic/variable overall, with corrLevel still
-  // null so nothing is filtered yet), which locks corrLevel; then seed Y
-  // constrained to that level, preferring its LAST topic and LAST
-  // compatible variable in it so the pair starts on two different
-  // variables rather than comparing one against itself. If Y's default
-  // topic (last overall) happens to have no compatible variable, fall
-  // back to X's own topic, which is guaranteed non-empty.
+  // Seed X with the first topic/variable overall, Y with the LAST topic's
+  // LAST variable, so the pair starts on two different variables rather
+  // than comparing one against itself (both topic lists are guaranteed
+  // non-empty by topicsInUse()/variablesInTopic(), no level-compatibility
+  // fallback needed here anymore).
   const xTopic = allTopics[0];
   document.getElementById("corr-x-topic").value = xTopic;
   refreshCorrVariableOptions("x");
-  corrLevel = levelOf(document.getElementById("corr-x-var").value);
 
   const yTopic = allTopics[allTopics.length - 1];
   document.getElementById("corr-y-topic").value = yTopic;
-  if (!refreshCorrVariableOptions("y")) {
-    document.getElementById("corr-y-topic").value = xTopic;
-    refreshCorrVariableOptions("y");
-  }
+  refreshCorrVariableOptions("y");
   const yVarSelect = document.getElementById("corr-y-var");
   const yVars = [...yVarSelect.options].map((o) => o.value);
   yVarSelect.value = yVars[yVars.length - 1];
@@ -2635,6 +2628,24 @@ function axisLabel(cfg) {
 async function runCorrelation() {
   const cfgX = axisConfig("x");
   const cfgY = axisConfig("y");
+  const coeffEl = document.getElementById("corr-coefficient");
+
+  // Two variables at different levels can never share a real teryt -- worse,
+  // powiat and podregion both use 4-digit codes (see levelOf's callers), so
+  // a mismatched pair could silently join on a COINCIDENTALLY-matching
+  // string between two unrelated real places instead of just finding "too
+  // little data". Checked here at compare time, not by hiding options in
+  // the Zmienna dropdowns (see corrVariablesFor's comment for why that used
+  // to be the enforcement point, and why it was a real bug) -- every
+  // variable stays selectable on both axes at all times.
+  if (levelOf(cfgX.variable) !== levelOf(cfgY.variable)) {
+    document.getElementById("corr-svg").innerHTML = "";
+    const levelXLabel = VARIABLE_META[cfgX.variable].levels[0].label;
+    const levelYLabel = VARIABLE_META[cfgY.variable].levels[0].label;
+    coeffEl.textContent = `Wybrane zmienne mają różne poziomy (${levelXLabel} vs ${levelYLabel}) i nie można ich porównać -- wybierz dwie zmienne na tym samym poziomie.`;
+    return;
+  }
+
   await Promise.all([loadVariable(cfgX.variable), loadVariable(cfgY.variable)]);
 
   const allTeryts = new Set([
@@ -2649,7 +2660,6 @@ async function runCorrelation() {
   }
 
   renderScatter(points, axisLabel(cfgX), axisLabel(cfgY), cfgX.log, cfgY.log);
-  const coeffEl = document.getElementById("corr-coefficient");
   if (points.length < 2) {
     coeffEl.textContent = "Za mało wspólnych danych dla tej kombinacji, żeby policzyć korelację.";
     return;
