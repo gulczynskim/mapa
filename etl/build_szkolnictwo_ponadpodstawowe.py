@@ -3,9 +3,13 @@ Finishes data/szkolnictwo_ponadpodstawowe.json after fetch_bdl.py has fetched
 its 5 BDL-sourced ageGroups (technika, artystyczne_dajace_uprawnienia,
 branzowe_I_st, licea_profilowane, artystyczne_niedajace_uprawnien -- see
 bdl_variables.py). Two more ageGroups are folded in from OTHER already-
-fetched files rather than re-fetched from BDL (licea ogolnoksztalcace and
-zasadnicze zawodowe both already exist as their own variables/files), then
-two derived measures are computed:
+fetched files rather than re-fetched from BDL: zasadnicze_zawodowe (still
+its own separate variables.js variable/file, only one of its 6 ageGroups
+copied here) and licea_ogolnoksztalcace (copied from data/liceum.json,
+which is BDL-fetched via bdl_variables.py's "liceum" entry but is NOT its
+own variables.js variable anymore as of 2026-07-27 -- fully subsumed by
+this ageGroup, removed to stop the same liceum data appearing twice in the
+variable picker). Two derived measures are then computed:
 
 1. "razem" ageGroup: uczniowie/uczniowie_1_klasa/absolwenci summed across
    licea_ogolnoksztalcace + technika + branzowe_I_st + licea_profilowane +

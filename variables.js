@@ -252,28 +252,6 @@ const VARIABLE_META = {
     ],
     sharesMeaningful: true,
   },
-  liceum: {
-    label: "Uczniowie i absolwenci liceów",
-    unit: "osób",
-    topic: "edukacja",
-    file: "data/liceum.json",
-    meaning:
-      "Liczba uczniów (ogółem i w 1 klasie) oraz absolwentów liceów ogólnokształcących dla " +
-      "młodzieży (bez szkół specjalnych), wg płci.",
-    source: "Bank Danych Lokalnych GUS",
-    accessNote:
-      "Temat BDL P2035, poziom powiat. Kody zmiennych: uczniowie 270621 (mężczyźni) / 270655 " +
-      "(kobiety), absolwenci 270638 (mężczyźni) / 270602 (kobiety), uczniowie w 1 klasie 378692 " +
-      "(mężczyźni) / 378694 (kobiety) – https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
-    levels: [{ key: "powiat", label: "Powiat" }],
-    ageGroups: [{ key: "default", label: "Młodzież licealna" }],
-    measures: [
-      { key: "uczniowie", label: "Uczniowie" },
-      { key: "uczniowie_1_klasa", label: "Uczniowie w 1 klasie" },
-      { key: "absolwenci", label: "Absolwenci" },
-    ],
-    sharesMeaningful: true,
-  },
   population_25_34: {
     label: "Ludność 25-34 lata (NSP)",
     unit: "osób",

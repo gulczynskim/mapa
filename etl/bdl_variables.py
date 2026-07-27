@@ -73,6 +73,12 @@ BDL_VARIABLES = {
         "file": "radni_gminy.json",
         "slices": {"default": {"default": {"t": "6", "m": "7", "k": "8"}}},
     },
+    # No longer a standalone variables.js entry (removed 2026-07-27 -- fully
+    # subsumed by szkolnictwo_ponadpodstawowe's "licea_ogolnoksztalcace"
+    # ageGroup, which build_szkolnictwo_ponadpodstawowe.py copies straight
+    # from liceum.json). Kept here and still fetched so that copy has a
+    # source file to read -- data/liceum.json is now an ETL-internal
+    # intermediate, not something the frontend ever loads directly.
     "liceum": {
         "topic": "P2035",
         "level": POWIAT,
