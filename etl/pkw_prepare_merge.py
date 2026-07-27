@@ -35,7 +35,24 @@ GMINA_REMAP_6DIGIT = {
 def build_gmina_crosswalk():
     with open(os.path.join(os.path.dirname(__file__), "..", "data", "gminy.json"), encoding="utf-8") as f:
         gminy = json.load(f)
-    return {feat["properties"]["JPT_KOD_JE"][:6]: feat["properties"]["JPT_KOD_JE"] for feat in gminy["features"]}
+    crosswalk = {feat["properties"]["JPT_KOD_JE"][:6]: feat["properties"]["JPT_KOD_JE"] for feat in gminy["features"]}
+
+    # Dissolved gminy (Ostrowice, Zielona Góra wiejska) have no feature of
+    # their own in gminy.json -- they only exist via the runtime override
+    # layer in gminy_historical_overrides.json, which shows their OWN
+    # historical geometry for years <= validUntil. Without this, their PKW
+    # rows fell through to the bare 6-digit fallback ("320304"/"080910")
+    # instead of the 7-digit code that override layer actually looks data
+    # up by (mapValueFor("3203042")), so pre-merger elections rendered as
+    # "brak danych" even though the historical polygon displayed correctly
+    # (found 2026-07-27: report_unmapped's own printed report already named
+    # these two 6-digit codes every run, but nothing acted on it since nothing
+    # downstream cross-checks against gminy_historical_overrides.json).
+    with open(os.path.join(os.path.dirname(__file__), "..", "data", "gminy_historical_overrides.json"), encoding="utf-8") as f:
+        overrides = json.load(f)
+    for dissolved_teryt in overrides.get("merges", {}):
+        crosswalk[dissolved_teryt[:6]] = dissolved_teryt
+    return crosswalk
 
 
 def map_gmina_teryt(series, crosswalk):
