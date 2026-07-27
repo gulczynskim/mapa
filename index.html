@@ -138,7 +138,7 @@
           <label>Temat <select id="corr-x-topic"></select></label>
           <label>Zmienna <select id="corr-x-var"></select></label>
           <label>Poziom <select id="corr-x-level"></select></label>
-          <label>Grupa wieku <select id="corr-x-agegroup"></select></label>
+          <label>Grupa wieku / Kategoria <select id="corr-x-agegroup"></select></label>
           <label>Miara <select id="corr-x-measure"></select></label>
           <label>Rok <select id="corr-x-year"></select></label>
           <label>Widok <select id="corr-x-view"></select></label>
@@ -149,7 +149,7 @@
           <label>Temat <select id="corr-y-topic"></select></label>
           <label>Zmienna <select id="corr-y-var"></select></label>
           <label>Poziom <select id="corr-y-level"></select></label>
-          <label>Grupa wieku <select id="corr-y-agegroup"></select></label>
+          <label>Grupa wieku / Kategoria <select id="corr-y-agegroup"></select></label>
           <label>Miara <select id="corr-y-measure"></select></label>
           <label>Rok <select id="corr-y-year"></select></label>
           <label>Widok <select id="corr-y-view"></select></label>
@@ -159,6 +159,13 @@
       <button id="corr-run" class="action-btn corr-run-btn">Porównaj</button>
       <p id="corr-coefficient" class="corr-coefficient"></p>
       <svg id="corr-svg" class="corr-svg"></svg>
+      <div class="control-group">
+        <label>Pobierz wykres</label>
+        <div class="view-buttons">
+          <button type="button" id="corr-export-png-btn">PNG</button>
+          <button type="button" id="corr-export-svg-btn">SVG</button>
+        </div>
+      </div>
     </section>
 
     <section class="panel">

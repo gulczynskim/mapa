@@ -212,6 +212,11 @@ let terytToLayer = {};
 let terytToName = {};
 let nameCounts = {}; // name -> how many teryts share it, precomputed per level (see renderBoundaries)
 let lastDomain = [];
+// Whatever runCorrelation() last successfully plotted -- null if nothing
+// has been compared yet, or the last attempt was a level mismatch. Export
+// (SVG/PNG) reuses this instead of recomputing points, so what gets
+// exported always exactly matches what's on screen.
+let lastCorrResult = null;
 // Touch devices have no mouseout -- a tap's highlight has to be undone
 // manually by the NEXT tap (or by the map-level click-to-reset handler
 // below), rather than by the mouse leaving the polygon. Tracks whichever
@@ -971,9 +976,51 @@ function symmetricDivergingBoundaries(belowDists, aboveDists, n, combine) {
   });
 }
 
+// Shared by linear and log diverging boundaries for a RATIO-style view
+// (view.logScale === true, e.g. K/M or M/K, center > 0): a ratio's true
+// mirror-image is its RECIPROCAL (1/x), not an additive reflection
+// (2*center - x) -- so "which side is wider" has to be judged in log space
+// too, the same way logBoundariesDiverging's ratio branch already does it.
+// Returns the two OUTER edges in RAW units: the wider side keeps its own
+// real extreme, the narrower side's edge is that same extreme MIRRORED
+// (reciprocal) onto the other side of center -- giving linear and log scale
+// modes the exact same overall range, see linearBoundariesDiverging/
+// logBoundariesDiverging below for how each then divides the INSIDE of
+// that shared range differently. A fully-empty domain collapses both
+// edges to `center` (radius 0), matching symmetricDivergingBoundaries's
+// own empty-domain fallback.
+function ratioDivergingEdges(domain, center) {
+  const logCenter = Math.log(center);
+  const belowVals = domain.filter((v) => v < center);
+  const aboveVals = domain.filter((v) => v >= center);
+  const belowLogDist = belowVals.length ? Math.max(...belowVals.map((v) => logCenter - Math.log(v))) : 0;
+  const aboveLogDist = aboveVals.length ? Math.max(...aboveVals.map((v) => Math.log(v) - logCenter)) : 0;
+  const radiusLog = Math.max(belowLogDist, aboveLogDist);
+  return { belowEdge: Math.exp(logCenter - radiusLog), aboveEdge: Math.exp(logCenter + radiusLog) };
+}
+
 // Diverging, "linear" mode (default).
 function linearBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
+  if (view.logScale) {
+    // Each arm is divided evenly in RAW units from center out to its own
+    // edge (which may be the real extreme, or the OTHER side's real
+    // extreme mirrored onto this one, see ratioDivergingEdges) -- NOT one
+    // continuous ramp across the whole [belowEdge, aboveEdge] span, since
+    // that span usually isn't raw-symmetric around center (only log-
+    // symmetric) and a single ramp would let "center" drift off the
+    // true middle boundary pair, so equal (ratio = 1) would stop landing
+    // in the white bucket. Each arm's own step size differs (a wider arm's
+    // steps are bigger in raw terms), which is exactly what "divide it
+    // linearly" should mean once the shared range comes from log space.
+    const { belowEdge, aboveEdge } = ratioDivergingEdges(domain, center);
+    const half = n / 2;
+    const belowStep = (center - belowEdge) / half;
+    const aboveStep = (aboveEdge - center) / half;
+    return Array.from({ length: n + 1 }, (_, i) =>
+      i <= half ? center - (half - i) * belowStep : center + (i - half) * aboveStep
+    );
+  }
   const below = domain.filter((v) => v < center).map((v) => center - v);
   const above = domain.filter((v) => v >= center).map((v) => v - center);
   return symmetricDivergingBoundaries(below, above, n, (d, sign) => center + sign * d);
@@ -1052,10 +1099,16 @@ function quantileDivergingPalette(domain, view) {
 function logBoundariesDiverging(domain, view, n) {
   const center = view.center ?? 0;
   if (view.logScale) {
-    const logCenter = Math.log(center);
-    const below = domain.filter((v) => v < center).map((v) => logCenter - Math.log(v));
-    const above = domain.filter((v) => v >= center).map((v) => Math.log(v) - logCenter);
-    return symmetricDivergingBoundaries(below, above, n, (d, sign) => Math.exp(logCenter + sign * d));
+    // Same shared [belowEdge, aboveEdge] range linearBoundariesDiverging's
+    // ratio branch uses (see ratioDivergingEdges) -- log mode just divides
+    // the INSIDE of that range evenly in log space instead of raw space,
+    // which is what naturally keeps center exactly between the middle
+    // boundary pair here (log(belowEdge) and log(aboveEdge) are additively
+    // symmetric around log(center) by construction, unlike the raw values).
+    const { belowEdge, aboveEdge } = ratioDivergingEdges(domain, center);
+    const logBelowEdge = Math.log(belowEdge);
+    const logAboveEdge = Math.log(aboveEdge);
+    return Array.from({ length: n + 1 }, (_, i) => Math.exp(logBelowEdge + (i / n) * (logAboveEdge - logBelowEdge)));
   }
   const symlog = (v) => Math.sign(v - center) * Math.log1p(Math.abs(v - center));
   const invSymlog = (t) => center + Math.sign(t) * Math.expm1(Math.abs(t));
@@ -1276,19 +1329,44 @@ function legendValueFormat(v) {
 
 // Real per-bucket {color, lo, hi} triples -- lo/hi are the actual boundary
 // VALUES (not screen positions), shared by both legend styles below.
-// Diverging views can leave a whole arm collapsed to zero-width buckets
-// sitting exactly at `center` in the fully-empty-domain case (see
-// symmetricDivergingBoundaries) -- those are dropped so neither legend
-// style shows a real (non-collapsed) bucket with lo === hi.
-function realBuckets(view, boundaries, steps) {
+// Two kinds of "not real" bucket get dropped for DIVERGING views (`domain`
+// optional -- omitted, only the zero-width check applies, see the dead
+// legendBuckets()/updateLegendContinuous() below):
+// 1. Zero-width (lo === hi) -- a whole arm can collapse to `center` in the
+//    fully-empty-domain case (see symmetricDivergingBoundaries).
+// 2. Non-degenerate but EMPTY of any real value -- the narrower arm's
+//    outer edge is a MIRRORED value (linearBoundariesDiverging/
+//    logBoundariesDiverging's ratio branch, and symmetricDivergingBoundaries
+//    generally) that can reach past every real value on that side ON
+//    PURPOSE, so linear/log modes always span the exact same overall range
+//    -- but a bucket nothing ever falls into just clutters the legend.
+// Only a CONTIGUOUS run of empty buckets at either END is trimmed (an
+// empty bucket sandwiched between two real ones stays -- that's a genuine
+// gap in the data, not scale overreach, and hiding it would misrepresent
+// the shape of the distribution). The outermost SURVIVING bucket on each
+// side gets its edge clamped to the real domain min/max for DISPLAY only
+// -- bucketIndex()/colorFor still use the original, untrimmed boundaries,
+// so which bucket a real value actually renders in never changes.
+function realBuckets(view, boundaries, steps, domain) {
   if (view.kind !== "diverging") {
     return steps.map((c, i) => ({ color: c, lo: boundaries[i], hi: boundaries[i + 1] }));
   }
   const real = [];
   for (let i = 0; i < steps.length; i++) {
-    if (boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1] });
+    if (boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1], index: i });
   }
-  return real;
+  if (!domain || domain.length === 0 || real.length === 0) return real;
+
+  const usedIndices = new Set(domain.map((v) => bucketIndex(v, boundaries)));
+  let start = 0;
+  while (start < real.length - 1 && !usedIndices.has(real[start].index)) start++;
+  let end = real.length - 1;
+  while (end > start && !usedIndices.has(real[end].index)) end--;
+  const trimmed = real.slice(start, end + 1);
+
+  trimmed[0] = { ...trimmed[0], lo: Math.min(...domain) };
+  trimmed[trimmed.length - 1] = { ...trimmed[trimmed.length - 1], hi: Math.max(...domain) };
+  return trimmed;
 }
 
 // Every bucket gets EQUAL on-screen width regardless of scale mode -- the
@@ -1339,8 +1417,8 @@ function bucketRangeLabel(lo, hi, isLowest) {
 // the highest values at the TOP, lowest at the BOTTOM, so callers building
 // a top-down list (both the sidebar and the SVG export) can iterate this
 // array directly with no further reordering.
-function legendBlockList(view, boundaries, steps) {
-  const real = realBuckets(view, boundaries, steps);
+function legendBlockList(view, boundaries, steps, domain) {
+  const real = realBuckets(view, boundaries, steps, domain);
   return real
     .map((b, i) => ({ color: b.color, label: bucketRangeLabel(b.lo, b.hi, i === 0) }))
     .reverse();
@@ -1393,7 +1471,7 @@ function updateLegend(domain) {
     return;
   }
   const { steps, boundaries } = paletteFor(domain, view);
-  const blocks = legendBlockList(view, boundaries, steps);
+  const blocks = legendBlockList(view, boundaries, steps, domain);
   blocksEl.innerHTML = blocks
     .map((b) => `<div class="legend-block"><span class="legend-swatch" style="background:${b.color}"></span><span class="legend-range">${b.label}</span></div>`)
     .join("");
@@ -1629,7 +1707,7 @@ function exportLegendBlockCount() {
   if (lastDomain.length === 0) return 0; // e.g. life_expectancy's "Ogółem" (hasTotal: false) -- no real value anywhere
   const view = VIEWS[state.view];
   const { steps, boundaries } = paletteFor(lastDomain, view);
-  return legendBlockList(view, boundaries, steps).length;
+  return legendBlockList(view, boundaries, steps, lastDomain).length;
 }
 
 function exportLegendHeight(n) {
@@ -1646,7 +1724,7 @@ function exportLegendBlockWidth() {
   if (lastDomain.length === 0) return 0;
   const view = VIEWS[state.view];
   const { steps, boundaries } = paletteFor(lastDomain, view);
-  const blocks = legendBlockList(view, boundaries, steps);
+  const blocks = legendBlockList(view, boundaries, steps, lastDomain);
   if (blocks.length === 0) return 0;
   const maxLabelW = Math.max(...blocks.map((b) => measureTextWidth(b.label, 13)));
   return EXPORT_LEGEND_SWATCH_W + EXPORT_LEGEND_LABEL_PAD + maxLabelW;
@@ -1661,7 +1739,7 @@ function buildExportLegendSvg(x, y, textColor) {
   if (lastDomain.length === 0) return ""; // e.g. life_expectancy's "Ogółem" (hasTotal: false) -- no real value anywhere
   const view = VIEWS[state.view];
   const { steps, boundaries } = paletteFor(lastDomain, view);
-  const blocks = legendBlockList(view, boundaries, steps);
+  const blocks = legendBlockList(view, boundaries, steps, lastDomain);
   if (blocks.length === 0) return "";
   const rowH = EXPORT_LEGEND_SWATCH_H + EXPORT_LEGEND_ROW_GAP;
   return blocks
@@ -2640,6 +2718,7 @@ async function runCorrelation() {
   // variable stays selectable on both axes at all times.
   if (levelOf(cfgX.variable) !== levelOf(cfgY.variable)) {
     document.getElementById("corr-svg").innerHTML = "";
+    lastCorrResult = null;
     const levelXLabel = VARIABLE_META[cfgX.variable].levels[0].label;
     const levelYLabel = VARIABLE_META[cfgY.variable].levels[0].label;
     coeffEl.textContent = `Wybrane zmienne mają różne poziomy (${levelXLabel} vs ${levelYLabel}) i nie można ich porównać -- wybierz dwie zmienne na tym samym poziomie.`;
@@ -2659,7 +2738,10 @@ async function runCorrelation() {
     if (x !== null && y !== null) points.push({ x, y, name: displayName(teryt, terytToName[teryt] || teryt) });
   }
 
-  renderScatter(points, axisLabel(cfgX), axisLabel(cfgY), cfgX.log, cfgY.log);
+  const labelX = axisLabel(cfgX);
+  const labelY = axisLabel(cfgY);
+  renderScatter(points, labelX, labelY, cfgX.log, cfgY.log);
+  lastCorrResult = { points, labelX, labelY, logX: cfgX.log, logY: cfgY.log };
   if (points.length < 2) {
     coeffEl.textContent = "Za mało wspólnych danych dla tej kombinacji, żeby policzyć korelację.";
     return;
@@ -2690,8 +2772,13 @@ function computeTicks(min, max, isLog) {
   return ticks;
 }
 
-function renderScatter(points, labelX, labelY, isLogX, isLogY) {
-  const svg = document.getElementById("corr-svg");
+// Chart-only geometry (axes, ticks, dots) shared by the live renderScatter()
+// (lets the browser resolve CSS vars itself) and buildCorrExportSvg() (needs
+// concrete colors baked in -- a standalone export file has no stylesheet to
+// resolve var(--x) against). Returns just the inner markup at a fixed W x H,
+// not a full <svg> -- callers place it at their own offset (the export
+// version needs room for a title/coefficient/credit above and below).
+function scatterChartSvg(points, labelX, labelY, isLogX, isLogY, colors) {
   const W = 520, H = 380, padL = 60, padB = 50, padT = 16, padR = 16;
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
@@ -2701,42 +2788,137 @@ function renderScatter(points, labelX, labelY, isLogX, isLogY) {
   const sy = (v) => H - padB - ((v - minY) / (maxY - minY || 1)) * (H - padT - padB);
 
   const dots = points
-    .map((p) => `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="3.5" fill="#2a78d6" fill-opacity="0.65"><title>${p.name}: ${formatPl(p.x)}, ${formatPl(p.y)}</title></circle>`)
+    .map((p) => `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="3.5" fill="${colors.dot}" fill-opacity="0.65"><title>${escapeXml(p.name)}: ${formatPl(p.x)}, ${formatPl(p.y)}</title></circle>`)
     .join("");
 
   const xTicks = computeTicks(minX, maxX, isLogX);
   const yTicks = computeTicks(minY, maxY, isLogY);
-  // Tick text/marks use --text-secondary, not --muted -- muted is calibrated
-  // for de-emphasized UI chrome, not for numbers someone actually needs to
-  // read off a chart. Confirmed by eye in dark mode: --muted (#898781 on
-  // both themes) was legible by contrast-ratio math but genuinely hard to
-  // read in practice at 9px; --text-secondary is much lighter in dark mode
-  // (#c3c2b7) and reads clearly.
   const xTickSvg = xTicks
     .map((t) => {
       const px = sx(t.pos);
-      return `<line x1="${px}" y1="${H - padB}" x2="${px}" y2="${H - padB + 4}" stroke="var(--text-secondary)" />
-              <text x="${px}" y="${H - padB + 16}" text-anchor="middle" font-size="10" fill="var(--text-secondary)">${t.label}</text>`;
+      return `<line x1="${px}" y1="${H - padB}" x2="${px}" y2="${H - padB + 4}" stroke="${colors.text}" />
+              <text x="${px}" y="${H - padB + 16}" text-anchor="middle" font-size="10" fill="${colors.text}">${t.label}</text>`;
     })
     .join("");
   const yTickSvg = yTicks
     .map((t) => {
       const py = sy(t.pos);
-      return `<line x1="${padL - 4}" y1="${py}" x2="${padL}" y2="${py}" stroke="var(--text-secondary)" />
-              <text x="${padL - 8}" y="${py + 3}" text-anchor="end" font-size="10" fill="var(--text-secondary)">${t.label}</text>`;
+      return `<line x1="${padL - 4}" y1="${py}" x2="${padL}" y2="${py}" stroke="${colors.text}" />
+              <text x="${padL - 8}" y="${py + 3}" text-anchor="end" font-size="10" fill="${colors.text}">${t.label}</text>`;
     })
     .join("");
 
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.innerHTML = `
-    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--hairline)" />
-    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="var(--hairline)" />
+  const body = `
+    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="${colors.hairline}" />
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H - padB}" stroke="${colors.hairline}" />
     ${xTickSvg}
     ${yTickSvg}
-    <text x="${(padL + W - padR) / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">${labelX}</text>
-    <text x="14" y="${(padT + H - padB) / 2}" text-anchor="middle" font-size="11" fill="var(--text-secondary)" transform="rotate(-90 14 ${(padT + H - padB) / 2})">${labelY}</text>
+    <text x="${(padL + W - padR) / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="${colors.text}">${escapeXml(labelX)}</text>
+    <text x="14" y="${(padT + H - padB) / 2}" text-anchor="middle" font-size="11" fill="${colors.text}" transform="rotate(-90 14 ${(padT + H - padB) / 2})">${escapeXml(labelY)}</text>
     ${dots}
   `;
+  return { body, width: W, height: H };
+}
+
+// Tick text/marks use --text-secondary, not --muted -- muted is calibrated
+// for de-emphasized UI chrome, not for numbers someone actually needs to
+// read off a chart. Confirmed by eye in dark mode: --muted (#898781 on
+// both themes) was legible by contrast-ratio math but genuinely hard to
+// read in practice at 9px; --text-secondary is much lighter in dark mode
+// (#c3c2b7) and reads clearly.
+function renderScatter(points, labelX, labelY, isLogX, isLogY) {
+  const svg = document.getElementById("corr-svg");
+  const { body, width, height } = scatterChartSvg(points, labelX, labelY, isLogX, isLogY, {
+    dot: "#2a78d6",
+    text: "var(--text-secondary)",
+    hairline: "var(--hairline)",
+  });
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.innerHTML = body;
+}
+
+// Standalone export version of the scatter plot -- title + coefficient
+// readout + chart + credit line, all colors resolved to concrete values
+// (see scatterChartSvg's comment) so the file renders correctly with no
+// stylesheet. Returns null if nothing has been successfully compared yet
+// (lastCorrResult only gets set by a real, same-level runCorrelation()).
+function buildCorrExportSvg({ pixelScale = 1 } = {}) {
+  if (!lastCorrResult) return null;
+  const { points, labelX, labelY, logX, logY } = lastCorrResult;
+
+  const cs = getComputedStyle(document.documentElement);
+  const pageColor = cs.getPropertyValue("--page").trim();
+  const textColor = cs.getPropertyValue("--text-secondary").trim();
+  const titleColor = cs.getPropertyValue("--text-primary").trim();
+  const hairlineColor = cs.getPropertyValue("--hairline").trim();
+
+  const { body, width, height } = scatterChartSvg(points, labelX, labelY, logX, logY, { dot: "#2a78d6", text: textColor, hairline: hairlineColor });
+
+  const titleText = "Korelacja zmiennych";
+  const titleH = 40;
+  const coeffText = document.getElementById("corr-coefficient").textContent || "";
+  const coeffH = coeffText ? 26 : 0;
+  const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
+  const creditH = 30;
+
+  const totalW = width;
+  const totalH = titleH + coeffH + height + creditH;
+
+  const coeffSvg = coeffText
+    ? `<text x="${totalW / 2}" y="${titleH + 13}" font-size="13" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(coeffText)}</text>`
+    : "";
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(totalW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${totalW} ${totalH}">
+    <rect x="0" y="0" width="${totalW}" height="${totalH}" fill="${pageColor}" />
+    <text x="${totalW / 2}" y="24" font-size="20" font-weight="600" font-family="system-ui, sans-serif" fill="${titleColor}" text-anchor="middle">${escapeXml(titleText)}</text>
+    ${coeffSvg}
+    <g transform="translate(0, ${titleH + coeffH})">${body}</g>
+    <text x="${totalW / 2}" y="${titleH + coeffH + height + 20}" font-size="11" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>
+  </svg>`;
+}
+
+function corrExportFileBaseName() {
+  if (!lastCorrResult) return "korelacja";
+  const slug = `${lastCorrResult.labelX}_vs_${lastCorrResult.labelY}`
+    .toLowerCase()
+    .replace(/[^a-z0-9ąćęłńóśźż]+/gi, "_")
+    .replace(/^_+|_+$/g, "");
+  return `korelacja_${slug}`;
+}
+
+function exportCorrSvg() {
+  const svg = buildCorrExportSvg({ pixelScale: 1 });
+  if (!svg) {
+    showError("Najpierw wykonaj porównanie (przycisk „Porównaj”), zanim wyeksportujesz wykres.");
+    return;
+  }
+  downloadBlob(`${corrExportFileBaseName()}.svg`, new Blob([svg], { type: "image/svg+xml" }));
+}
+
+// Same off-DOM <img> + <canvas> rasterization exportMapPng() uses -- see its
+// comment for why this is safe with no extra dependency (every resource
+// inside the SVG is inline, so the canvas is never tainted).
+function exportCorrPng() {
+  const svg = buildCorrExportSvg({ pixelScale: 2 });
+  if (!svg) {
+    showError("Najpierw wykonaj porównanie (przycisk „Porównaj”), zanim wyeksportujesz wykres.");
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+    canvas.toBlob((blob) => downloadBlob(`${corrExportFileBaseName()}.png`, blob), "image/png");
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    showError("Nie udało się wygenerować obrazu PNG.");
+  };
+  img.src = url;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -2744,5 +2926,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("corr-run").addEventListener("click", runCorrelation);
   document.getElementById("export-png-btn").addEventListener("click", exportMapPng);
   document.getElementById("export-svg-btn").addEventListener("click", exportMapSvg);
+  document.getElementById("corr-export-png-btn").addEventListener("click", exportCorrPng);
+  document.getElementById("corr-export-svg-btn").addEventListener("click", exportCorrSvg);
   init();
 });
