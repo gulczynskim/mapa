@@ -895,15 +895,41 @@ function quantileBoundariesSequential(domain, n) {
 
 // Sequential, "log" mode: equal-WIDTH buckets in log space, i.e. equal
 // RATIO per bucket rather than equal count. Values <= 0 have no logarithm --
-// clamped to a tiny positive epsilon so they still land in the lowest
+// clamped to a tiny positive MAGNITUDE so they still land in the lowest
 // bucket instead of breaking the scale.
+//
+// This is called both for genuinely sequential-kind views (Kobiety/
+// Mężczyźni/Ogółem, always >= 0 in practice) and for a diverging view whose
+// domain happens to sit entirely on one side of center (paletteFor routes
+// that case here too, treating it like a plain sequential scale -- see the
+// one-sided-domain comment above paletteFor). That second case can hand
+// this an ENTIRELY NEGATIVE domain (e.g. kluby_sportowe's Różnica K-M is
+// negative in every powiat -- men outnumber women in sports clubs
+// everywhere). Confirmed live this used to break: clamping every value to
+// the SAME positive epsilon via Math.max(v, 1e-6) collapsed lnMin/lnMax to
+// one point when there was no positive value anywhere to anchor the range,
+// making every boundary identical -- the whole map then rendered as one
+// flat color, all buckets width-zero. Working in MAGNITUDE (abs value)
+// instead of raw value fixes this for any one-sided domain regardless of
+// which side it's on, then re-applies the domain's own sign to the result
+// -- a no-op for the ordinary non-negative case (magnitude === value there).
 function logBoundariesSequential(domain, n) {
-  const safe = (v) => Math.max(v, 1e-6);
-  const positive = domain.filter((v) => v > 0);
-  const base = (positive.length ? positive : domain).map(safe);
-  const lnMin = Math.log(Math.min(...base));
-  const lnMax = Math.log(Math.max(...base));
-  return Array.from({ length: n + 1 }, (_, i) => Math.exp(lnMin + (i / n) * (lnMax - lnMin)));
+  const magnitude = (v) => Math.max(Math.abs(v), 1e-6);
+  const allNonPositive = domain.length > 0 && domain.every((v) => v <= 0);
+  const magnitudes = domain.map(magnitude);
+  const lnMin = Math.log(Math.min(...magnitudes));
+  const lnMax = Math.log(Math.max(...magnitudes));
+  return Array.from({ length: n + 1 }, (_, i) => {
+    // Ascending magnitude is ascending VALUE for a non-negative domain, but
+    // DESCENDING value for an all-negative one (more negative = further
+    // from zero = larger magnitude) -- walk the exponent backwards in that
+    // case so boundaries still come out in the ascending order bucketIndex
+    // assumes.
+    const t = i / n;
+    const exponent = allNonPositive ? lnMax - t * (lnMax - lnMin) : lnMin + t * (lnMax - lnMin);
+    const mag = Math.exp(exponent);
+    return allNonPositive ? -mag : mag;
+  });
 }
 
 // Shared by linear and log/symlog diverging modes (NOT quantile below,
@@ -1519,11 +1545,14 @@ const EXPORT_TITLE_PAD_BOTTOM = 10;
 const EXPORT_FEATURES_LINE_H = 24; // one line of the year/level/measure/.../source text
 const EXPORT_FEATURES_PAD_BOTTOM = 16;
 // Legend panel now sits beside the map (2026-07-27) instead of below it, so
-// the exported image is wider rather than taller. Fixed width, independent
-// of the map's own (crop-dependent) width -- swatches/labels never need to
-// shrink or grow with it the way the header text does.
+// the exported image is wider rather than taller. Its width is sized to its
+// own content (exportLegendBlockWidth/scale-sentence line widths in
+// buildExportSvg), clamped to this range -- a FIXED width (originally 300)
+// left a lot of dead space to the right of the legend for most variables,
+// since the widest label this map ever shows is much wider than most.
 const EXPORT_LEGEND_GAP = 24; // gap between the map's right edge and the legend panel
-const EXPORT_LEGEND_PANEL_W = 300;
+const EXPORT_LEGEND_PANEL_MIN_W = 160;
+const EXPORT_LEGEND_PANEL_MAX_W = 320;
 const EXPORT_LEGEND_SCALE_GAP = 14; // gap between the last swatch row and the wrapped scale sentence below it
 
 // A long title, or a long source citation among exportFeatureParts() (e.g.
@@ -1615,6 +1644,21 @@ function exportLegendHeight(n) {
   return n * EXPORT_LEGEND_SWATCH_H + (n - 1) * EXPORT_LEGEND_ROW_GAP;
 }
 
+// How wide the swatch+label blocks actually need to be for the CURRENT
+// view/domain, at the same 13px label font buildExportLegendSvg draws with
+// -- buildExportSvg needs this to size the legend panel to its real content
+// instead of a fixed width that left dead space for most variables (most
+// range labels are much narrower than the widest ones this map ever shows).
+function exportLegendBlockWidth() {
+  if (lastDomain.length === 0) return 0;
+  const view = VIEWS[state.view];
+  const { steps, boundaries } = paletteFor(lastDomain, view);
+  const blocks = legendBlockList(view, boundaries, steps);
+  if (blocks.length === 0) return 0;
+  const maxLabelW = Math.max(...blocks.map((b) => measureTextWidth(b.label, 13)));
+  return EXPORT_LEGEND_SWATCH_W + EXPORT_LEGEND_LABEL_PAD + maxLabelW;
+}
+
 // Vertical block legend (graficzna_prezentacja_danych_stat_s95.pdf p.95),
 // matching the sidebar's own style -- highest value at the top. Left-aligned
 // at `x` (2026-07-27: legend moved beside the map into its own side panel,
@@ -1669,12 +1713,26 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const mapH = cropBottom - cropTop;
   const mapW = cropRight - cropLeft;
 
-  // Total canvas width is known up front (legend panel is a FIXED width,
-  // independent of the map's own crop-dependent width) -- title/subtitle/
-  // credit are centered and sized against this full width, not just the
-  // map's own column, per explicit user request that they span the whole
-  // exported image including the legend panel beside it.
-  const totalW = mapW + EXPORT_LEGEND_GAP + EXPORT_LEGEND_PANEL_W;
+  // Legend panel width is sized to its own content (swatch+label blocks,
+  // scale-sentence lines) rather than a fixed constant, clamped to a
+  // sensible range -- computed BEFORE totalW since none of this depends on
+  // header layout, only on the current view/domain. The scale description
+  // always breaks at the same fixed points ("Skala liniowa" / "(równe
+  // przedziały)" / "dla danego roku") regardless of whether a shorter
+  // combination would fit on fewer lines -- see exportScaleSentenceLines()
+  // -- rather than word-wrapping reactively only when it overflows.
+  const legendBlockWidth = exportLegendBlockWidth();
+  const scaleSentenceLines = exportScaleSentenceLines();
+  const longestScaleLine = scaleSentenceLines.reduce((a, b) => (measureTextWidth(b, 13) > measureTextWidth(a, 13) ? b : a));
+  const scaleLineWidthAtFullSize = measureTextWidth(longestScaleLine, 13);
+  const legendPanelW = Math.min(EXPORT_LEGEND_PANEL_MAX_W, Math.max(EXPORT_LEGEND_PANEL_MIN_W, legendBlockWidth, scaleLineWidthAtFullSize));
+  const scaleSentenceFontSize = fitFontSize(longestScaleLine, 13, 11, legendPanelW);
+
+  // Total canvas width is known up front -- title/subtitle/credit are
+  // centered and sized against this full width, not just the map's own
+  // column, per explicit user request that they span the whole exported
+  // image including the legend panel beside it.
+  const totalW = mapW + EXPORT_LEGEND_GAP + legendPanelW;
   const availW = totalW - EXPORT_PAD_X * 2;
 
   const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
@@ -1703,18 +1761,11 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const headerH = titleH + featuresH;
   const mapY = headerH + EXPORT_CREDIT_H;
 
-  // Legend panel sits beside the map (2026-07-27) instead of below it, at a
-  // FIXED width (EXPORT_LEGEND_PANEL_W). The scale description always
-  // breaks at the same fixed points ("Skala liniowa" / "(równe przedziały)"
-  // / "dla danego roku") regardless of whether a shorter combination would
-  // fit on fewer lines -- see exportScaleSentenceLines() -- rather than
-  // word-wrapping reactively only when it overflows.
+  // Legend panel sits beside the map (2026-07-27) instead of below it --
+  // width/scale-sentence sizing already computed above, before totalW.
   const legendX = mapW + EXPORT_LEGEND_GAP;
   const legendBlockCount = exportLegendBlockCount();
   const legendSwatchesH = exportLegendHeight(legendBlockCount);
-  const scaleSentenceLines = exportScaleSentenceLines();
-  const longestScaleLine = scaleSentenceLines.reduce((a, b) => (measureTextWidth(b, 13) > measureTextWidth(a, 13) ? b : a));
-  const scaleSentenceFontSize = fitFontSize(longestScaleLine, 13, 11, EXPORT_LEGEND_PANEL_W);
   const scaleSentenceGap = legendSwatchesH > 0 ? EXPORT_LEGEND_SCALE_GAP : 0;
   const legendPanelH = legendSwatchesH + scaleSentenceGap + scaleSentenceLines.length * EXPORT_SCALE_SENTENCE_LINE_H;
   // Legend panel is vertically centered against the MAP's own height (not
