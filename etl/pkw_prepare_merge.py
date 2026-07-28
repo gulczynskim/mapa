@@ -78,6 +78,10 @@ GMINA_REMAP_6DIGIT = {
 
 
 def build_gmina_crosswalk():
+    """Builds the {6-digit PKW teryt: 7-digit site teryt} lookup used by
+    map_gmina_teryt: one entry per current gmina.json feature, PLUS one entry
+    per dissolved gmina in gminy_historical_overrides.json's merges (see
+    comment below)."""
     with open(os.path.join(os.path.dirname(__file__), "..", "data", "gminy.json"), encoding="utf-8") as f:
         gminy = json.load(f)
     crosswalk = {feat["properties"]["JPT_KOD_JE"][:6]: feat["properties"]["JPT_KOD_JE"] for feat in gminy["features"]}
@@ -101,12 +105,20 @@ def build_gmina_crosswalk():
 
 
 def map_gmina_teryt(series, crosswalk):
+    """Maps a pandas Series of raw 6-digit PKW teryt strings to 7-digit site
+    teryt: first rewrites any known historical code via GMINA_REMAP_6DIGIT,
+    then looks the (possibly rewritten) 6-digit code up in `crosswalk`.
+    Returns NaN for anything neither step resolves."""
     remapped = series.replace(GMINA_REMAP_6DIGIT)
     mapped = remapped.map(crosswalk)
     return mapped
 
 
 def report_unmapped(df, mapped_col, label):
+    """Prints a per-year count of rows whose `mapped_col` is still NaN after
+    map_gmina_teryt -- i.e. rows with no current-day gmina match, purely
+    informational (nothing here decides what happens to those rows, that's
+    prepare_gmina_level's fallback)."""
     unmapped = df[df[mapped_col].isna()]
     if len(unmapped):
         print(f"  {label}: {len(unmapped)} rows have no current-day gmina match -- "
@@ -117,7 +129,10 @@ def report_unmapped(df, mapped_col, label):
 
 
 def to_json_shape(df, teryt_col, measures):
-    """measures: dict of {measure_key: (t_col, m_col, k_col)}"""
+    """Converts a flat PKW dataframe into the site's nested JSON shape
+    ({teryt: {year: {"default__<measure>": {t,m,k}}}}), reading `teryt_col`
+    as the final teryt for each row. measures: dict of
+    {measure_key: (t_col, m_col, k_col)}."""
     out = {}
     for row in df.itertuples(index=False):
         teryt = getattr(row, teryt_col)
@@ -133,6 +148,10 @@ def to_json_shape(df, teryt_col, measures):
 
 
 def prepare_gmina_level(csv_name, out_name, measures, crosswalk):
+    """Reads one gmina-level PKW CSV, maps its 6-digit teryt column to
+    7-digit site teryt (falling back to the raw, already-remapped 6-digit
+    code where no crosswalk match exists -- see comment below), shapes it
+    via to_json_shape, and writes the result to etl/pkw_review/{out_name}."""
     df = pd.read_csv(os.path.join(REVIEW_DIR, csv_name), dtype={"teryt": str})
     df["teryt7"] = map_gmina_teryt(df["teryt"], crosswalk)
     report_unmapped(df, "teryt7", csv_name)
@@ -190,6 +209,10 @@ def prepare_flat_level(csv_name, out_name, measures, remap=None):
 
 
 def main():
+    """Entry point: runs all 5 PKW source CSVs (gmina councils, powiat
+    councils, sejmik, wójt/mayor races) through prepare_gmina_level or
+    prepare_flat_level as appropriate, writing each result into
+    etl/pkw_review/."""
     crosswalk = build_gmina_crosswalk()
 
     council_measures = {

@@ -430,6 +430,11 @@ VARIABLE_FILES = [
 
 
 def update_gminy_boundaries(pairs):
+    """Relabels gminy.json's own boundary FEATURES (not the data files --
+    that's merge_variable_file's job) for each (old, new) pair: if a feature
+    is still keyed under the old code, rewrites its JPT_KOD_JE property to
+    the new code in place. No-op per pair if the new code is already in use
+    (already relabeled by a prior run) or if neither code is present."""
     d = json.load(open(GMINY_FILE, encoding="utf-8"))
     by_teryt = {f["properties"]["JPT_KOD_JE"]: f for f in d["features"]}
     updated = 0
