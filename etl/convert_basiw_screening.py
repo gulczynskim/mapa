@@ -27,11 +27,16 @@ import os
 
 import openpyxl
 
-from build_wojewodztwa import VOIVODESHIP_NAMES
-
 OUT_DIR = "../data"
 
-NAME_TO_TERYT = {name.upper(): teryt for teryt, name in VOIVODESHIP_NAMES.items()}
+# Built from the already-committed boundary file itself, not a hardcoded
+# table -- build_wojewodztwa.py used to export a VOIVODESHIP_NAMES constant
+# for exactly this, but that was a leftover of its old "dissolve from
+# powiat" approach and got removed once it started fetching names directly
+# from PRG. data/wojewodztwa.json is the current source of truth for
+# teryt<->name either way, so read it straight from there.
+_wojewodztwa = json.load(open(os.path.join(OUT_DIR, "wojewodztwa.json"), encoding="utf-8"))
+NAME_TO_TERYT = {f["properties"]["JPT_NAZWA_"].upper(): f["properties"]["JPT_KOD_JE"] for f in _wojewodztwa["features"]}
 
 
 def to_number(v):
