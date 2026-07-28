@@ -511,18 +511,19 @@ const VARIABLE_META = {
     agegroupLabel: "Typ szkoły",
     meaning:
       "Uczniowie (ogółem i w 1 klasie) oraz absolwenci szkół policealnych, wg typu szkoły i płci. Nie " +
-      "każdy typ szkoły ma dane dla wszystkich trzech miar – brakujące kombinacje pokazują brak danych.",
+      "każdy typ szkoły ma dane dla wszystkich trzech miar – brakujące kombinacje pokazują brak danych. " +
+      "Ogranicza się do dwóch typów: \"Ogółem (bez specjalnych)\" i \"Specjalne\" – trzy pozostałe typy " +
+      "BDL raportuje osobno (\"Ogółem\" z kolegiami, \"Pomaturalne dla dorosłych\", \"Pomaturalne dla " +
+      "młodzieży\"), ale nie są tu pokazywane. Rok 2004 pominięty – jedyny rok bez podziału na płeć " +
+      "(wszystkie wartości \"m\"/\"k\" puste), dane zaczynają się realnie od 2005.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
-      "Temat BDL P2178, poziom powiat. 5 typów szkół x do 3 miar x 2 płcie = ~35 kodów zmiennych, zbyt " +
-      "liczne, by wypisać tu wszystkie – pełna lista w etl/bdl_variables.py (klucz " +
-      "\"szkoly_policealne\") – https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "Temat BDL P2178, poziom powiat. 2 typy szkół x do 3 miar x 2 płcie = ~12 kodów zmiennych – pełna " +
+      "lista w etl/bdl_variables.py (klucz \"szkoly_policealne\") – " +
+      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [
-      { key: "ogolem_z_kolegiami", label: "Ogółem" },
       { key: "kolegium_bez_specjalnych", label: "Ogółem (bez specjalnych)" },
-      { key: "pomaturalne_doroslych", label: "Pomaturalne dla dorosłych" },
-      { key: "pomaturalne_mlodziezy", label: "Pomaturalne dla młodzieży" },
       { key: "specjalne", label: "Specjalne" },
     ],
     measures: [

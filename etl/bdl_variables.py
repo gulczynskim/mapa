@@ -163,6 +163,11 @@ BDL_VARIABLES = {
         "file": "rolnictwo_uzytkownicy.json",
         "slices": {"default": {"default": {"m": "1647647", "k": "1647648"}}},
     },
+    # Only 2 of BDL's 5 school types kept (per user decision 2026-07-28) --
+    # "ogolem_z_kolegiami", "pomaturalne_doroslych", "pomaturalne_mlodziezy"
+    # deliberately dropped from data/szkoly_policealne.json (see
+    # variables.js's meaning text). Also drop year 2004 on any re-fetch --
+    # the only year with no m/k sex breakdown at all.
     "szkoly_policealne": {
         "topic": "P2178",
         "level": POWIAT,
@@ -172,19 +177,6 @@ BDL_VARIABLES = {
                 "uczniowie": {"t": "55127", "m": "271179", "k": "271118"},
                 "absolwenci": {"t": "55074", "m": "271077", "k": "271035"},
                 "uczniowie_1_klasa": {"t": "380088", "m": "380078", "k": "380083"},
-            },
-            "pomaturalne_doroslych": {
-                "absolwenci": {"t": "55210", "m": "271131", "k": "271072"},
-                "uczniowie": {"t": "55178", "m": "271042", "k": "271121"},
-            },
-            "ogolem_z_kolegiami": {
-                "absolwenci": {"t": "55082", "m": "271040", "k": "271161"},
-                "uczniowie_1_klasa": {"t": "380091", "m": "380081", "k": "380086"},
-                "uczniowie": {"t": "55160", "m": "271150", "k": "271082"},
-            },
-            "pomaturalne_mlodziezy": {
-                "absolwenci": {"t": "55085", "m": "271133", "k": "271185"},
-                "uczniowie": {"t": "55075", "m": "271123", "k": "271099"},
             },
             "specjalne": {
                 "absolwenci": {"t": "55174", "m": "271031", "k": "271171"},

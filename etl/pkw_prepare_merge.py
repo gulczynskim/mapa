@@ -147,9 +147,41 @@ def prepare_gmina_level(csv_name, out_name, measures, crosswalk):
     print(f"  wrote {out_path}: {len(shaped)} teryty")
 
 
-def prepare_flat_level(csv_name, out_name, measures):
-    """powiat (4-digit) / sejmik (2-digit): already in the target key format."""
+# Known historical powiat TERYT changes at the 4-digit powiat level (separate
+# from GMINA_REMAP_6DIGIT above, which is gmina-level only). Found 2026-07-28
+# via audit_data.py flagging "1431" as an orphan teryt in wybory_rady_powiatow
+# with only 1998 data.
+POWIAT_REMAP_4DIGIT = {
+    # "Powiat warszawski" (created 1999-01-01, dissolved 2002-10-27 by the
+    # Warsaw Law) covered exactly the same territory as pre-2002 Warsaw: the
+    # 11 Warszawa-* gminy (confirmed via Wikipedia's dedicated "Powiat
+    # warszawski (województwo mazowieckie)" article -- "obejmował obszar 11
+    # gmin miasta Warszawy"), later also briefly including Wesoła/Sulejówek
+    # until dissolution. Its 1998 "rada powiatu" election (held in autumn
+    # 1998, before the reform's 1999-01-01 effective date, same as every
+    # other first powiat-council election nationally) is real data with no
+    # current home, since 1465 (miasto na prawach powiatu Warszawa) is
+    # otherwise deliberately excluded from this file (cities with powiat
+    # rights don't elect their own separate "rada powiatu" -- but in 1998
+    # that convention didn't exist yet; "powiat warszawski" WAS a genuinely
+    # separate, directly-elected body). One-off exception, not a general
+    # crosswalk need.
+    "1431": "1465",
+}
+
+
+def prepare_flat_level(csv_name, out_name, measures, remap=None):
+    """powiat (4-digit) / sejmik (2-digit): already in the target key format,
+    unlike gmina rows which need map_gmina_teryt's 6->7 digit lookup. `remap`
+    is an optional {old_teryt: new_teryt} dict (e.g. POWIAT_REMAP_4DIGIT) for
+    the rare case where even a 4-digit code itself changed -- applied as a
+    straight find-and-replace on the raw teryt column before shaping, same
+    idea as GMINA_REMAP_6DIGIT above but there's no crosswalk/fallback step
+    needed here since powiat-level rows already match the boundary file
+    directly once remapped."""
     df = pd.read_csv(os.path.join(REVIEW_DIR, csv_name), dtype={"teryt": str})
+    if remap:
+        df["teryt"] = df["teryt"].replace(remap)
     shaped = to_json_shape(df, "teryt", measures)
     out_path = os.path.join(REVIEW_DIR, out_name)
     with open(out_path, "w", encoding="utf-8") as f:
@@ -170,7 +202,7 @@ def main():
     prepare_gmina_level("rady_gmin.csv", "wybory_rady_gmin.json", council_measures, crosswalk)
 
     print("rady_powiatow.csv -> wybory_rady_powiatow.json")
-    prepare_flat_level("rady_powiatow.csv", "wybory_rady_powiatow.json", council_measures)
+    prepare_flat_level("rady_powiatow.csv", "wybory_rady_powiatow.json", council_measures, remap=POWIAT_REMAP_4DIGIT)
 
     print("sejmik.csv -> wybory_sejmiku.json")
     prepare_flat_level("sejmik.csv", "wybory_sejmiku.json", council_measures)

@@ -25,9 +25,19 @@ changes).
 
 Run once. Safe to re-run (a pair with no old-code data left, and a
 boundary already on the new code, is a no-op for that pair).
+
+The actual per-file merge (moving old-code year-data onto the new code) is
+teryt_recode_merge.merge_variable_file, shared with merge_recoded_powiat.py
+-- this file only holds the gmina-specific (old, new) pairs, which files to
+apply them to, and the boundary-relabeling step below (powiat codes never
+need that part, since data/powiaty.json's polygons are keyed by a 4-digit
+code that recodes never touch -- only gmina TERYT recodes also require
+relabeling the boundary FEATURE's own property, not just the data files).
 """
 
 import json
+
+from teryt_recode_merge import merge_variable_file
 
 DATA_DIR = "../data"
 GMINY_FILE = f"{DATA_DIR}/gminy.json"
@@ -417,28 +427,6 @@ VARIABLE_FILES = [
     "wybory_rady_gmin.json",
     "wybory_wojtowie.json",
 ]
-
-
-def merge_variable_file(path, pairs):
-    try:
-        d = json.load(open(path, encoding="utf-8"))
-    except FileNotFoundError:
-        return
-    if not isinstance(d, dict):
-        return
-    changed = False
-    for old, new in pairs:
-        if old not in d:
-            continue
-        old_years = d.pop(old)
-        overlap = set(old_years) & set(d.get(new, {}))
-        if overlap:
-            raise ValueError(f"{path}: {old}/{new} share year(s) {overlap} -- not a clean pre/post split, needs manual review")
-        d.setdefault(new, {}).update(old_years)
-        changed = True
-        print(f"  {path}: merged {old} -> {new} ({len(old_years)} year(s))")
-    if changed:
-        json.dump(d, open(path, "w", encoding="utf-8"), ensure_ascii=False)
 
 
 def update_gminy_boundaries(pairs):
