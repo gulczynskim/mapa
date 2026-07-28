@@ -29,6 +29,51 @@ GMINA_REMAP_6DIGIT = {
     "140610": "141806",  # Tarczyn: changed poviat in 2006
     "026301": "026501",  # Wałbrzych
     "022109": "026501",  # Wałbrzych
+    # 1998 election results use the pre-1999-reform 6-digit gmina TERYT --
+    # these 31 gminy got renumbered once the powiat system stabilized
+    # (mostly the 7 new powiats created 2002-01-01: brzeziński, gołdapski,
+    # leski, łobeski, sztumski, węgorzewski, wschowski -- plus 2 unrelated
+    # individual reassignments, Sulejówek and Sławków, the latter also
+    # crossing voivodeship 12->24). Matched by gmina name within voivodeship
+    # against data/gminy.json (2026-07-28); "Brzeziny"/"Brzeziny gm." are
+    # the town vs. the surrounding rural gmina of the same name, disambiguated
+    # by that "gm." suffix in the source name, not by the code itself (PKW's
+    # 6-digit codes carry no rodzaj digit). 141203 (Wesoła) deliberately NOT
+    # remapped here -- it was its own independent town until absorbed into
+    # Warszawa in 2002, no current standalone gmina to point at; handled via
+    # gminy_historical_overrides.json's historical-geometry mechanism instead,
+    # same as Ostrowice/Zielona Góra wiejska.
+    "080409": "0812013",  # Sława
+    "080410": "0812023",  # Szlichtyngowa
+    "080411": "0812033",  # Wschowa
+    "100601": "1021011",  # Brzeziny (miasto)
+    "100604": "1021022",  # Brzeziny gm. (wiejska)
+    "100605": "1021032",  # Dmosin
+    "100606": "1021043",  # Jeżów
+    "100609": "1021052",  # Rogów
+    "121202": "2401081",  # Sławków: changed voivodship 12->24
+    "141202": "1412151",  # Sulejówek
+    "180101": "1821012",  # Baligród
+    "180102": "1821022",  # Cisna
+    "180104": "1821033",  # Lesko
+    "180106": "1821042",  # Olszanica
+    "180107": "1821052",  # Solina
+    "220902": "2216013",  # Dzierzgoń
+    "220905": "2216022",  # Mikołajki Pomorskie
+    "220909": "2216032",  # Stary Dzierzgoń
+    "220910": "2216042",  # Stary Targ
+    "220911": "2216053",  # Sztum
+    "280602": "2818012",  # Banie Mazurskie
+    "280603": "2819012",  # Budry
+    "280607": "2819022",  # Pozezdrze
+    "280609": "2819033",  # Węgorzewo
+    "281301": "2818022",  # Dubeninki
+    "281302": "2818033",  # Gołdap
+    "320401": "3218013",  # Dobra
+    "320505": "3218032",  # Radowo Małe
+    "320506": "3218043",  # Resko
+    "321407": "3218023",  # Łobez
+    "321412": "3218053",  # Węgorzyno
 }
 
 

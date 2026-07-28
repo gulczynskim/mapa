@@ -70,9 +70,28 @@ SPLITS = [
 ]
 
 # (dissolvedTeryt, dissolvedName, fixtureFile, validUntil, [absorbingTeryt, ...])
+# Wesoła: independent town until absorbed into Warszawa via a 2002-10-27
+# referendum. Its "absorber" list is deliberately EMPTY here -- unlike
+# Ostrowice/ZG wiejska (each dissolving into one or two already-continuous
+# neighbors that just need shrinking), pre-2002 Warszawa itself was 11
+# separate gminy plus Wesoła (12 units total), not "today's Warszawa minus
+# Wesoła" -- there is no single "core Warszawa" shape from that era to shrink
+# INTO. Today's unified Warszawa teryt (1465011) already correctly shows no
+# 1998 data for that reason (it isn't one real historical unit that year).
+# This entry only adds Wesoła's own polygon back for 1998 -- reconstructing
+# the other 11 pre-2002 Warsaw gminy (one of which, Warszawa-Centrum, covered
+# several of today's central dzielnice combined and needs its own historical
+# verification) is a separate, larger follow-up.
+# Fixture note: OSM has no digitized boundary from 2002 for Wesoła (its
+# relation was only created in 2012, already as today's district) -- used
+# today's district boundary instead. Its area (22.87 sq km, computed here)
+# matches the town's own cited historical area (22.94 sq km) closely enough
+# to support the standard assumption that annexation preserved the existing
+# footprint unchanged, rather than representing any real boundary change.
 MERGES = [
     ("3203042", "gm. Ostrowice", "ostrowice_2018.json", 2018, ["3203023", "3203063"]),
     ("0809102", "gm. Zielona Góra (wiejska)", "zielona_gora_wiejska_2014.json", 2014, ["0862011"]),
+    ("141203", "Wesoła", "wesola_1998.json", 1998, []),
 ]
 
 # Both unary_union (splits) and difference/intersection (merges) on this

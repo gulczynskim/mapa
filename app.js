@@ -613,8 +613,11 @@ async function init() {
   buildViewButtons();
   buildSearch();
   buildDownloadPanel();
-  await buildCorrelationSelectors();
   await restoreFromUrl();
+  // Must run AFTER restoreFromUrl() -- it seeds the correlation tool's X
+  // axis from state.*, which restoreFromUrl() may have just overridden
+  // from URL params (variable/level/agegroup/measure/year/view).
+  await buildCorrelationSelectors();
   buildScaleButtons();
   buildScaleScopeButtons();
   buildDimensionSelectors();
@@ -705,30 +708,55 @@ function populateCorrViewOptions(prefix) {
   const totalOk = hasTotalFor(meta, ageGroup, measure);
   const sharesOk = canShowShares(meta, measure);
   const womenOnly = meta.sexScope === "women";
+  // Mirrors the map's own updateViewAvailability(): a variable GUS never
+  // publishes broken down by sex (e.g. zgwalcenia -- only Ogółem exists)
+  // needs Kobiety/Mężczyźni/Różnica/Proporcje off too, not just gated on
+  // womenOnly -- that flag means something different (conceptually
+  // women-only, e.g. a screening program), and previously left this axis
+  // offering five views with literally no data behind them.
+  const sexOk = hasSexData(variable);
 
   const keys = Object.keys(VIEWS).filter((key) => {
     if (key === "total") return totalOk && !womenOnly;
     if (key === "shareWomen" || key === "shareMen") return sharesOk;
-    if (key === "men" || key === "diff" || key === "ratio" || key === "ratioInverse") return !womenOnly;
+    if (key === "women") return sexOk;
+    if (key === "men" || key === "diff" || key === "ratio" || key === "ratioInverse") return sexOk && !womenOnly;
     return true;
   });
 
   const select = document.getElementById(`corr-${prefix}-view`);
-  const keep = keys.includes(select.value) ? select.value : "women";
+  const keep = keys.includes(select.value) ? select.value : keys[0];
   select.innerHTML = keys.map((k) => `<option value="${k}">${VIEWS[k].label}</option>`).join("");
   select.value = keep;
 }
 
-async function populateCorrDimensions(prefix) {
+// `preferred` (level/ageGroup/measure/year/view) lets the initial X-axis
+// seeding below reproduce the map's CURRENT selection instead of always
+// falling back to the variable's own first option -- only meaningful for
+// that one call site, since preferred.* is exactly state.* AT THE TIME the
+// axis is seeded to state.variable itself, so every value is guaranteed
+// valid for it already. Every other caller (topic/variable/agegroup/measure
+// change handlers) omits it and keeps the old "first option" behavior,
+// which is still the only sensible default once the axis has been pointed
+// at some OTHER variable the map isn't currently showing.
+async function populateCorrDimensions(prefix, preferred = {}) {
   const variable = document.getElementById(`corr-${prefix}-var`).value;
   if (!variable) return; // this axis's current Temat has no variable at all (shouldn't happen for a real topic)
   await loadVariable(variable);
   const meta = VARIABLE_META[variable];
-  populateDimensionSelect(document.getElementById(`corr-${prefix}-level`), meta.levels, meta.levels[0].key);
-  populateDimensionSelect(document.getElementById(`corr-${prefix}-agegroup`), meta.ageGroups, meta.ageGroups[0].key);
-  populateDimensionSelect(document.getElementById(`corr-${prefix}-measure`), meta.measures, meta.measures[0].key);
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-level`), meta.levels, preferred.level ?? meta.levels[0].key);
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-agegroup`), meta.ageGroups, preferred.ageGroup ?? meta.ageGroups[0].key);
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-measure`), meta.measures, preferred.measure ?? meta.measures[0].key);
   refreshCorrYears(prefix);
+  if (preferred.year !== undefined) {
+    const yearSelect = document.getElementById(`corr-${prefix}-year`);
+    if ([...yearSelect.options].some((o) => o.value === String(preferred.year))) yearSelect.value = String(preferred.year);
+  }
   populateCorrViewOptions(prefix);
+  if (preferred.view !== undefined) {
+    const viewSelect = document.getElementById(`corr-${prefix}-view`);
+    if ([...viewSelect.options].some((o) => o.value === preferred.view)) viewSelect.value = preferred.view;
+  }
 }
 
 function levelOf(variableKey) {
@@ -795,14 +823,19 @@ async function buildCorrelationSelectors() {
     document.getElementById(`corr-${prefix}-measure`).addEventListener("change", () => { refreshCorrYears(prefix); populateCorrViewOptions(prefix); });
   }
 
-  // Seed X with the first topic/variable overall, Y with the LAST topic's
-  // LAST variable, so the pair starts on two different variables rather
-  // than comparing one against itself (both topic lists are guaranteed
-  // non-empty by topicsInUse()/variablesInTopic(), no level-compatibility
-  // fallback needed here anymore).
-  const xTopic = allTopics[0];
+  // Seed X with whatever the map is CURRENTLY showing (same variable,
+  // level, age group/measure, year, view) -- per explicit user request,
+  // rather than an arbitrary "first topic/variable" pair. Only valid to
+  // call this AFTER restoreFromUrl() has settled state.* to its final
+  // values (see call site in init()), otherwise X would seed from the
+  // pre-URL default instead of what actually ends up on screen. Y stays
+  // seeded to the LAST topic's LAST variable (its own first-option
+  // defaults), so the pair starts on two different variables rather than
+  // comparing one against itself.
+  const xTopic = VARIABLE_META[state.variable].topic;
   document.getElementById("corr-x-topic").value = xTopic;
   refreshCorrVariableOptions("x");
+  document.getElementById("corr-x-var").value = state.variable;
 
   const yTopic = allTopics[allTopics.length - 1];
   document.getElementById("corr-y-topic").value = yTopic;
@@ -811,7 +844,10 @@ async function buildCorrelationSelectors() {
   const yVars = [...yVarSelect.options].map((o) => o.value);
   yVarSelect.value = yVars[yVars.length - 1];
 
-  await Promise.all([populateCorrDimensions("x"), populateCorrDimensions("y")]);
+  await Promise.all([
+    populateCorrDimensions("x", { level: state.level, ageGroup: state.ageGroup, measure: state.measure, year: state.year, view: state.view }),
+    populateCorrDimensions("y"),
+  ]);
 }
 
 function valueFor(variable, teryt, year, ageGroup, measure) {
