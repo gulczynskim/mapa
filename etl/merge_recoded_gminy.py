@@ -120,7 +120,146 @@ RECODED_PAIRS_2024_WIEJSKA_TO_MIEJSKO_WIEJSKA = [
     ("3028042", "3028043"),  # Mieścisko
 ]
 
-ALL_RECODED_PAIRS = RECODED_PAIRS_2023_MIEJSKA_RECLASSIFY + RECODED_PAIRS_2024_WIEJSKA_TO_MIEJSKO_WIEJSKA
+# 94 individual wiejska->miejsko-wiejska recodes scattered across 1996-2022
+# (each gmina promoted to "miasto" status at ITS OWN point, not one dated
+# bulletin like the two waves above) -- found 2026-07-28 via a full,
+# GENERAL auto-detection pass (not a specific year search): for every
+# 6-digit TERYT prefix with both a kind=2 and a kind=3 code present as keys
+# in radni_gminy.json, checked for a clean cutover (no year overlap, new
+# code's first year = old code's last year + 1) AND an exact councillor-
+# count match (t) at that boundary, mirroring the exact validation bar the
+# two waves above already used. 107 candidates matched the clean-cutover
+# test; only the 94 below ALSO matched the seat-count test -- the other 13
+# are NOT included here despite passing the cutover test, because seat
+# count is NOT sufficient by itself: one of them (Władysławowo, 2211041->
+# 2211043) turned out to be a REAL 2015 boundary change (it lost several
+# localities -- Chłapowo, Jastrzębia Góra, Rozewie, Chałupy, Tupadły,
+# Karwia, Ostrowo -- which became independent gminy, not a pure status
+# relabel), which a blind merge would have silently mismodeled as "same
+# geometry throughout." The remaining 12 mismatches are unverified either
+# way and need the same kind of individual research before being merged
+# OR handled as a real split (see build_gmina_historical_overrides.py).
+RECODED_PAIRS_AUTODETECTED_1996_2022 = [
+    ("1206142", "1206143"),  # Świątniki Górne
+    ("1214022", "1214023"),  # Koszyce
+    ("1214032", "1214033"),  # Nowe Brzesko
+    ("1204072", "1204073"),  # Szczucin
+    ("1216012", "1216013"),  # Ciężkowice
+    ("1216052", "1216053"),  # Radłów
+    ("1216062", "1216063"),  # Ryglice
+    ("1216132", "1216133"),  # Wojnicz
+    ("1216142", "1216143"),  # Zakliczyn
+    ("1211021", "1211023"),  # Szczawnica
+    ("2404122", "2404123"),  # Olsztyn
+    ("2405062", "2405063"),  # Sośnicowice
+    ("2411032", "2411033"),  # Krzanowice
+    ("0804072", "0804073"),  # Otyń
+    ("3006012", "3006013"),  # Jaraczewo
+    ("3007052", "3007053"),  # Koźminek
+    ("3007082", "3007083"),  # Opatówek
+    ("3020012", "3020013"),  # Chocz
+    ("3020032", "3020033"),  # Dobrzyca
+    ("3030032", "3030033"),  # Nekla
+    ("3001022", "3001023"),  # Budzyń
+    ("3019032", "3019033"),  # Kaczory
+    ("3201042", "3201043"),  # Tychowo
+    ("3208032", "3208033"),  # Gościno
+    ("3209052", "3209053"),  # Mielno
+    ("3204072", "3204073"),  # Stepnica
+    ("3207012", "3207013"),  # Dziwnów
+    ("0210052", "0210053"),  # Olszyna
+    ("0202031", "0202033"),  # Pieszyce
+    ("0224032", "0224033"),  # Kamieniec Ząbkowicki
+    ("0223082", "0223083"),  # Siechnice
+    ("1609122", "1609123"),  # Tułowice
+    ("0408072", "0408073"),  # Skępe
+    ("0411052", "0411053"),  # Piotrków Kujawski
+    ("0414082", "0414083"),  # Pruszcz
+    ("2211021", "2211023"),  # Jastarnia
+    ("2213011", "2213013"),  # Czarna Woda
+    ("2815062", "2815063"),  # Miłakowo
+    ("2815072", "2815073"),  # Miłomłyn
+    ("2817082", "2817083"),  # Wielbark
+    ("1008062", "1008063"),  # Lutomiersk
+    ("1010112", "1010113"),  # Wolbórz
+    ("1018042", "1018043"),  # Lututów
+    ("1004062", "1004063"),  # Piątek
+    ("1015012", "1015013"),  # Bolimów
+    ("2604052", "2604053"),  # Daleszyce
+    ("2604072", "2604073"),  # Łagów
+    ("2604122", "2604123"),  # Morawica
+    ("2604132", "2604133"),  # Nowa Słupia
+    ("2604152", "2604153"),  # Pierzchnica
+    ("2605042", "2605043"),  # Radoszyce
+    ("2601032", "2601033"),  # Nowy Korczyn
+    ("2601042", "2601043"),  # Pacanów
+    ("2601062", "2601063"),  # Stopnica
+    ("2601082", "2601083"),  # Wiślica
+    ("2602092", "2602093"),  # Wodzisław
+    ("2603042", "2603043"),  # Opatowiec
+    ("2606022", "2606023"),  # Iwaniska
+    ("2609032", "2609033"),  # Klimontów
+    ("2609042", "2609043"),  # Koprzywnica
+    ("2612032", "2612033"),  # Oleśnica
+    ("0602062", "0602063"),  # Goraj
+    ("0603112", "0603113"),  # Siedliszcze
+    ("0603152", "0603153"),  # Rejowiec
+    ("0606042", "0606043"),  # Izbica
+    ("0618052", "0618053"),  # Lubycza Królewska
+    ("0618062", "0618063"),  # Łaszczów
+    ("0618122", "0618123"),  # Tyszowce
+    ("0608052", "0608053"),  # Kamionka
+    ("0605062", "0605063"),  # Modliborzyce
+    ("0607082", "0607083"),  # Urzędów
+    ("0612022", "0612023"),  # Józefów nad Wisłą
+    ("1805052", "1805053"),  # Kołaczyce
+    ("1804072", "1804073"),  # Pruchnik
+    ("1809052", "1809053"),  # Narol
+    ("1813022", "1813023"),  # Dubiecko
+    ("1803022", "1803023"),  # Brzostek
+    ("1811072", "1811073"),  # Przecław
+    ("1818052", "1818053"),  # Zaklików
+    ("2002072", "2002073"),  # Michałowo
+    ("2011042", "2011043"),  # Krynki
+    ("2011092", "2011093"),  # Suchowola
+    ("2013032", "2013033"),  # Czyżew
+    ("2013092", "2013093"),  # Szepietowo
+    ("1412042", "1412043"),  # Cegłów
+    ("1412072", "1412073"),  # Halinów
+    ("1412122", "1412123"),  # Mrozy
+    ("1420082", "1420083"),  # Nowe Miasto
+    ("1420112", "1420113"),  # Sochocin
+    ("1437032", "1437033"),  # Lubowidz
+    ("1409062", "1409063"),  # Solec nad Wisłą
+    ("1425062", "1425063"),  # Jedlnia-Letnisko
+    ("1404042", "1404043"),  # Sanniki
+    ("1438052", "1438053"),  # Wiskitki
+]
+
+# The 3 REAL powiat/voivodeship reassignments already trusted and used by
+# pkw_prepare_merge.py's GMINA_REMAP_6DIGIT (Szerzyny/Rejowiec/Tarczyn --
+# see that file's own comments for the underlying real-world event), applied
+# there to PKW's 6-digit scheme but NEVER to radni_gminy.json's native
+# 7-digit codes until now (found 2026-07-28 during the same audit as the 94
+# above -- these 3 aren't a type-digit recode, geometry didn't change, just
+# which powiat/voivodeship the gmina is administratively grouped under, so
+# the "same geometry, just merge the data" mechanism still applies). Clean
+# cutovers, seat-count (t) matches exactly for Szerzyny/Tarczyn; Rejowiec's
+# t also matches exactly at its 2006 cutover (only the elected m/k split
+# differs, expected since 2006 was a real election year, not evidence of a
+# boundary change).
+RECODED_PAIRS_KNOWN_REASSIGNMENTS = [
+    ("1805102", "1216162"),  # Szerzyny: changed voivodship in 2003
+    ("0606082", "0603153"),  # Rejowiec: changed poviat in 2006
+    ("1406102", "1418063"),  # Tarczyn: changed poviat in 2006
+]
+
+ALL_RECODED_PAIRS = (
+    RECODED_PAIRS_2023_MIEJSKA_RECLASSIFY
+    + RECODED_PAIRS_2024_WIEJSKA_TO_MIEJSKO_WIEJSKA
+    + RECODED_PAIRS_AUTODETECTED_1996_2022
+    + RECODED_PAIRS_KNOWN_REASSIGNMENTS
+)
 
 VARIABLE_FILES = [
     "radni_gminy.json",
