@@ -85,6 +85,11 @@ VARIABLE_CODES = {
 
 
 def has_sex_data(file_path):
+    """Scans a data file for any non-null "m" or "k" value anywhere -- an
+    empirical check of whether sex-split views should be available for this
+    variable, mirroring app.js's own cached hasSexData check rather than
+    trusting the declared metadata. Returns None (not False) if the file is
+    missing, so the caller can flag that separately."""
     if not os.path.exists(file_path):
         return None  # file missing -- flag separately, don't silently say False
     data = json.load(open(file_path, encoding="utf-8"))
@@ -97,15 +102,23 @@ def has_sex_data(file_path):
 
 
 def extract_topic_code(access_note):
+    """Pulls the first BDL topic code (e.g. "P4251") out of an accessNote
+    string via regex, or "" if none is found."""
     m = TOPIC_CODE_RE.search(access_note or "")
     return m.group(0) if m else ""
 
 
 def extract_variable_codes(varkey):
+    """Looks up the hand-curated BDL variable-code listing for `varkey` in
+    VARIABLE_CODES, or "" if it isn't a BDL-sourced variable (or has too many
+    codes to usefully list here)."""
     return VARIABLE_CODES.get(varkey, "")
 
 
 def all_slices_no_total(meta):
+    """True only if EVERY ageGroup x measure combination in `meta` has
+    hasTotal:false -- i.e. the "Ogółem" view should be disabled entirely for
+    this variable, not just for some combinations."""
     age_groups = meta.get("ageGroups", [{"key": "default"}])
     measures = meta.get("measures", [{"key": "default"}])
     for ag in age_groups:
@@ -118,6 +131,9 @@ def all_slices_no_total(meta):
 
 
 def view_flags(meta, sex_ok):
+    """Computes which of the 8 VIEW_COLUMNS should be disabled ("X") for one
+    variable, replicating app.js's updateViewAvailability()/hasSexData()/
+    hasTotalFor() logic (see module docstring for the exact rules)."""
     women_only = meta.get("sexScope") == "women"
     shares_ok = bool(meta.get("sharesMeaningful", False))
     total_disabled = women_only or all_slices_no_total(meta)
@@ -133,6 +149,9 @@ def view_flags(meta, sex_ok):
 
 
 def main():
+    """Entry point: builds one CSV row per VARIABLE_META entry and writes
+    data_review_widok.csv, printing a warning for any variable whose data
+    file is missing."""
     src = open(f"{ROOT}/variables.js", encoding="utf-8").read()
     meta_all = extract_const(src, "VARIABLE_META")
 

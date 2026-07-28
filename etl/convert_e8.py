@@ -42,6 +42,9 @@ METRIC_COLUMNS = {"mean": "wynik średni (%)", "median": "mediana (%)"}
 
 
 def load_sex_sheet(year, sex):
+    """Reads one year's single-sex E8 results workbook and extracts, per
+    subject in SUBJECTS, the test-taker count and median score into a flat
+    per-powiat dataframe."""
     path = os.path.join(SRC_DIR, f"Wyniki E8 - powiaty_{sex}_{year}.xlsx")
     df = pd.read_excel(path, sheet_name=sex, header=None, skiprows=2)
     subject_cols = pd.read_excel(path, sheet_name=sex, header=None, nrows=1).iloc[0].ffill()
@@ -60,6 +63,9 @@ def load_sex_sheet(year, sex):
 
 
 def build_variable(our_name):
+    """Builds the full {teryt: {year: {...}}} JSON for one E8 subject
+    (`our_name`) across every year in YEARS, merging that year's K and M
+    sheets and computing the combined "t" median where possible."""
     result = {}
     for year in YEARS:
         k = load_sex_sheet(year, "K")

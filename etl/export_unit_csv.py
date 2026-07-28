@@ -53,6 +53,10 @@ def fold(s):
 
 
 def resolve_unit(level, name=None, teryt=None):
+    """Resolves a boundary unit at `level` by exact teryt (raising if not
+    found) or by a case/diacritic-insensitive name substring (raising if
+    zero or multiple matches, listing the candidates on ambiguity). Returns
+    (teryt, name)."""
     boundary = json.load(open(f"{ROOT}/data/{BOUNDARY_FILES[level]}.json", encoding="utf-8"))
     features = boundary["features"]
     if teryt is not None:
@@ -80,10 +84,14 @@ def is_rate_measure(measure_key):
 
 
 def safe_div(a, b):
+    """`a / b`, or None if `b` is zero."""
     return a / b if b != 0 else None
 
 
 def view_values(t, m, k, shares_ok):
+    """Computes every one of the map's derived views (diff, ratio, inverse
+    ratio, % kobiet, % mężczyzn) from one raw {t,m,k} triple, mirroring
+    app.js's own per-view formulas."""
     women = k
     men = m
     total = t
@@ -98,6 +106,9 @@ def view_values(t, m, k, shares_ok):
 
 
 def label_lookup(options, key):
+    """Finds `key`'s human-readable label in a list of {key, label} option
+    dicts (ageGroups or measures), falling back to the raw key if the data
+    has a slice the metadata doesn't declare."""
     for o in options:
         if o["key"] == key:
             return o.get("label", key)
@@ -105,6 +116,9 @@ def label_lookup(options, key):
 
 
 def main():
+    """CLI entry point: resolves the requested unit, walks every variable in
+    VARIABLE_META that covers `--level`, and writes one CSV row per
+    variable/ageGroup/measure/year with that unit's raw and derived values."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--level", choices=list(BOUNDARY_FILES), default="powiat")
     ap.add_argument("--name", help="Substring of the unit's name, e.g. 'pleszewski' (case/diacritic-insensitive)")

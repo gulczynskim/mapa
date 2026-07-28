@@ -52,6 +52,9 @@ FILES = {
 
 
 def convert(xlsx_path, sheet_name):
+    """Reads one BASiW screening-rate sheet (mammografia or cytologia) from
+    `xlsx_path` and converts its rows into the site's {teryt: {year: {...}}}
+    JSON shape, keyed by województwo."""
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     ws = wb[sheet_name]
     rows = list(ws.iter_rows(values_only=True))

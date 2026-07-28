@@ -31,6 +31,9 @@ MISSING_ATTR_IDS = {4, 14, 15, 50, 91}
 
 
 def _headers():
+    """Builds the BDL API request headers: includes X-ClientId only if
+    BDL_API_KEY is set in the environment, otherwise an empty dict (BDL
+    allows unauthenticated requests at a lower rate limit)."""
     api_key = os.environ.get("BDL_API_KEY")
     return {"X-ClientId": api_key} if api_key else {}
 

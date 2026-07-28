@@ -55,6 +55,8 @@ SECTION_LETTER = re.compile(r"\(([A-Z])\)\s*$")
 
 
 def list_variables(subject_id):
+    """Pages through BDL's /variables metadata endpoint for one subject-id,
+    returning every variable's metadata as a flat list."""
     # Uses bdl_client's own _get -- has the 429/Retry-After handling this
     # subject's discovery call actually hit live (756 variables under one
     # subject-id makes for a chunky metadata response, and this project had

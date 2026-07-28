@@ -31,6 +31,10 @@ EDITIONS = {
 
 
 def load_powiat_rows(path, sheet, skiprows):
+    """Reads one GUS wages Excel sheet, filters out non-powiat aggregate rows
+    (national/makroregion/województwo totals, where "Powiat" is blank/0),
+    and builds each remaining row's 4-digit teryt from its Województwo+Powiat
+    columns."""
     df = pd.read_excel(path, sheet_name=sheet, skiprows=skiprows)
     # Województwo/Powiat load as float64 (e.g. 12.0), not strings -- a
     # string comparison against "00" silently matched nothing, letting

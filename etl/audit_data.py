@@ -40,10 +40,14 @@ BOUNDARY_FILES = {"powiat": "powiaty", "gmina": "gminy", "podregion": "podregion
 
 
 def fmt(v):
+    """Formats a value for the printed report: floats to 3 significant
+    figures, everything else via plain str()."""
     return f"{v:.3g}" if isinstance(v, float) else str(v)
 
 
 def load_boundaries():
+    """Loads every level's boundary GeoJSON once and returns two dicts keyed
+    by level: teryt -> set of teryty present, and teryt -> {teryt: name}."""
     teryts, names = {}, {}
     for level, fname in BOUNDARY_FILES.items():
         d = json.load(open(f"{ROOT}/data/{fname}.json", encoding="utf-8"))
@@ -53,6 +57,11 @@ def load_boundaries():
 
 
 def audit_variable(vmeta, boundary_teryts):
+    """Runs every check described in the module docstring against one
+    variable's data file (boundary coverage, year coverage, null/negative/
+    out-of-range values, missing declared slices, k+m vs t sum mismatches,
+    IQR outliers, year-over-year jumps) and returns a dict of the raw
+    findings for print_report to format."""
     level = vmeta["levels"][0]["key"]
     data = json.load(open(f"{ROOT}/{vmeta['file']}", encoding="utf-8"))
 
@@ -176,6 +185,10 @@ FLAG_LABELS = [
 
 
 def print_report(results, boundary_names):
+    """Prints the human-readable audit report: one section per variable that
+    has at least one flag (clean variables are skipped), a sample of each
+    flagged finding, then a final summary line listing every variable with
+    zero flags."""
     for varkey, r in results.items():
         if "error" in r:
             print(f"\n=== {varkey} === ERROR: {r['error']}")
@@ -223,6 +236,9 @@ def print_report(results, boundary_names):
 
 
 def main():
+    """Entry point: reads every variable out of variables.js's VARIABLE_META,
+    audits each one (catching a missing data file as its own error entry
+    rather than crashing the whole run), and prints the report."""
     src = open(f"{ROOT}/variables.js", encoding="utf-8").read()
     meta = extract_const(src, "VARIABLE_META")
     boundary_teryts, boundary_names = load_boundaries()

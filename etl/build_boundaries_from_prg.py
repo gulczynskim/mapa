@@ -96,6 +96,9 @@ MIN_FRAGMENT_AREA_DEG2 = 1e-9  # well under 1 real sq meter -- see clean_geometr
 
 
 def read_shapefile_as_geojson(base_path):
+    """Reads a PRG .shp/.dbf pair at `base_path` and converts it into a
+    GeoJSON FeatureCollection, keeping only the JPT_KOD_JE/JPT_NAZWA_
+    properties (matching the existing vendored schema)."""
     sf = shapefile.Reader(base_path)
     feats = []
     for sr in sf.shapeRecords():
@@ -154,6 +157,10 @@ def clean_geometry(geojson_dict):
 
 
 def build_clean_topology(geojson_dict, level):
+    """Builds shared topology across `geojson_dict`'s features (so
+    neighboring polygons' shared borders become the same arc), simplifies it
+    at `level`'s own epsilon, converts back to plain GeoJSON, and repairs any
+    rings toposimplify left invalid via clean_geometry."""
     topo = tp.Topology(geojson_dict, prequantize=PREQUANTIZE, topology=True)
     topo = topo.toposimplify(TOPOSIMPLIFY_EPSILON[level], prevent_oversimplify=True)
     return clean_geometry(json.loads(topo.to_geojson()))
@@ -201,6 +208,9 @@ def split_2025_gminy(gmina_geojson):
 
 
 def main():
+    """Entry point: rebuilds data/powiaty.json and data/gminy.json from the
+    PRG shapefiles, applying the 2025 Kamienica/Suprasl splits and geometry
+    repair to the gmina level along the way."""
     print("Reading PRG powiat shapefile...")
     powiat_raw = read_shapefile_as_geojson(f"{PRG_DIR}/A02_Granice_powiatow")
     print(f"  {len(powiat_raw['features'])} features")

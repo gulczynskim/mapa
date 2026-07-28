@@ -44,6 +44,10 @@ MIN_FRAGMENT_AREA = 0.001  # same threshold as build_gmina_historical_overrides.
 
 
 def clean(geom):
+    """Drops seam-mismatch sliver fragments from a MultiPolygon below
+    MIN_FRAGMENT_AREA, collapsing to a plain Polygon if only one real piece
+    remains (same pattern as build_gmina_historical_overrides.py's own
+    clean())."""
     if geom.geom_type != "MultiPolygon":
         return geom
     kept = [p for p in geom.geoms if p.area > MIN_FRAGMENT_AREA]
@@ -52,6 +56,8 @@ def clean(geom):
 
 if __name__ == "__main__":
     def fix(geom):
+        """Repairs an invalid geometry via the standard buffer(0) trick;
+        passes valid geometry through unchanged."""
         return geom if geom.is_valid else geom.buffer(0)
 
     powiaty = json.load(open(os.path.join(DATA_DIR, "powiaty.json"), encoding="utf-8"))
@@ -61,9 +67,13 @@ if __name__ == "__main__":
     gmina_by_teryt = {f["properties"]["JPT_KOD_JE"]: fix(shape(f["geometry"])) for f in gminy["features"]}
 
     def p(teryt):
+        """Looks up a powiat's (already validity-fixed) shapely geometry by
+        its 4-digit teryt."""
         return powiat_by_teryt[teryt]
 
     def g(teryt):
+        """Looks up a gmina's (already validity-fixed) shapely geometry by
+        its 7-digit teryt."""
         return gmina_by_teryt[teryt]
 
     # --- 2001 reconstruction (powiats hidden, replacements computed) ---

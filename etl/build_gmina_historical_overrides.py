@@ -117,6 +117,10 @@ MIN_FRAGMENT_AREA = 0.001
 
 
 def clean(geom):
+    """Drops seam-mismatch sliver fragments (see module docstring) from a
+    MultiPolygon that are smaller than MIN_FRAGMENT_AREA, collapsing to a
+    plain Polygon if only one real piece remains. Non-MultiPolygon geometry
+    passes through unchanged."""
     if geom.geom_type != "MultiPolygon":
         return geom
     kept = [p for p in geom.geoms if p.area > MIN_FRAGMENT_AREA]

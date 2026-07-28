@@ -55,6 +55,9 @@ MIN_FRAGMENT_AREA_KM2 = 1.0
 
 
 def drop_tiny_fragments(geom):
+    """Drops MultiPolygon parts below MIN_FRAGMENT_AREA_KM2 (converting
+    degrees² to an approximate km² at this latitude), keeping the largest
+    single part as a fallback if every part would otherwise be dropped."""
     if geom.geom_type != "MultiPolygon":
         return geom
     kept = [p for p in geom.geoms if p.area * 111.32 * 111.32 * 0.586 > MIN_FRAGMENT_AREA_KM2]
@@ -64,6 +67,8 @@ def drop_tiny_fragments(geom):
 
 
 def fetch_all_units(level):
+    """Pages through BDL's /units/search endpoint for the given unit level,
+    returning every unit as a flat list."""
     units = []
     page = 0
     while True:
@@ -82,11 +87,18 @@ def fetch_all_units(level):
 
 
 def norm(name):
+    """Normalizes a podregion name for matching across sources: strips the
+    "Podregion "/"podregion " prefix, trims whitespace, lowercases."""
     return name.replace("Podregion ", "").replace("podregion ", "").strip().lower()
 
 
 def round_coords(geom_mapping, ndigits=7):
+    """Rounds every coordinate in a GeoJSON geometry mapping to `ndigits`
+    decimal places, recursing through however many levels of nested
+    coordinate arrays the geometry type has."""
     def rc(c):
+        """Recursively rounds one coordinate array (a bare [x, y] pair or a
+        nested list of them) to `ndigits`."""
         return [round(x, ndigits) for x in c] if isinstance(c[0], (int, float)) else [rc(x) for x in c]
 
     m = dict(geom_mapping)

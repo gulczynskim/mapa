@@ -146,6 +146,8 @@ def find_coastal_units(gminy_path="../data/gminy.json", powiaty_path="../data/po
     coastal_arc = LineString(coastal_coords).buffer(0.01)
 
     def is_coastal(geom):
+        """True if `geom`'s boundary shares more than 0.01 deg of length
+        with the buffered Baltic-facing coastal arc."""
         return geom.boundary.intersection(coastal_arc).length > 0.01
 
     gminy = json.load(open(gminy_path, encoding="utf-8"))
@@ -191,6 +193,8 @@ def fetch_prg_bbox(bbox, type_name):
     type_local = type_name.split(":")[-1]
 
     def ring_lonlat(poslist_text):
+        """Parses one GML <gml:posList> text blob (flat N,E pairs in
+        EPSG:2180) into a list of (lon, lat) tuples in EPSG:4326."""
         nums = [float(x) for x in poslist_text.split()]
         en_pairs = list(zip(nums[1::2], nums[0::2]))  # PRG posList is (N, E) -- swap to (E, N)
         return [transformer.transform(e, n) for e, n in en_pairs]
@@ -215,6 +219,9 @@ def fetch_prg_bbox(bbox, type_name):
 
 
 def build_admin_geom(parts):
+    """Converts fetch_prg_bbox's per-feature `parts` list (each a (exterior,
+    holes) ring pair, since a MultiSurface feature can have several disjoint
+    polygon parts) into a single shapely Polygon/MultiPolygon."""
     polys = []
     for ext, holes in parts:
         p = make_valid(Polygon(ext, holes))
@@ -223,6 +230,9 @@ def build_admin_geom(parts):
 
 
 def fetch_coastline_bbox(bbox):
+    """Queries Overpass (trying each mirror in OVERPASS_MIRRORS in turn) for
+    every OSM way tagged natural=coastline within `bbox`, returning them as
+    shapely LineStrings."""
     minlat, minlon, maxlat, maxlon = bbox
     query = f"""
     [out:json][timeout:150];
@@ -251,6 +261,10 @@ def fetch_coastline_bbox(bbox):
 
 
 def build_faces(admin, coastline_ways, buf=0.001):
+    """Filters `coastline_ways` down to the ones near `admin`'s boundary,
+    then polygonizes their union with `admin`'s own boundary into candidate
+    land/sea "faces" for a classifier to sort. Returns (relevant_ways,
+    faces), or (None, None) if no coastline way is near enough to matter."""
     relevant = [w for w in coastline_ways if w.intersects(admin.buffer(buf))]
     if not relevant:
         return None, None
@@ -264,6 +278,9 @@ def classify_v1(admin, relevant, faces):
     direction, OSM convention). Default classifier -- see module docstring."""
 
     def classify(pt):
+        """True (land) if `pt` sits to the left of its nearest coastline
+        way's own direction of travel -- OSM's land-left/sea-right coastline
+        winding convention."""
         way = min(relevant, key=lambda w: w.distance(pt))
         s = way.project(pt)
         eps = max(way.length * 1e-6, 1e-9)
@@ -311,6 +328,9 @@ def classify_v7_floodfill(admin, faces):
 
 
 def land_only(admin, coastline_ways, kod):
+    """Builds the land-only geometry for one unit: runs build_faces then
+    picks classify_v7_floodfill or classify_v1 depending on whether `kod` is
+    in USE_FLOODFILL. Returns None if no relevant coastline was found."""
     relevant, faces = build_faces(admin, coastline_ways)
     if relevant is None:
         return None
@@ -320,7 +340,12 @@ def land_only(admin, coastline_ways, kod):
 
 
 def significant_parts(geom, min_km2=0.02):
+    """Returns `geom`'s polygon part(s) whose approximate area (converted
+    from degrees² at this latitude) is at least `min_km2`, dropping smaller
+    noise fragments."""
     def km2(g):
+        """Approximate area of shapely geometry `g`, in km², at this
+        latitude."""
         return g.area * 111.32 * 111.32 * 0.586
 
     if geom.geom_type == "Polygon":
@@ -329,6 +354,9 @@ def significant_parts(geom, min_km2=0.02):
 
 
 def finalize(land):
+    """Repairs `land`'s validity, drops insignificant fragments via
+    significant_parts, and returns a single Polygon/MultiPolygon (or None if
+    nothing significant remains)."""
     land = make_valid(land)
     parts = significant_parts(land)
     if not parts:
@@ -337,7 +365,12 @@ def finalize(land):
 
 
 def round_coords(geom_mapping, ndigits=7):
+    """Rounds every coordinate in a GeoJSON geometry mapping to `ndigits`
+    decimal places, recursing through however many levels of nested
+    coordinate arrays the geometry type has."""
     def rc(c):
+        """Recursively rounds one coordinate array (a bare [x, y] pair or a
+        nested list of them) to `ndigits`."""
         return [round(x, ndigits) for x in c] if isinstance(c[0], (int, float)) else [rc(x) for x in c]
 
     m = dict(geom_mapping)
@@ -346,6 +379,10 @@ def round_coords(geom_mapping, ndigits=7):
 
 
 def replace_features(path, new_geoms):
+    """Overwrites the geometry of every feature in `path` whose teryt is a
+    key in `new_geoms`, in place; asserts every requested replacement was
+    actually found (catches a typo'd/missing teryt immediately rather than
+    silently leaving old geometry behind)."""
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     replaced = 0
@@ -361,6 +398,10 @@ def replace_features(path, new_geoms):
 
 
 def run(units, bboxes, type_name, exclude, no_fix, out_path):
+    """Entry point for one level (gmina or powiat): fetches PRG geometry and
+    OSM coastline for `bboxes`, computes each unit in `units` (skipping
+    `exclude`/`no_fix`) down to its land-only shape via land_only+finalize,
+    and writes the results into `out_path` via replace_features."""
     prg = {}
     for bbox in bboxes:
         prg.update(fetch_prg_bbox(bbox, type_name))

@@ -28,6 +28,8 @@ OUT_DIR = "../data"
 
 
 def _get(url, params):
+    """GET with retry-on-429 (sleeping for the Retry-After header, or 5s if
+    absent), up to 6 attempts."""
     for attempt in range(6):
         r = requests.get(url, params=params)
         if r.status_code == 429:
@@ -40,6 +42,9 @@ def _get(url, params):
 
 
 def build_crosswalk():
+    """Pages through BDL's powiat-level units, filters down to miasta na
+    prawach powiatu (kind "2"), and builds the crosswalk this script uses to
+    backfill their zero-valued radni_powiatu.json placeholders."""
     all_powiats = []
     page = 0
     while True:

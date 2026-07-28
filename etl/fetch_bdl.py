@@ -27,6 +27,9 @@ OUT_DIR = "../data"
 
 
 def _teryt(row, level):
+    """Resolves one BDL API unit row to the site's own teryt: gmina rows
+    need name-assisted disambiguation (resolve_gmina_teryt), every other
+    level maps its BDL unit id straight through."""
     if level == GMINA:
         return resolve_gmina_teryt(row["unit_id"], row["unit_name"])
     return unit_id_to_teryt(row["unit_id"], level=level)
@@ -60,6 +63,10 @@ def fetch_slice(ids, level):
 
 
 def fetch_variable(name, spec):
+    """Fetches every ageGroup/measure slice declared in `spec["slices"]`
+    (bdl_variables.py's per-variable entry), assembles them into the site's
+    {teryt: {year: {"ageGroup__measure": {t,m,k}}}} shape, and writes the
+    result to data/{spec["file"]}."""
     out = {}
     for age_group, measures in spec["slices"].items():
         for measure, ids in measures.items():

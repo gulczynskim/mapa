@@ -94,12 +94,19 @@ SHARE_OF_WHOLE = [
 
 
 def _divide(numerator, denominator, scale):
+    """Safe `numerator / denominator * scale`: None if either input is
+    missing or the denominator is zero, instead of raising or returning a
+    misleading 0."""
     if numerator is None or denominator is None or denominator == 0:
         return None
     return numerator / denominator * scale
 
 
 def add_per_100k(data_file, age_group, measure_keys, reference):
+    """For each measure in `measure_keys` under `age_group` in `data_file`,
+    joins against `reference`'s own {teryt, year} slice (same sex-for-sex)
+    and adds a new "..._per100k" sibling measure, then overwrites
+    `data_file` in place."""
     reference_file, reference_age_group, reference_measure = reference
     data = json.load(open(os.path.join(OUT_DIR, data_file), encoding="utf-8"))
     reference_data = json.load(open(os.path.join(OUT_DIR, reference_file), encoding="utf-8"))
@@ -128,6 +135,10 @@ def add_per_100k(data_file, age_group, measure_keys, reference):
 
 
 def add_share_of_whole(data_file, reference_age_group, age_groups, measure, new_measure):
+    """For each ageGroup in `age_groups`, divides its `measure` value by
+    `reference_age_group`'s own value for the same {teryt, year, sex} and
+    stores the result (as a percentage) under `new_measure`, then overwrites
+    `data_file` in place."""
     data = json.load(open(os.path.join(OUT_DIR, data_file), encoding="utf-8"))
 
     for teryt, years in data.items():

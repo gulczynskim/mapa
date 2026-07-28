@@ -58,11 +58,13 @@ MEASURES = ["uczniowie", "uczniowie_1_klasa", "absolwenci"]
 
 
 def _load(name):
+    """Loads a JSON file from OUT_DIR by filename."""
     with open(os.path.join(OUT_DIR, name), encoding="utf-8") as f:
         return json.load(f)
 
 
 def _save(name, data):
+    """Writes `data` as JSON to OUT_DIR/`name`, overwriting it."""
     path = os.path.join(OUT_DIR, name)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
@@ -109,10 +111,16 @@ def add_razem(target):
 
 
 def _has_any_value(d):
+    """True if `d` (a {t,m,k}-shaped dict, or None) exists and has at least
+    one non-None value."""
     return d is not None and any(v is not None for v in d.values())
 
 
 def add_udzial(target):
+    """Computes each of technika/licea_ogolnoksztalcace/branzowe_I_st's
+    "_udzial" (share of the 3-way combined total, per sex) and adds it as a
+    new measure on `target` in place -- see module docstring point 2 for the
+    exact formula, including technika's broadened definition here."""
     for teryt, years in target.items():
         for year, slices in years.items():
             for measure in MEASURES:

@@ -21,6 +21,8 @@ SEX_MAP = {"K": "k", "M": "m", "Kobieta": "k", "Mężczyzna": "m"}
 
 
 def normalize_teryt6(raw):
+    """Normalizes a raw TERYT value (which Excel/pandas may load as a float
+    like 146501.0) into a zero-padded 6-digit string."""
     s = str(raw).strip()
     if s.endswith(".0"):
         s = s[:-2]
@@ -28,10 +30,15 @@ def normalize_teryt6(raw):
 
 
 def to_votes(series):
+    """Coerces a votes column to numeric, treating unparseable/missing
+    values as 0."""
     return pd.to_numeric(series, errors="coerce").fillna(0)
 
 
 def standardize(year, teryt6, sex_raw, votes_r1, votes_r2, elected):
+    """Assembles one year's already-round-merged candidate rows into the
+    common long-table shape (year, teryt6, sex, votes_r1, votes_r2, elected,
+    candidate), dropping any row with an unrecognized sex value."""
     sex = sex_raw.map(SEX_MAP)
     out = pd.DataFrame({
         "year": year,
@@ -58,6 +65,9 @@ def merge_rounds(df1, df2, key_cols):
 
 
 def load_2002():
+    """Loads the 2002 mayor election file, splits it into round-1/round-2
+    candidate rows, merges the rounds on identifying columns, and
+    standardizes the result -- 2002's own column names/win-code ("T")."""
     path = os.path.join(INPUT_DIR, "Mayors/2002/wojt2002.xls")
     print(f"Reading 2002: {path}")
     df = pd.read_excel(path)
@@ -71,6 +81,8 @@ def load_2002():
 
 
 def load_2006():
+    """Loads the 2006 mayor election file, splits/merges its two rounds, and
+    standardizes the result -- 2006's own column names/win-code ("T")."""
     path = os.path.join(INPUT_DIR, "Mayors/2006/Wojtowie/wojt2006-zbiorówka.xls")
     print(f"Reading 2006: {path}")
     df = pd.read_excel(path)
@@ -84,6 +96,10 @@ def load_2006():
 
 
 def load_2010():
+    """Loads the 2010 mayor election file and merges its rounds -- unlike
+    every other year, 2010 can have a "Tura" 3 (a re-run vote for a gmina
+    whose round 2 was itself contested/voided), so any gmina with a round-3
+    row uses that instead of its round-2 row as the "round 2" data."""
     path = os.path.join(INPUT_DIR, "Mayors/2010-kand-wbp.csv")
     print(f"Reading 2010: {path}")
     df = pd.read_csv(path)
@@ -99,6 +115,9 @@ def load_2010():
 
 
 def load_2014():
+    """Loads the 2014 mayor election file -- already round-merged in the
+    source file itself (columns suffixed _x/_y for round 1/2), so no
+    separate merge_rounds call is needed here unlike the other years."""
     path = os.path.join(INPUT_DIR, "Mayors/2014-kand-wbp.xls")
     print(f"Reading 2014: {path}")
     df = pd.read_excel(path)
@@ -107,6 +126,8 @@ def load_2014():
 
 
 def load_2018():
+    """Loads the 2018 mayor election's two separate round files and merges
+    them -- 2018's own column names/win-code ("Tak")."""
     p1 = os.path.join(INPUT_DIR, "Mayors/2018-kand-wbp-I-tura.xlsx")
     p2 = os.path.join(INPUT_DIR, "Mayors/2018-kand-wbp-II-tura.xlsx")
     print(f"Reading 2018: {p1}")
@@ -122,6 +143,8 @@ def load_2018():
 
 
 def load_2024():
+    """Loads the 2024 mayor election's two separate round files and merges
+    them -- 2024's own column names/win-code ("Tak")."""
     p1 = os.path.join(INPUT_DIR, "Mayors/2024-kand-wbp.xlsx")
     p2 = os.path.join(INPUT_DIR, "Mayors/2024-kand-wbp2.xlsx")
     print(f"Reading 2024: {p1}")
@@ -137,6 +160,10 @@ def load_2024():
 
 
 def pivot_wide(long_df):
+    """Aggregates the combined long table by (teryt, year, sex) into
+    candidates/elected/votes_r1/votes_r2 sums, pivots sex into separate
+    _m/_k columns, and fills in a computed _t = _m + _k for each metric --
+    the final wojtowie.csv shape."""
     g = long_df.groupby(["teryt6", "year", "sex"]).agg(
         candidates=("candidate", "sum"),
         elected=("elected", "sum"),
@@ -164,6 +191,8 @@ def pivot_wide(long_df):
 
 
 def main():
+    """Entry point: loads every election year, concatenates them, pivots to
+    wide form, and writes wojtowie.csv to etl/pkw_review/."""
     os.makedirs(OUT_DIR, exist_ok=True)
     frames = [load_2002(), load_2006(), load_2010(), load_2014(), load_2018(), load_2024()]
     long_df = pd.concat(frames, ignore_index=True)

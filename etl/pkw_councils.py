@@ -37,6 +37,8 @@ SEX_MAP = {"K": "k", "M": "m", "Kobieta": "k", "Mężczyzna": "m"}
 
 
 def normalize_teryt6(raw):
+    """Normalizes a raw TERYT value (which Excel/pandas may load as a float
+    like 146501.0) into a zero-padded 6-digit string."""
     s = str(raw).strip()
     if s.endswith(".0"):
         s = s[:-2]
@@ -71,6 +73,10 @@ FILE_2024_SEJMIK = "Regional/2024/kandydaci_sejmiki_wojewodztw_utf8.xlsx"
 
 
 def load_classic_year(year, cfg):
+    """Loads one of the six "classic schema" council-candidate files
+    (1998-2018, one xlsx per election), normalizing its year-specific column
+    names/codes (per `cfg`, from YEAR_CONFIGS) into the common long-table
+    shape, dropping any row with an unrecognized level or sex."""
     path = os.path.join(INPUT_DIR, cfg["file"])
     print(f"Reading {year}: {path}")
     df = pd.read_excel(path)
@@ -97,6 +103,9 @@ def load_classic_year(year, cfg):
 
 
 def load_2024():
+    """Loads and concatenates the 2024 gmina-level council candidate files
+    (split across FILES_2024 by municipality size), into the common long-table
+    shape."""
     frames = []
     for rel in FILES_2024:
         path = os.path.join(INPUT_DIR, rel)
@@ -123,6 +132,9 @@ def load_2024():
 
 
 def load_2024_regional(rel_path, teryt_col, level):
+    """Loads one 2024 powiat- or sejmik-level candidate file (from
+    Regional/2024/, a different schema than the gmina-level 2024 files) into
+    the common long-table shape."""
     path = os.path.join(INPUT_DIR, rel_path)
     print(f"Reading 2024 ({level}): {path}")
     df = pd.read_excel(path)
@@ -146,6 +158,11 @@ def load_2024_regional(rel_path, teryt_col, level):
 
 
 def build_long_table():
+    """Loads every year/level source file and concatenates them into one
+    long (one-row-per-candidate) table, then adds `agg_level` (folding
+    Warsaw's special "warsaw_city" level into "gmina") and `key` (the teryt
+    to group by -- Warsaw's own canonical 6-digit code for warsaw_city rows,
+    truncated to 4/2 digits for powiat/sejmik rows)."""
     frames = [load_classic_year(y, cfg) for y, cfg in YEAR_CONFIGS.items()]
     frames.append(load_2024())
     frames.append(load_2024_regional(FILE_2024_POWIAT, "TERYT Powiatu", "powiat"))
@@ -164,6 +181,11 @@ def build_long_table():
 
 
 def pivot_wide(long_df, agg_level):
+    """Filters `long_df` to one level (gmina/powiat/sejmik), aggregates by
+    (key, year, sex) into candidates/elected/votes sums, pivots sex into
+    separate _m/_k columns, fills in a computed _t = _m + _k for each
+    metric, and returns the result sorted by (teryt, year) -- the final
+    per-level CSV shape."""
     sub = long_df[long_df["agg_level"] == agg_level]
     g = sub.groupby(["key", "year", "sex"]).agg(
         candidates=("candidate", "sum"),
@@ -194,6 +216,8 @@ def pivot_wide(long_df, agg_level):
 
 
 def main():
+    """Entry point: builds the long table, pivots each of the 3 levels, and
+    writes rady_gmin.csv/rady_powiatow.csv/sejmik.csv to etl/pkw_review/."""
     os.makedirs(OUT_DIR, exist_ok=True)
     long_df = build_long_table()
 
