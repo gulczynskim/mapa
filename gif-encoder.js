@@ -147,7 +147,23 @@ function lzwEncodeIndices(indices, minCodeSize) {
     if (nextCode < 4096) {
       dict.set(key, nextCode);
       nextCode++;
-      if (nextCode > (1 << curCodeSize) - 1 && curCodeSize < 12) curCodeSize++;
+      // A real decoder can only register a dictionary entry once it has
+      // read the FOLLOWING code (it doesn't yet know which symbol got
+      // appended when it emits the current one) -- so its own nextCode
+      // counter permanently trails this encoder's by exactly one. Because
+      // of that lag, the width-growth boundary the decoder actually crosses
+      // is nextCode > 2^curCodeSize (not the naive nextCode > 2^curCodeSize
+      // - 1): growing this encoder's own code width at the naive threshold
+      // desyncs the bitstream from a real decoder one code before it's
+      // ready to switch. Verified against Pillow's independent GIF encoder
+      // (not just a hand-rolled decoder, which risked sharing this same
+      // mistake): fed identical pixel data through both, dumped Pillow's
+      // own LZW substream, and confirmed ITS width transitions land at the
+      // 2^n threshold used here, not 2^n - 1 -- then round-tripped this
+      // encoder's output through a standards-following decoder across
+      // random, repeating, and 4096-entry-reset inputs with byte-exact
+      // results only once this file matched that threshold.
+      if (nextCode > (1 << curCodeSize) && curCodeSize < 12) curCodeSize++;
     } else {
       emit(clearCode);
       resetDict();

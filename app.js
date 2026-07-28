@@ -1583,7 +1583,11 @@ const EXPORT_SCALE_ADJ = { linear: "liniowa", log: "logarytmiczna", quantile: "k
 // need one, so this is null for those rather than an empty string (callers
 // check truthiness to decide whether a middle line exists at all).
 const EXPORT_SCALE_ADJ_PAREN = { linear: "(równe przedziały)", log: null, quantile: null };
-const EXPORT_SCALE_SCOPE_PHRASE = { year: "dla danego roku", all: "wspólna dla wszystkich dostępnych lat" };
+// "all" is two lines ("wspólna dla wszystkich" / "dostępnych lat") -- as one
+// line it ran past the legend panel's own width and got cropped at the
+// canvas edge (no wrapping happens after this point, see the fixed-break-
+// points comment below).
+const EXPORT_SCALE_SCOPE_PHRASE = { year: ["dla danego roku"], all: ["wspólna dla wszystkich", "dostępnych lat"] };
 // Returns the description as an ARRAY of lines with fixed, deliberate break
 // points ("Skala liniowa" / "(równe przedziały)" / "dla danego roku") --
 // always broken this way regardless of whether a shorter combination would
@@ -1593,7 +1597,7 @@ function exportScaleSentenceLines() {
   const lines = [`Skala ${EXPORT_SCALE_ADJ[state.colorScale]}`];
   const paren = EXPORT_SCALE_ADJ_PAREN[state.colorScale];
   if (paren) lines.push(paren);
-  lines.push(EXPORT_SCALE_SCOPE_PHRASE[state.colorScaleScope]);
+  lines.push(...EXPORT_SCALE_SCOPE_PHRASE[state.colorScaleScope]);
   return lines;
 }
 
