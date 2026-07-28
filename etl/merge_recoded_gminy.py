@@ -254,11 +254,44 @@ RECODED_PAIRS_KNOWN_REASSIGNMENTS = [
     ("1406102", "1418063"),  # Tarczyn: changed poviat in 2006
 ]
 
+# 10 of the 13 seat-count MISMATCHES from the auto-detection pass above,
+# individually researched 2026-07-28 and confirmed to be pure "nadanie praw
+# miejskich" status changes with no boundary/territory change found for
+# that specific gmina (each search explicitly turned up no boundary
+# mention, unlike Władysławowo). The seat-count blip at each cutover is a
+# normal between-election-cycle recalculation, not evidence of a real
+# geometry change.
+RECODED_PAIRS_VERIFIED_STATUS_ONLY = [
+    ("1205032", "1205033"),  # Bobowa: city rights restored 2009-01-01
+    ("1202032", "1202033"),  # Czchów
+    ("0220022", "0220023"),  # Prusice: city rights 2000-01-01
+    ("1609102", "1609103"),  # Prószków: city status 2004
+    ("2817042", "2817043"),  # Pasym: city rights restored 1997-01-01
+    ("1006102", "1006103"),  # Rzgów: city rights restored 2006-01-01
+    ("2602032", "2602033"),  # Małogoszcz: city rights restored 1995/1996
+    ("0607022", "0607023"),  # Annopol: city rights restored 1996-01-01
+    ("1420042", "1420043"),  # Czerwińsk nad Wisłą: city status 2020-01-01, wiejska->miejsko-wiejska
+    ("1429052", "1429053"),  # Kosów Lacki: city rights restored 2000-01-01
+]
+# The other 3 mismatches are deliberately NOT merged:
+# - Władysławowo (2211041->2211043): confirmed REAL 2015 boundary change
+#   (lost several localities to newly-independent gminy) -- see comment
+#   near RECODED_PAIRS_AUTODETECTED_1996_2022 above.
+# - Szydłów (2612082->2612083) and Boguchwała (1816032->1816033): city
+#   status changes confirmed (2019 and 2008 respectively), but research
+#   couldn't rule out a boundary change either way for these two
+#   specifically -- Szydłów's own 2019 wave was reported to include
+#   boundary shifts for SOME of that wave's municipalities (unclear if
+#   Szydłów itself), and Boguchwała's seat-count swing (21->18) is the
+#   second-largest of the whole batch after Władysławowo's. Held out
+#   pending more specific research rather than risk a second wrong merge.
+
 ALL_RECODED_PAIRS = (
     RECODED_PAIRS_2023_MIEJSKA_RECLASSIFY
     + RECODED_PAIRS_2024_WIEJSKA_TO_MIEJSKO_WIEJSKA
     + RECODED_PAIRS_AUTODETECTED_1996_2022
     + RECODED_PAIRS_KNOWN_REASSIGNMENTS
+    + RECODED_PAIRS_VERIFIED_STATUS_ONLY
 )
 
 VARIABLE_FILES = [

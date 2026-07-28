@@ -234,6 +234,14 @@ let tapHighlightedLayer = null;
 let gminyOverrides = null;
 let appliedGminaOverrides = {}; // parentTeryt -> {originalParentLayer, hiddenChildLayers: {teryt: layer}}
 
+// Powiat-only (see applyPowiatHistoricalOverrides) -- same lazy-fetch/cache
+// pattern as gminyOverrides above, but a different, more general schema:
+// powiat-level events aren't all a simple monotonic "before/after" cutover
+// (Wałbrzych's 2003-2012 absorption is a genuine WINDOW, independent on
+// both ends), so this isn't just a second copy of gminyOverrides's shape.
+let powiatOverrides = null;
+let appliedPowiatOverrides = {}; // "asOf2001" | dissolvedTeryt -> whatever state its own revert needs
+
 // The map's own attribution control shows the source for whichever variable
 // is currently selected (CKE for E8, PKW for election data once added, BDL
 // GUS for the rest) -- not a fixed list of every source the site ever uses.
@@ -380,6 +388,7 @@ function renderBoundaries(data, level) {
   terytToLayer = {};
   terytToName = {};
   appliedGminaOverrides = {};
+  appliedPowiatOverrides = {};
   const border = borderStyleFor(level);
   geoLayer = L.geoJSON(data, {
     style: () => ({ fillOpacity: 0.9, color: BORDER_COLOR, weight: border.weight, opacity: border.opacity }),
@@ -397,10 +406,11 @@ function renderBoundaries(data, level) {
 
 // Builds a standalone Leaflet layer for one historical-override geometry
 // and wires it up exactly like a normal boundary layer (see bindFeatureLayer)
-// -- shared by both the split and merge branches below, which each need to
-// swap in or insert a layer that isn't part of the originally-loaded GeoJSON.
+// -- shared by both gmina- and powiat-level overrides (split/merge/
+// temporaryMerge branches below), each of which needs to swap in or insert
+// a layer that isn't part of the originally-loaded GeoJSON.
 function buildOverrideLayer(teryt, name, geometry) {
-  const border = borderStyleFor("gmina"); // only meaningful at gmina level, see comment above
+  const border = borderStyleFor(currentLevel); // whichever level is actually being overridden right now
   const layer = L.geoJSON(
     { type: "Feature", properties: { JPT_KOD_JE: teryt, JPT_NAZWA_: name }, geometry },
     { style: () => ({ fillOpacity: 0.9, color: BORDER_COLOR, weight: border.weight, opacity: border.opacity }) }
@@ -498,6 +508,106 @@ async function applyGminaHistoricalOverrides(year) {
 
   // Recomputed since the swap can change which names collide (see
   // renderBoundaries) -- cheap at the handful-of-entries scale this runs at.
+  nameCounts = {};
+  for (const n of Object.values(terytToName)) nameCounts[n] = (nameCounts[n] || 0) + 1;
+}
+
+// See powiatOverrides above. Only meaningful at powiat level. Two kinds of
+// event, structurally different from the gmina cases above:
+//  - asOf2001: 7 powiats created 2002-01-01 (brzeziński, gołdapski, leski,
+//    łobeski, sztumski, węgorzewski, wschowski) didn't exist before that --
+//    a single flat {hide: [...], replace: {...}} object (not per-parent
+//    pairs) since some parents (giżycki, and the three parents of łobeski)
+//    each receive pieces from MORE than one hidden powiat, precomputed
+//    once in etl/build_powiat_historical_overrides.py rather than modeled
+//    as independent parent/child operations that would overwrite each
+//    other. Monotonic cutover, same shape as gmina splits: year <= 2001.
+//  - temporaryMerges: Wałbrzych lost miasto-na-prawach-powiatu status
+//    2003-01-01 and regained it 2013-01-01 -- a genuine WINDOW, not a
+//    before/after cutover (years before AND after the window both show it
+//    independent; only [2003,2012] shows it absorbed into powiat
+//    wałbrzyski). activeYears is an explicit [fromYear, toYear] pair for
+//    exactly this reason.
+async function applyPowiatHistoricalOverrides(year) {
+  if (currentLevel !== "powiat") return;
+  if (powiatOverrides === null) {
+    powiatOverrides = await fetch("data/powiaty_historical_overrides.json").then((r) =>
+      r.ok ? r.json() : { asOf2001: { hide: [], replace: {} }, temporaryMerges: {} }
+    );
+  }
+
+  const { hide, replace } = powiatOverrides.asOf2001;
+  const shouldApply2001 = year <= 2001;
+  const isApplied2001 = !!appliedPowiatOverrides.asOf2001;
+  if (shouldApply2001 !== isApplied2001) {
+    if (shouldApply2001) {
+      const hiddenLayers = {};
+      for (const teryt of hide) {
+        hiddenLayers[teryt] = terytToLayer[teryt];
+        geoLayer.removeLayer(terytToLayer[teryt]);
+        delete terytToLayer[teryt];
+        delete terytToName[teryt];
+      }
+      const originalReplaced = {};
+      for (const teryt in replace) {
+        originalReplaced[teryt] = terytToLayer[teryt];
+        geoLayer.removeLayer(terytToLayer[teryt]);
+        const biggerLayer = buildOverrideLayer(teryt, terytToName[teryt], replace[teryt]);
+        geoLayer.addLayer(biggerLayer);
+        terytToLayer[teryt] = biggerLayer;
+      }
+      appliedPowiatOverrides.asOf2001 = { hiddenLayers, originalReplaced };
+    } else {
+      const { hiddenLayers, originalReplaced } = appliedPowiatOverrides.asOf2001;
+      for (const teryt in originalReplaced) {
+        geoLayer.removeLayer(terytToLayer[teryt]);
+        geoLayer.addLayer(originalReplaced[teryt]);
+        terytToLayer[teryt] = originalReplaced[teryt];
+        terytToName[teryt] = originalReplaced[teryt].feature.properties.JPT_NAZWA_;
+      }
+      for (const teryt in hiddenLayers) {
+        geoLayer.addLayer(hiddenLayers[teryt]);
+        terytToLayer[teryt] = hiddenLayers[teryt];
+        terytToName[teryt] = hiddenLayers[teryt].feature.properties.JPT_NAZWA_;
+      }
+      delete appliedPowiatOverrides.asOf2001;
+    }
+  }
+
+  for (const absorbedTeryt in powiatOverrides.temporaryMerges) {
+    const { name, activeYears, absorberTeryt, absorberGeometry } = powiatOverrides.temporaryMerges[absorbedTeryt];
+    const shouldApply = year >= activeYears[0] && year <= activeYears[1];
+    const isApplied = !!appliedPowiatOverrides[absorbedTeryt];
+    if (shouldApply === isApplied) continue;
+
+    if (shouldApply) {
+      const hiddenAbsorbed = terytToLayer[absorbedTeryt];
+      geoLayer.removeLayer(terytToLayer[absorbedTeryt]);
+      delete terytToLayer[absorbedTeryt];
+      delete terytToName[absorbedTeryt];
+
+      const originalAbsorber = terytToLayer[absorberTeryt];
+      geoLayer.removeLayer(terytToLayer[absorberTeryt]);
+      const expandedLayer = buildOverrideLayer(absorberTeryt, terytToName[absorberTeryt], absorberGeometry);
+      geoLayer.addLayer(expandedLayer);
+      terytToLayer[absorberTeryt] = expandedLayer;
+
+      appliedPowiatOverrides[absorbedTeryt] = { hiddenAbsorbed, originalAbsorber };
+    } else {
+      const { hiddenAbsorbed, originalAbsorber } = appliedPowiatOverrides[absorbedTeryt];
+      geoLayer.removeLayer(terytToLayer[absorberTeryt]);
+      geoLayer.addLayer(originalAbsorber);
+      terytToLayer[absorberTeryt] = originalAbsorber;
+      terytToName[absorberTeryt] = originalAbsorber.feature.properties.JPT_NAZWA_;
+
+      geoLayer.addLayer(hiddenAbsorbed);
+      terytToLayer[absorbedTeryt] = hiddenAbsorbed;
+      terytToName[absorbedTeryt] = name;
+
+      delete appliedPowiatOverrides[absorbedTeryt];
+    }
+  }
+
   nameCounts = {};
   for (const n of Object.values(terytToName)) nameCounts[n] = (nameCounts[n] || 0) + 1;
 }
@@ -1332,6 +1442,7 @@ function formatValue(v) {
 async function updateAll() {
   if (!geoLayer) return;
   await applyGminaHistoricalOverrides(state.year);
+  await applyPowiatHistoricalOverrides(state.year);
   const domain = currentDomain();
   lastDomain = domain;
   // Tooltip content is NOT rebuilt here -- see setTooltipContent, built

@@ -62,26 +62,36 @@ OUT_DIR = "../data"
 FIXTURES_DIR = "historical_fixtures"
 
 # (parentTeryt, [childTeryt, ...], validUntil) -- validUntil is the last year
-# the OLD (pre-split) configuration was in effect; both splits took effect
-# 2025-01-01, so 2024 is the last year needing the merged shape.
+# the OLD (pre-split) configuration was in effect.
 SPLITS = [
+    # Both took effect 2025-01-01, so 2024 is the last year needing the merged shape.
     ("1207052", ["1207132"], 2024),  # gm. Kamienica -> + gm. Szczawa
     ("2002093", ["2002162"], 2024),  # gm. Supraśl -> + gm. Grabówka
+    # gm. Jaśliska split off gm. Dukla 2010-01-01 (had been independent
+    # 1934-1954 and 1973-1976 before that) -- found 2026-07-28 while
+    # auditing why radni_gminy.json showed Dukla with complete data both
+    # before and after 2010 (i.e. the SAME code covering a LARGER area
+    # pre-2010), the same signature as every other split/merge here.
+    ("1807023", ["1807102"], 2009),  # gm. Dukla -> + gm. Jaśliska
 ]
 
 # (dissolvedTeryt, dissolvedName, fixtureFile, validUntil, [absorbingTeryt, ...])
 # Wesoła: independent town until absorbed into Warszawa via a 2002-10-27
-# referendum. Its "absorber" list is deliberately EMPTY here -- unlike
-# Ostrowice/ZG wiejska (each dissolving into one or two already-continuous
-# neighbors that just need shrinking), pre-2002 Warszawa itself was 11
-# separate gminy plus Wesoła (12 units total), not "today's Warszawa minus
-# Wesoła" -- there is no single "core Warszawa" shape from that era to shrink
-# INTO. Today's unified Warszawa teryt (1465011) already correctly shows no
-# 1998 data for that reason (it isn't one real historical unit that year).
-# This entry only adds Wesoła's own polygon back for 1998 -- reconstructing
-# the other 11 pre-2002 Warsaw gminy (one of which, Warszawa-Centrum, covered
-# several of today's central dzielnice combined and needs its own historical
-# verification) is a separate, larger follow-up.
+# referendum. 1465011 (Warszawa) IS listed as an absorber here (2026-07-28,
+# corrected from an earlier version that deliberately left it out) -- the
+# original reasoning was that pre-2002 Warszawa was actually 11 separate
+# gminy plus Wesoła (12 units), so there's no single "core Warszawa" shape
+# from that era to reconstruct FULLY. That's still true for the other 11
+# (a separate, larger follow-up -- one of them, Warszawa-Centrum, covered
+# several of today's central dzielnice combined and needs its own
+# verification) -- but leaving Warszawa's OWN polygon un-shrunk in the
+# meantime meant it still visually/interactively covered Wesoła's area
+# underneath (confirmed real bug: hovering Wesoła's area showed Warszawa's
+# tooltip, not Wesoła's, since nothing removed the overlap). Warszawa's own
+# 1998 election data is real regardless (see PKW section of the memory file
+# -- a genuine "Rada Warszawy" metropolitan-union election, not invented),
+# so showing it on a polygon that at least excludes Wesoła is strictly more
+# correct than the unshrunk overlap, even before the other 11 are done.
 # Fixture note: OSM has no digitized boundary from 2002 for Wesoła (its
 # relation was only created in 2012, already as today's district) -- used
 # today's district boundary instead. Its area (22.87 sq km, computed here)
@@ -91,7 +101,7 @@ SPLITS = [
 MERGES = [
     ("3203042", "gm. Ostrowice", "ostrowice_2018.json", 2018, ["3203023", "3203063"]),
     ("0809102", "gm. Zielona Góra (wiejska)", "zielona_gora_wiejska_2014.json", 2014, ["0862011"]),
-    ("141203", "Wesoła", "wesola_1998.json", 1998, []),
+    ("141203", "Wesoła", "wesola_1998.json", 1998, ["1465011"]),
 ]
 
 # Both unary_union (splits) and difference/intersection (merges) on this
