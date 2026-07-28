@@ -121,41 +121,6 @@ const VARIABLE_META = {
       { key: "median", label: "Mediana", hasTotal: false }, // sub-group medians can't be correctly combined
     ],
   },
-  radni_powiatu: {
-    label: "Radni powiatu (BDL GUS)",
-    unit: "osób",
-    topic: "polityka",
-    file: "data/radni_powiatu.json",
-    meaning:
-      "Liczba radnych w radach powiatów, wg płci. Dla miast na prawach powiatu (Kraków, Warszawa " +
-      "itd.) BDL sam w sobie raportuje 0 – te miasta nie mają osobnej rady powiatu, ich rada " +
-      "miasta pełni obie funkcje naraz, ale jest liczona wyłącznie pod radami gmin. Podstawiono tu " +
-      "wartość z \"Radni gminy\" dla tych 66 miast zamiast mylącego zera.",
-    source: "Bank Danych Lokalnych GUS",
-    accessNote:
-      "Temat BDL P1317, poziom powiat. Kody zmiennych: 3094 (ogółem), 3095 (mężczyźni), 3096 " +
-      "(kobiety) – https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}. Miasta na prawach powiatu " +
-      "podstawione z tematu P1312 (radni gminy) – zob. etl/patch_city_powiats.py.",
-    levels: [{ key: "powiat", label: "Powiat" }],
-    ageGroups: [{ key: "default", label: "Wszyscy radni" }],
-    measures: [{ key: "default", label: "Wartość" }],
-    sharesMeaningful: true,
-  },
-  radni_gminy: {
-    label: "Radni gminy (BDL GUS)",
-    unit: "osób",
-    topic: "polityka",
-    file: "data/radni_gminy.json",
-    meaning: "Liczba radnych w radach gmin, wg płci.",
-    source: "Bank Danych Lokalnych GUS",
-    accessNote:
-      "Temat BDL P1312, poziom gmina. Kody zmiennych: 6 (ogółem), 7 (mężczyźni), 8 (kobiety) – " +
-      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
-    levels: [{ key: "gmina", label: "Gmina" }],
-    ageGroups: [{ key: "default", label: "Wszyscy radni" }],
-    measures: [{ key: "default", label: "Wartość" }],
-    sharesMeaningful: true,
-  },
   wybory_rady_gmin: {
     label: "Wybory do rady gminy",
     unit: "osób",
@@ -188,15 +153,15 @@ const VARIABLE_META = {
     topic: "polityka",
     file: "data/wybory_rady_powiatow.json",
     meaning:
-      "Kandydaci, wybrani radni i oddane głosy w wyborach do rad powiatów, wg płci. Dane tylko z lat " +
-      "wyborczych 1998-2018 (2024 nie jest dostępny – zob. accessNote). Miasta na prawach powiatu " +
+      "Kandydaci, wybrani radni i oddane głosy w wyborach do rad powiatów, wg płci. Dane z lat " +
+      "wyborczych 1998-2024 (nieciągłe, tak jak \"Wybory do rady gminy\"). Miasta na prawach powiatu " +
       "(Kraków, Warszawa itd.) nie mają osobnej rady powiatu, więc nie występują w tym zbiorze – " +
       "ich radni są liczeni wyłącznie pod \"Wybory do rady gminy\".",
     source: "Państwowa Komisja Wyborcza (PKW)",
     accessNote:
-      "Zbiory kandydatów PKW z projektu badawczego użytkownika. Dla 2024 plik z kandydatami do rad " +
-      "powiatów nie był dostępny w folderze Councils/, tylko w Regional/2024/ – zob. " +
-      "etl/pkw_councils.py.",
+      "Zbiory kandydatów PKW z projektu badawczego użytkownika. Dane za 2024 pochodzą z innego " +
+      "folderu źródłowego niż pozostałe lata (Regional/2024/, nie Councils/ – PKW zmieniło strukturę " +
+      "publikacji tego rocznika) – zob. etl/pkw_councils.py.",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "Wszyscy kandydaci/radni" }],
     measures: [

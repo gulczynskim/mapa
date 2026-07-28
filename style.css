@@ -419,6 +419,29 @@ label.dim-select-all:has(+ .download-variables) {
   color: var(--text-primary);
 }
 
+.gif-years {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+.gif-years label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.gif-years select {
+  width: auto;
+  padding: 0.35rem;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--page);
+  color: var(--text-primary);
+}
+#gif-export-group.disabled #gif-export-note { color: var(--muted); }
+
 .contact-note { font-size: 0.85rem; color: var(--text-secondary); }
 .contact-note a { color: inherit; }
 

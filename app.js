@@ -1925,6 +1925,95 @@ function exportMapPng() {
   img.src = url;
 }
 
+// Same off-DOM <img> + <canvas> rasterization as exportMapPng, but returns
+// the raw pixels (for feeding into encodeGif, see gif-encoder.js) instead
+// of downloading a single PNG.
+function rasterizeSvgToImageData(svgString) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("rasterization failed"));
+    };
+    img.src = url;
+  });
+}
+
+// "Pobierz dynamiczną mapę zmian": one frame per year in the chosen range
+// (this variable's own available years, intersected with [from, to]),
+// same variable/ageGroup/measure/view for every frame, ALL sharing the
+// SAME color scale -- only possible because colorScaleScope "all" already
+// computes one domain pooled across every year (see currentDomain()), so
+// simply re-rendering each year under that fixed scope gives directly
+// comparable colors frame to frame. The button is only enabled in that
+// scope (see syncGifExportPanel) so this never runs under "year" scope,
+// where each frame would silently get its own incomparable scale.
+async function exportChangeGif() {
+  if (state.colorScaleScope !== "all") {
+    showError("Dynamiczna mapa zmian wymaga zakresu skali \"Wspólna dla wszystkich lat\".");
+    return;
+  }
+  const fromYear = Number(document.getElementById("gif-year-from").value);
+  const toYear = Number(document.getElementById("gif-year-to").value);
+  const years = availableYears(state.variable, state.ageGroup, state.measure)
+    .map(Number)
+    .filter((y) => y >= Math.min(fromYear, toYear) && y <= Math.max(fromYear, toYear));
+  if (years.length === 0) {
+    showError("Brak dostępnych lat w wybranym zakresie.");
+    return;
+  }
+
+  const btn = document.getElementById("gif-export-btn");
+  const originalYear = state.year;
+  btn.disabled = true;
+  try {
+    const frames = [];
+    let width = null, height = null;
+    for (let i = 0; i < years.length; i++) {
+      showLoading(`Generowanie mapy zmian... rok ${years[i]} (${i + 1}/${years.length})`);
+      state.year = years[i];
+      await updateAll();
+      const svg = buildExportSvg({ pixelScale: 1 });
+      const imageData = await rasterizeSvgToImageData(svg);
+      if (width === null) {
+        width = imageData.width;
+        height = imageData.height;
+      }
+      frames.push(imageData.data);
+    }
+
+    showLoading("Kodowanie GIF-a...");
+    // Give the "Kodowanie GIF-a..." message a chance to actually paint --
+    // encodeGif's quantization+LZW loop runs synchronously and can take a
+    // couple of seconds, which would otherwise block the frame that draws
+    // it. A plain setTimeout, NOT requestAnimationFrame -- rAF callbacks
+    // are suspended entirely whenever the tab/pane isn't actually visible
+    // (backgrounded tab, minimized window), which would hang this forever
+    // instead of just skipping the paint; setTimeout still fires either way.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const gifBytes = encodeGif({ width, height, frames, delayCentiseconds: 100, loop: 0 });
+    downloadBlob(`${exportFileBaseName()}_zmiany_${years[0]}_${years[years.length - 1]}.gif`, new Blob([gifBytes], { type: "image/gif" }));
+    hideLoading();
+  } catch (err) {
+    hideLoading();
+    showError("Nie udało się wygenerować mapy zmian: " + err.message);
+  } finally {
+    state.year = originalYear;
+    btn.disabled = false;
+    await updateAll();
+  }
+}
+
 // Guards against overlapping selections: if the variable changes again (e.g.
 // picking a new Temat right after a slow Zmienna switch) before an in-flight
 // loadVariable() resolves, the earlier call's continuation must not be
@@ -2065,6 +2154,37 @@ function syncYearSlider() {
   }
   slider.disabled = years.length <= 1;
   document.getElementById("year-value").textContent = state.year;
+  syncGifExportPanel(years);
+}
+
+// Populates the "Pobierz dynamiczną mapę zmian" year-range selects with
+// the CURRENT variable's own available years (same list syncYearSlider
+// itself uses, always ascending), preserving a previously-chosen from/to
+// where it's still valid for the new variable, defaulting to the full
+// range otherwise. Also toggles the whole panel's enabled state -- a
+// multi-year GIF only makes sense with ONE shared color scale across every
+// frame, which is exactly what colorScaleScope "all" already computes;
+// "year" scope gives each frame its OWN scale, making color meaningless
+// (and misleading) to compare across frames.
+function syncGifExportPanel(years) {
+  const group = document.getElementById("gif-export-group");
+  const fromSelect = document.getElementById("gif-year-from");
+  const toSelect = document.getElementById("gif-year-to");
+  const btn = document.getElementById("gif-export-btn");
+
+  const prevFrom = fromSelect.value;
+  const prevTo = toSelect.value;
+  const optionsHtml = years.map((y) => `<option value="${y}">${y}</option>`).join("");
+  fromSelect.innerHTML = optionsHtml;
+  toSelect.innerHTML = optionsHtml;
+  fromSelect.value = years.includes(Number(prevFrom)) ? prevFrom : String(years[0]);
+  toSelect.value = years.includes(Number(prevTo)) ? prevTo : String(years[years.length - 1]);
+
+  const enabled = state.colorScaleScope === "all" && years.length > 1;
+  group.classList.toggle("disabled", !enabled);
+  fromSelect.disabled = !enabled;
+  toSelect.disabled = !enabled;
+  btn.disabled = !enabled;
 }
 
 function buildViewButtons() {
@@ -2119,6 +2239,7 @@ function buildScaleScopeButtons() {
       state.colorScaleScope = key;
       [...container.children].forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
+      syncYearSlider(); // also refreshes the GIF export panel's enabled state, see syncGifExportPanel
       updateAll();
     });
     container.appendChild(btn);
@@ -2298,6 +2419,32 @@ function buildYearSlider() {
         updateAll();
       });
     }
+  });
+  // Left/Right (and Up/Down, the same pair a native range input already
+  // treats as equivalent) used to be handled by the browser's own default
+  // arrow-key step, which is 1 regardless of min/max -- fine for a
+  // variable with data every year, but for one with real gaps (e.g.
+  // election years 4-6 apart) a single arrow press moved the raw value by
+  // only 1, and the 'input' handler above then snapped it to the NEAREST
+  // available year, which was almost always the year you were ALREADY on
+  // (still closer than the next real one) -- the slider looked stuck,
+  // silently eating every arrow press. Handled explicitly here instead:
+  // jump straight to the adjacent entry in the actual sorted year list,
+  // keeping min/max (and so the track's real proportional scale, e.g. a
+  // visible gap between 1998 and 2002) completely unchanged -- only
+  // keyboard stepping is special-cased, dragging still uses the 'input'
+  // handler above untouched.
+  slider.addEventListener("keydown", (e) => {
+    if (!["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown"].includes(e.key)) return;
+    e.preventDefault();
+    const years = availableYears(state.variable, state.ageGroup, state.measure).map(Number).sort((a, b) => a - b);
+    const idx = years.indexOf(state.year);
+    const forward = e.key === "ArrowRight" || e.key === "ArrowUp";
+    const nextIdx = Math.min(years.length - 1, Math.max(0, idx + (forward ? 1 : -1)));
+    state.year = years[nextIdx];
+    slider.value = state.year;
+    label.textContent = state.year;
+    updateAll();
   });
 }
 
@@ -2854,10 +3001,16 @@ function buildCorrExportSvg({ pixelScale = 1 } = {}) {
 
   const { body, width, height } = scatterChartSvg(points, labelX, labelY, logX, logY, { dot: "#2a78d6", text: textColor, hairline: hairlineColor });
 
+  // Title matches the subtitle's OLD size (13px), subtitle matches the
+  // chart's own axis-label size (11px) -- per explicit user request, the
+  // title/coefficient readout were disproportionately large next to the
+  // chart itself.
   const titleText = "Korelacja zmiennych";
-  const titleH = 40;
+  const titleFontSize = 13;
+  const titleH = 24;
   const coeffText = document.getElementById("corr-coefficient").textContent || "";
-  const coeffH = coeffText ? 26 : 0;
+  const coeffFontSize = 11;
+  const coeffH = coeffText ? 18 : 0;
   const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
   const creditH = 30;
 
@@ -2865,12 +3018,12 @@ function buildCorrExportSvg({ pixelScale = 1 } = {}) {
   const totalH = titleH + coeffH + height + creditH;
 
   const coeffSvg = coeffText
-    ? `<text x="${totalW / 2}" y="${titleH + 13}" font-size="13" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(coeffText)}</text>`
+    ? `<text x="${totalW / 2}" y="${titleH + coeffFontSize}" font-size="${coeffFontSize}" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(coeffText)}</text>`
     : "";
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(totalW * pixelScale)}" height="${Math.round(totalH * pixelScale)}" viewBox="0 0 ${totalW} ${totalH}">
     <rect x="0" y="0" width="${totalW}" height="${totalH}" fill="${pageColor}" />
-    <text x="${totalW / 2}" y="24" font-size="20" font-weight="600" font-family="system-ui, sans-serif" fill="${titleColor}" text-anchor="middle">${escapeXml(titleText)}</text>
+    <text x="${totalW / 2}" y="${titleFontSize + 6}" font-size="${titleFontSize}" font-weight="600" font-family="system-ui, sans-serif" fill="${titleColor}" text-anchor="middle">${escapeXml(titleText)}</text>
     ${coeffSvg}
     <g transform="translate(0, ${titleH + coeffH})">${body}</g>
     <text x="${totalW / 2}" y="${titleH + coeffH + height + 20}" font-size="11" font-family="system-ui, sans-serif" fill="${textColor}" text-anchor="middle">${escapeXml(creditText)}</text>
@@ -2928,5 +3081,6 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("export-svg-btn").addEventListener("click", exportMapSvg);
   document.getElementById("corr-export-png-btn").addEventListener("click", exportCorrPng);
   document.getElementById("corr-export-svg-btn").addEventListener("click", exportCorrSvg);
+  document.getElementById("gif-export-btn").addEventListener("click", exportChangeGif);
   init();
 });

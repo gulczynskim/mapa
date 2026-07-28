@@ -61,6 +61,13 @@ BDL_VARIABLES = {
             "65plus": {"default": {"t": "1670872", "m": "1670879", "k": "1670886"}},
         },
     },
+    # Removed as standalone variables.js variables 2026-07 (user request) --
+    # kept here (and their fetched data/*.json files kept too) purely so
+    # they can be restored later without re-discovering the BDL ids. Also
+    # still needed as a live ETL dependency regardless: radni_gminy.json is
+    # still read by merge_recoded_gminy.py (gmina TERYT recodes) and
+    # radni_powiatu.json's own miasta-na-prawach-powiatu backfill still runs
+    # via patch_city_powiats.py.
     "radni_powiatu": {
         "topic": "P1317",
         "level": POWIAT,

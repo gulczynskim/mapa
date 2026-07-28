@@ -97,6 +97,17 @@
         </div>
       </div>
 
+      <div class="control-group" id="gif-export-group">
+        <label>Pobierz dynamiczną mapę zmian</label>
+        <p class="corr-note" id="gif-export-note">Jedna kolorowa skala dla całego zakresu lat -- dostępne
+          tylko przy zakresie skali "Wspólna dla wszystkich lat".</p>
+        <div class="gif-years">
+          <label>Od <select id="gif-year-from"></select></label>
+          <label>Do <select id="gif-year-to"></select></label>
+        </div>
+        <button type="button" id="gif-export-btn" class="action-btn">Generuj GIF</button>
+      </div>
+
       <p class="source-note">
         Granice administracyjne: Państwowy Rejestr Granic (GUGiK) dla powiatów, gmin i województw;
         podregiony wg GISCO/Eurostat (NUTS 3); dwie historyczne granice gmin (Ostrowice,
@@ -217,6 +228,7 @@
           async src="//gc.zgo.at/count.js"></script>
 
   <script src="variables.js"></script>
+  <script src="gif-encoder.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
