@@ -272,19 +272,136 @@ RECODED_PAIRS_VERIFIED_STATUS_ONLY = [
     ("0607022", "0607023"),  # Annopol: city rights restored 1996-01-01
     ("1420042", "1420043"),  # Czerwińsk nad Wisłą: city status 2020-01-01, wiejska->miejsko-wiejska
     ("1429052", "1429053"),  # Kosów Lacki: city rights restored 2000-01-01
+    # Szydłów: city status 2019-01-01, confirmed pure status-only 2026-07-28
+    # via the primary legal text itself (Dz.U. 2018 poz. 1456 -- the
+    # regulation effective 2019-01-01, not the differently-dated Dz.U. 2019
+    # poz. 1416 which covers the FOLLOWING year's wave and doesn't mention
+    # Szydłów at all). §2 item 5 grants town status; §3 item 7 sets the
+    # town's boundary as "miasta Szydłów obejmujące obszar obrębu
+    # ewidencyjnego Szydłów o powierzchni 1620,98 ha, z gminy Szydłów" --
+    # carved entirely from within its own gmina, not from any neighbor.
+    # Gmina Szydłów/powiat staszowski never appears in that regulation's
+    # separate §1 (gmina-to-gmina boundary transfers) section either. The
+    # "2019 wave had boundary shifts for some municipalities" signal that
+    # originally held this back was real but belonged to OTHER places in
+    # that same regulation (e.g. Sędziszów Małopolski, Pruchnik, Kolbuszowa,
+    # Kartuzy each gained/lost parcels) -- not Szydłów itself.
+    ("2612082", "2612083"),  # Szydłów
 ]
-# The other 3 mismatches are deliberately NOT merged:
+# The other 2 mismatches are deliberately NOT merged:
 # - Władysławowo (2211041->2211043): confirmed REAL 2015 boundary change
 #   (lost several localities to newly-independent gminy) -- see comment
 #   near RECODED_PAIRS_AUTODETECTED_1996_2022 above.
-# - Szydłów (2612082->2612083) and Boguchwała (1816032->1816033): city
-#   status changes confirmed (2019 and 2008 respectively), but research
-#   couldn't rule out a boundary change either way for these two
-#   specifically -- Szydłów's own 2019 wave was reported to include
-#   boundary shifts for SOME of that wave's municipalities (unclear if
-#   Szydłów itself), and Boguchwała's seat-count swing (21->18) is the
-#   second-largest of the whole batch after Władysławowo's. Held out
-#   pending more specific research rather than risk a second wrong merge.
+# - Boguchwała (1816032->1816033): city status confirmed 2008-01-01 (Dz.U.
+#   2007 nr 136 poz. 961, §3/§4 -- itself a clean "z gminy Boguchwała"
+#   status-only grant, same pattern as Szydłów). BUT gmina Boguchwała also
+#   lost real territory -- sołectwo Zwięczyca, 723.38 ha (roughly 44% of
+#   the town's own 911.19 ha area) -- to city Rzeszów, and multiple
+#   independent sources (Wikipedia's Zwięczyca article citing Dz.U. 2005 nr
+#   141 poz. 1185 as the legal basis, Rzeszów-local press, a gov.pl
+#   boundary-history summary) converge on the SAME effective date as the
+#   city-status grant: 2008-01-01. Original 2005 regulation staggered
+#   several Rzeszów annexations across different years (Krasne's pieces
+#   2006, Świlcza's Przybyszówka 2007/2008, Boguchwała's Zwięczyca 2008);
+#   the December 2005 amendment that repealed points 2c/2e of that
+#   regulation appears to have deferred rather than cancelled them, since
+#   Przybyszówka resurfaced (different area figure, 699.55 ha) in the 2007
+#   omnibus regulation and Zwięczyca is confirmed part of Rzeszów today. A
+#   real, substantial, coincident land loss explains the 21->18 seat swing
+#   -- this is NOT a candidate for this merge mechanism at all; it needs
+#   build_gmina_historical_overrides.py's split/land-transfer treatment
+#   instead (not yet built).
+
+# The 31-gmina 1998-crosswalk gap in radni_gminy.json (pre-1999-reform
+# 7-digit codes renumbered once the powiat system stabilized -- mostly the
+# 7 powiats created 2002-01-01, plus Sulejówek and Sławków individually,
+# the latter also crossing voivodeship 12->24). This is the SAME 31 gminy
+# already fixed for the PKW election files via GMINA_REMAP_6DIGIT in
+# pkw_prepare_merge.py -- that mapping was verified there by matching each
+# 1998 gmina's NAME (from the source project's own spreadsheet, which has a
+# name column the raw BDL data doesn't) against data/gminy.json, so it's
+# reused here directly rather than re-derived from scratch. Two signals
+# that work for every OTHER recode in this file don't work across this
+# specific boundary and were deliberately NOT used: seat-count continuity
+# (checked 2026-07-28, doesn't hold -- a national council-size formula
+# change accompanied the 1999/2002 reforms) and alphabetical code position
+# (also checked 2026-07-28 against GUS's own documented numbering rule --
+# doesn't hold either, the actual 1995-2001 codes interleave gmina types
+# rather than grouping them as that rule predicts).
+#
+# Each of the 31 old 6-digit prefixes maps to every OLD 7-digit key found
+# under it in radni_gminy.json (the whole-gmina code, plus type-4/5
+# miasto/obszar-wiejski sub-parts for the ones that were already
+# miejsko-wiejska back then) -- the sub-part targets aren't in
+# GMINA_REMAP_6DIGIT itself (that mapping only carries whole-gmina codes,
+# since PKW data has no sub-part rows), but are constructed by keeping the
+# same last digit against the mapped 6-digit prefix, then confirmed against
+# radni_gminy.json's own current keys before merging (2026-07-28).
+#
+# One special case: Jeżów (100606 -> 1021043) would naively construct
+# 1021042 as its target, but that code no longer exists -- it was itself
+# an old code, already merged into 1021043 by
+# RECODED_PAIRS_2023_MIEJSKA_RECLASSIFY above (Jeżów's 2023 wiejska->
+# miejsko-wiejska promotion). Chained straight to the final live code
+# instead of the dissolved intermediate one; the years (1995-2001 here,
+# 2002-2025 already on 1021043) don't overlap.
+RECODED_PAIRS_1998_CROSSWALK_TO_RADNI_GMINY = [
+    ("0804093", "0812013"),  # Sława
+    ("0804094", "0812014"),  # Sława
+    ("0804095", "0812015"),  # Sława
+    ("0804103", "0812023"),  # Szlichtyngowa
+    ("0804104", "0812024"),  # Szlichtyngowa
+    ("0804105", "0812025"),  # Szlichtyngowa
+    ("0804113", "0812033"),  # Wschowa
+    ("0804114", "0812034"),  # Wschowa
+    ("0804115", "0812035"),  # Wschowa
+    ("1006011", "1021011"),  # Brzeziny (miasto)
+    ("1006042", "1021022"),  # Brzeziny gm. (wiejska)
+    ("1006052", "1021032"),  # Dmosin
+    ("1006062", "1021043"),  # Jeżów -- chained via already-consumed 1021042, see above
+    ("1006092", "1021052"),  # Rogów
+    ("1212021", "2401081"),  # Sławków
+    ("1412021", "1412151"),  # Sulejówek
+    ("1801012", "1821012"),  # Baligród
+    ("1801022", "1821022"),  # Cisna
+    ("1801043", "1821033"),  # Lesko
+    ("1801044", "1821034"),  # Lesko
+    ("1801045", "1821035"),  # Lesko
+    ("1801062", "1821042"),  # Olszanica
+    ("1801072", "1821052"),  # Solina
+    ("2209023", "2216013"),  # Dzierzgoń
+    ("2209024", "2216014"),  # Dzierzgoń
+    ("2209025", "2216015"),  # Dzierzgoń
+    ("2209052", "2216022"),  # Mikołajki Pomorskie
+    ("2209092", "2216032"),  # Stary Dzierzgoń
+    ("2209102", "2216042"),  # Stary Targ
+    ("2209113", "2216053"),  # Sztum
+    ("2209114", "2216054"),  # Sztum
+    ("2209115", "2216055"),  # Sztum
+    ("2806022", "2818012"),  # Banie Mazurskie
+    ("2806032", "2819012"),  # Budry
+    ("2806072", "2819022"),  # Pozezdrze
+    ("2806093", "2819033"),  # Węgorzewo
+    ("2806094", "2819034"),  # Węgorzewo
+    ("2806095", "2819035"),  # Węgorzewo
+    ("2813012", "2818022"),  # Dubeninki
+    ("2813023", "2818033"),  # Gołdap
+    ("2813024", "2818034"),  # Gołdap
+    ("2813025", "2818035"),  # Gołdap
+    ("3204013", "3218013"),  # Dobra
+    ("3204014", "3218014"),  # Dobra
+    ("3204015", "3218015"),  # Dobra
+    ("3205052", "3218032"),  # Radowo Małe
+    ("3205063", "3218043"),  # Resko
+    ("3205064", "3218044"),  # Resko
+    ("3205065", "3218045"),  # Resko
+    ("3214073", "3218023"),  # Łobez
+    ("3214074", "3218024"),  # Łobez
+    ("3214075", "3218025"),  # Łobez
+    ("3214123", "3218053"),  # Węgorzyno
+    ("3214124", "3218054"),  # Węgorzyno
+    ("3214125", "3218055"),  # Węgorzyno
+]
 
 ALL_RECODED_PAIRS = (
     RECODED_PAIRS_2023_MIEJSKA_RECLASSIFY
@@ -292,6 +409,7 @@ ALL_RECODED_PAIRS = (
     + RECODED_PAIRS_AUTODETECTED_1996_2022
     + RECODED_PAIRS_KNOWN_REASSIGNMENTS
     + RECODED_PAIRS_VERIFIED_STATUS_ONLY
+    + RECODED_PAIRS_1998_CROSSWALK_TO_RADNI_GMINY
 )
 
 VARIABLE_FILES = [
