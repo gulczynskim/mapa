@@ -1456,11 +1456,24 @@ function stripNegativeZero(formatted) {
 // (wages, headcounts) and the extra precision isn't meaningful there. Never
 // used for the CSV export, which formats numbers itself (see csvField) --
 // full precision, Polish "," decimal to match the ";"-delimited file.
-function formatPl(n, maxFractionDigits) {
+//
+// padDecimals: without it, toLocaleString only sets maximumFractionDigits,
+// so a value that happens to round evenly (e.g. Różnica = 4,0) prints as
+// plain "4" while a neighboring value from the SAME variable/widok prints
+// as "4,9" -- an inconsistent decimal count across values that all share
+// one fixed, meaningful precision (view.decimals). Pass true wherever the
+// number being formatted has such a defined precision (matches
+// legendValueFormat below, which has always done this for the legend) --
+// left false by default for callers like axis tick labels, where the
+// "right" number of decimals varies per tick and forcing one would print
+// misleading trailing zeros on otherwise-round numbers (e.g. a log-scale
+// tick at exactly 100 showing "100,00").
+function formatPl(n, maxFractionDigits, padDecimals) {
+  const decimals = maxFractionDigits ?? 2;
   const formatted =
     Math.abs(n) >= 1000
       ? n.toLocaleString("pl-PL", { maximumFractionDigits: 0, useGrouping: false })
-      : n.toLocaleString("pl-PL", { maximumFractionDigits: maxFractionDigits ?? 2, useGrouping: true });
+      : n.toLocaleString("pl-PL", { minimumFractionDigits: padDecimals ? decimals : 0, maximumFractionDigits: decimals, useGrouping: true });
   return stripNegativeZero(formatted);
 }
 
@@ -1496,7 +1509,7 @@ function formatValueWithView(v, view, unit) {
   // (unlike % -> p.p.), so it's shown bare rather than with a misleading
   // "na 100 tys." suffix.
   if (view === VIEWS.diff && unit === "na 100 tys.") unit = "";
-  const formatted = formatPl(v, view.decimals);
+  const formatted = formatPl(v, view.decimals, true);
   return unit ? formatted + " " + unit : formatted;
 }
 
@@ -2749,7 +2762,7 @@ function buildSearch() {
     list.innerHTML = "";
     if (q.length < 2) return;
     const matches = Object.entries(terytToName)
-      .filter(([, name]) => normalizePl(name).includes(q))
+      .filter(([teryt, name]) => normalizePl(name).includes(q) || teryt.includes(q))
       .slice(0, 8);
     matches.forEach(([teryt, name]) => {
       const item = document.createElement("li");
@@ -2822,7 +2835,7 @@ function buildUnitOverviewSearch() {
     list.innerHTML = "";
     if (q.length < 2) return;
     const index = await ensureUnitOverviewIndex();
-    const matches = index.filter((e) => normalizePl(e.name).includes(q)).slice(0, 8);
+    const matches = index.filter((e) => normalizePl(e.name).includes(q) || e.teryt.includes(q)).slice(0, 8);
     matches.forEach((entry) => {
       const item = document.createElement("li");
       item.textContent = unitOverviewDisplayName(entry);
@@ -3551,7 +3564,7 @@ async function runCorrelation() {
     return;
   }
   const r = pearson(points.map((p) => p.x), points.map((p) => p.y));
-  coeffEl.textContent = `Korelacja Pearsona: r = ${formatPl(r, 3)} (n = ${points.length})`;
+  coeffEl.textContent = `Korelacja Pearsona: r = ${formatPl(r, 3, true)} (n = ${points.length})`;
 }
 
 // Ticks for a linear axis: ~5 evenly spaced steps. For a log10 axis (values
