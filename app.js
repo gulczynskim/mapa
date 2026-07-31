@@ -210,6 +210,41 @@ let attributionControl = null;
 let currentSourceAttribution = null;
 let terytToLayer = {};
 let terytToName = {};
+// Names for TERYT codes with 1998 election data but no boundary geometry --
+// the 11 pre-2002 Warszawa dzielnica-gminy (dissolved into unified Warszawa
+// 2002-10-27, see gender_inequality_map_project memory's "Reconstructing the
+// other 11 pre-2002 Warsaw gmina" note -- deliberately not given map
+// polygons). Kept OUT of terytToName itself since that map is assumed
+// throughout to have a matching terytToLayer entry (search results jump to
+// `terytToLayer[teryt]`, which would be undefined here and throw). Sourced
+// directly from the project's own 1998 PKW candidate list
+// (`1998-kand-rady.xlsx`, `Jednostka` column, Szczebel "GP"/"GW"), the same
+// source `GMINA_REMAP_6DIGIT` in etl/pkw_prepare_merge.py was built from --
+// confirmed 2026-07-31.
+const ORPHAN_TERYT_NAMES = {
+  143101: "Warszawa-Bemowo",
+  143102: "Warszawa-Białołęka",
+  143103: "Warszawa-Bielany",
+  143104: "Warszawa-Centrum",
+  143112: "Warszawa-Rembertów",
+  143113: "Warszawa-Targówek",
+  143114: "Warszawa-Ursus",
+  143115: "Warszawa-Ursynów",
+  143116: "Warszawa-Wawer",
+  143117: "Warszawa-Wilanów",
+  143118: "Warszawa-Włochy",
+};
+
+// Display name for a teryt that isn't guaranteed to have a map polygon --
+// CSV export deliberately includes every historical data row regardless of
+// current geometry (e.g. these pre-2002 Warszawa boroughs), per standing
+// project convention of never dropping unmatched/unmappable units from
+// historical data work. Rankings and the correlation tool, by contrast, are
+// map-linked views and filter these out entirely instead (see their own
+// `teryt in terytToName` guards) rather than using this fallback.
+function nameForOrphanableTeryt(teryt) {
+  return terytToName[teryt] || ORPHAN_TERYT_NAMES[teryt] || teryt;
+}
 let nameCounts = {}; // name -> how many teryts share it, precomputed per level (see renderBoundaries)
 let lastDomain = [];
 // Whatever runCorrelation() last successfully plotted -- null if nothing
@@ -1413,7 +1448,8 @@ function stripNegativeZero(formatted) {
 // above, where both the separator and decimals are dropped ("10000" not
 // "10 000,0"): a space-grouped decimal reads as cluttered at that magnitude
 // (wages, headcounts) and the extra precision isn't meaningful there. Never
-// used for the CSV export, which stays machine-readable with plain "." decimals.
+// used for the CSV export, which formats numbers itself (see csvField) --
+// full precision, Polish "," decimal to match the ";"-delimited file.
 function formatPl(n, maxFractionDigits) {
   const formatted =
     Math.abs(n) >= 1000
@@ -2663,8 +2699,9 @@ function updateRankings(domain) {
   const rows = [];
   const data = loadedData[state.variable] || {};
   for (const teryt in data) {
+    if (!(teryt in terytToName)) continue; // no map polygon (e.g. pre-2002 Warszawa dzielnice) -- rankings only list units actually on the map
     const v = mapValueFor(teryt);
-    if (v !== null) rows.push({ teryt, name: displayName(teryt, terytToName[teryt] || teryt), value: v });
+    if (v !== null) rows.push({ teryt, name: displayName(teryt, terytToName[teryt]), value: v });
   }
   rows.sort((a, b) => b.value - a.value);
 
@@ -2818,8 +2855,23 @@ function resolveDimension(variable, dim, chosenKey) {
   return options.some((o) => o.key === chosenKey) ? chosenKey : options[0].key;
 }
 
+// ";" delimiter + "," decimals, not "," delimiter + "." decimals -- Excel's
+// default list separator under Polish regional settings is ";", and its
+// number parser only recognizes "," as a decimal mark. A "." decimal under
+// that locale gets silently imported as TEXT (real values still display,
+// just left-aligned and unusable in a formula/sum), and a "," delimiter
+// mismatch on top of that makes an entire row collapse into one text cell
+// with its escaping quotes left visible as stray marks. Only numbers get
+// this treatment (bare, no quotes needed since neither "," nor ";" nor '"'
+// can appear in one) -- text fields (teryt, names, labels) stay quoted
+// exactly as before.
+function csvField(v) {
+  if (typeof v === "number") return String(v).replace(".", ",");
+  return `"${String(v).replace(/"/g, '""')}"`;
+}
+
 function triggerCsvDownload(rows, filename) {
-  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const csv = rows.map((r) => r.map(csvField).join(";")).join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -2872,17 +2924,18 @@ async function downloadCsv() {
       for (const measureOpt of matching(meta.measures, chosenMeasures)) {
         const key = sliceKey(ageGroupOpt.key, measureOpt.key);
         for (const teryt in data) {
-          const name = displayName(teryt, terytToName[teryt] || teryt);
+          const name = displayName(teryt, nameForOrphanableTeryt(teryt));
           for (const year in data[teryt]) {
             const y = Number(year);
             if (yearFrom && y < Number(yearFrom)) continue;
             if (yearTo && y > Number(yearTo)) continue;
             const d = data[teryt][year][key];
             if (!d) continue;
-            const row = [meta.label, levelLabel, ageGroupOpt.label, measureOpt.label, teryt, name, year, d.k, d.m, d.t];
+            const numOrBlank = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "" : v);
+            const row = [meta.label, levelLabel, ageGroupOpt.label, measureOpt.label, teryt, name, year, numOrBlank(d.k), numOrBlank(d.m), numOrBlank(d.t)];
             for (const viewKey of chosenViews) {
               const v = viewApplies(viewKey, meta, measureOpt.key) ? VIEWS[viewKey].pick(d) : null;
-              row.push(v === null || v === undefined || !Number.isFinite(v) ? "" : v);
+              row.push(numOrBlank(v));
             }
             rows.push(row);
           }
@@ -3031,9 +3084,10 @@ async function runCorrelation() {
   ]);
   const points = [];
   for (const teryt of allTeryts) {
+    if (!(teryt in terytToName)) continue; // no map polygon -- same rule as updateRankings
     const x = axisValue(cfgX, teryt);
     const y = axisValue(cfgY, teryt);
-    if (x !== null && y !== null) points.push({ x, y, name: displayName(teryt, terytToName[teryt] || teryt) });
+    if (x !== null && y !== null) points.push({ x, y, name: displayName(teryt, terytToName[teryt]) });
   }
 
   const labelX = axisLabel(cfgX);
