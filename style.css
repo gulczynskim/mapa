@@ -312,6 +312,102 @@ input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .ranking-list .val { font-variant-numeric: tabular-nums; color: var(--text-secondary); flex-shrink: 0; }
 
+.unit-overview-tabs { margin: 0.9rem 0 1rem; }
+.unit-overview-pane { margin-bottom: 1rem; }
+
+.unit-overview-widok-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.8rem;
+}
+.unit-overview-widok-label select {
+  margin-left: 0.4rem;
+  padding: 0.35rem;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--page);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.unit-overview-topic { margin-bottom: 0.6rem; }
+.unit-overview-topic-body { margin-top: 0.6rem; }
+.unit-overview-table-wrap { overflow-x: auto; }
+.unit-overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.unit-overview-table th, .unit-overview-table td {
+  padding: 0.3rem 0.6rem;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+}
+/* Two pinned "index" columns -- variable name (rowspan across its ageGroup
+   sub-rows) and, next to it, the ageGroup/category that row is for -- both
+   stay visible while widok/year columns scroll underneath. Targeted by an
+   explicit class, NOT :nth-child -- a sub-row after the group's first omits
+   the rowspanned name cell entirely, which shifts every remaining cell in
+   THAT <tr> back one position (nth-child counts actual children per row,
+   it doesn't reserve a phantom slot for a cell spanned in from a previous
+   row), so a position-based selector would silently grab the wrong column
+   on every row but the first -- confirmed live: the ageGroup column
+   visibly scrolled instead of staying pinned before this fix. FIXED widths
+   (not max-width) are required too, not just for wrapping: the second
+   column's own `left` offset has to equal the first column's real width,
+   and that only works as a plain CSS constant if the first column's width
+   itself is pinned rather than content-dependent. An explicit background is
+   also required on both, not decorative -- without one the scrolled-past
+   columns would show through underneath as the table scrolls. */
+.unit-overview-table th.unit-overview-name-col, .unit-overview-table td.unit-overview-name-col {
+  text-align: left;
+  white-space: normal;
+  font-variant-numeric: normal;
+  position: sticky;
+  left: 0;
+  width: 200px;
+  max-width: 200px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--hairline);
+}
+.unit-overview-table th.unit-overview-agegroup-col, .unit-overview-table td.unit-overview-agegroup-col {
+  text-align: left;
+  white-space: normal;
+  font-variant-numeric: normal;
+  position: sticky;
+  left: 200px;
+  width: 180px;
+  max-width: 180px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--hairline);
+}
+.unit-overview-table th { color: var(--text-secondary); font-weight: 600; }
+.unit-overview-year-note { color: var(--muted); font-weight: 400; font-size: 0.72rem; }
+
+.unit-overview-var-label { margin-bottom: 0.15rem; }
+.unit-overview-dim-selects { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.3rem; }
+.unit-overview-dim-select {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.unit-overview-dim-select select {
+  max-width: 100%;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.3rem;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+  background: var(--page);
+  color: var(--text-primary);
+}
+
 .corr-axes {
   display: grid;
   grid-template-columns: 1fr 1fr;

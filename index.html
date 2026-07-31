@@ -139,6 +139,30 @@
     </section>
 
     <section class="panel">
+      <h2>Sprawdź gminę / powiat / podregion / województwo</h2>
+      <input type="text" id="unit-overview-search-input" placeholder="Wpisz nazwę" class="search-input" />
+      <ul id="unit-overview-search-results" class="search-results"></ul>
+
+      <div id="unit-overview-content" hidden>
+        <h3 id="unit-overview-title"></h3>
+        <div class="view-buttons unit-overview-tabs">
+          <button type="button" id="unit-overview-tab-current" class="active">Stan obecny</button>
+          <button type="button" id="unit-overview-tab-trend">Zmiana w czasie</button>
+        </div>
+
+        <div id="unit-overview-pane-current" class="unit-overview-pane"></div>
+        <div id="unit-overview-pane-trend" class="unit-overview-pane" hidden>
+          <label class="unit-overview-widok-label">Widok
+            <select id="unit-overview-widok-select"></select>
+          </label>
+          <div id="unit-overview-pane-trend-topics"></div>
+        </div>
+
+        <button type="button" id="unit-overview-csv-btn" class="action-btn">Pobierz CSV</button>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Korelacja zmiennych</h2>
       <p class="corr-note">Możesz porównać dowolne dwie kombinacje zmienna/rok/widok -- np. tę samą
         zmienną w dwóch latach, kobiety vs. mężczyźni, albo którąś z map nierówności (różnica, proporcja,

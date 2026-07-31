@@ -10,6 +10,12 @@ const BOUNDARY_FILES = {
   wojewodztwo: "data/wojewodztwa.json",
 };
 
+// Level labels independent of any one variable's own `levels` metadata --
+// needed by the unit-overview search (data/jednostkiOverview below), which
+// searches across all four levels at once rather than whichever one the
+// map's currently-selected variable happens to use.
+const LEVEL_LABELS = { powiat: "Powiat", gmina: "Gmina", podregion: "Podregion", wojewodztwo: "Województwo" };
+
 // Single anchor hex per hue, shared by every place that grades a hue toward
 // white at an arbitrary bucket count (shadesTowardWhite below) -- the
 // quantile color scale (see QUANTILE_BUCKETS) uses these directly instead of
@@ -247,6 +253,22 @@ function nameForOrphanableTeryt(teryt) {
 }
 let nameCounts = {}; // name -> how many teryts share it, precomputed per level (see renderBoundaries)
 let lastDomain = [];
+// "Sprawdź gminę / ..." panel state -- null until a unit is picked from that
+// panel's own search (see buildUnitOverviewSearch). topicData caches each
+// expanded topic's per-variable rows (see ensureTopicLoaded) so switching
+// tabs or the trend widok selector re-renders instead of re-fetching.
+let unitOverviewState = null;
+// Cross-level {teryt, level, name} index for that same search box -- built
+// lazily (not on page load) since it needs all four boundary files, tens of
+// MB combined, and this panel is opt-in. Cached as a PROMISE (not the
+// resulting array) so two fast keystrokes before the first fetch resolves
+// don't kick off the fetch twice.
+let unitOverviewIndexPromise = null;
+// {level: {name: count}} for unitOverviewDisplayName's same-name-within-a-
+// level disambiguation -- kept separate from the map's own `nameCounts`
+// above, which only ever reflects whichever ONE level is currently
+// rendered and would give wrong counts for the other three.
+let unitOverviewNameCounts = null;
 // Whatever runCorrelation() last successfully plotted -- null if nothing
 // has been compared yet, or the last attempt was a level mismatch. Export
 // (SVG/PNG) reuses this instead of recomputing points, so what gets
@@ -757,6 +779,7 @@ async function init() {
   buildVariableSelect();
   buildViewButtons();
   buildSearch();
+  buildUnitOverviewPanel();
   buildDownloadPanel();
   await restoreFromUrl();
   // Must run AFTER restoreFromUrl() -- it seeds the correlation tool's X
@@ -850,24 +873,7 @@ function populateCorrViewOptions(prefix) {
   const meta = VARIABLE_META[variable];
   const ageGroup = document.getElementById(`corr-${prefix}-agegroup`).value;
   const measure = document.getElementById(`corr-${prefix}-measure`).value;
-  const totalOk = hasTotalFor(meta, ageGroup, measure);
-  const sharesOk = canShowShares(meta, measure);
-  const womenOnly = meta.sexScope === "women";
-  // Mirrors the map's own updateViewAvailability(): a variable GUS never
-  // publishes broken down by sex (e.g. zgwalcenia -- only Ogółem exists)
-  // needs Kobiety/Mężczyźni/Różnica/Proporcje off too, not just gated on
-  // womenOnly -- that flag means something different (conceptually
-  // women-only, e.g. a screening program), and previously left this axis
-  // offering five views with literally no data behind them.
-  const sexOk = hasSexData(variable);
-
-  const keys = Object.keys(VIEWS).filter((key) => {
-    if (key === "total") return totalOk && !womenOnly;
-    if (key === "shareWomen" || key === "shareMen") return sharesOk;
-    if (key === "women") return sexOk;
-    if (key === "men" || key === "diff" || key === "ratio" || key === "ratioInverse") return sexOk && !womenOnly;
-    return true;
-  });
+  const keys = applicableViewKeys(variable, meta, ageGroup, measure);
 
   const select = document.getElementById(`corr-${prefix}-view`);
   const keep = keys.includes(select.value) ? select.value : keys[0];
@@ -1458,21 +1464,46 @@ function formatPl(n, maxFractionDigits) {
   return stripNegativeZero(formatted);
 }
 
-function formatValue(v) {
-  if (v === null) return "brak danych";
-  const view = VIEWS[state.view];
-  let unit = view.unit !== undefined ? view.unit : unitFor(VARIABLE_META[state.variable], state.measure);
+// Pulled out of formatValue() so the unit-overview panel can format a cell
+// for an arbitrary (view, unit) pair -- one table there mixes several
+// variables and several widoki at once, none of it tied to the map's own
+// state.view/state.variable/state.measure the way every other caller is.
+function formatValueWithView(v, view, unit) {
+  if (v === null || v === undefined) return "brak danych";
+  // 0/0 -- both sexes genuinely zero (e.g. a variable with zero students of
+  // either sex some year), as distinct from Infinity below. Only shareWomen/
+  // shareMen's k+(k+m) can land here: their shared denominator k+m is zero
+  // ONLY when both k and m are (a lone-sided zero can't make k+m zero when
+  // counts are never negative), so there's no single empty side to name --
+  // "brak danych" is the honest label, not "brak kobiet"/"brak mężczyzn".
+  if (Number.isNaN(v)) return "brak danych";
+  // Infinity -- a nonzero count divided by a genuine zero on the OTHER side
+  // (e.g. Proporcja M/K for an all-women council: zero men). Unlike the 0/0
+  // case above, this DOES identify a single empty side, so name it directly
+  // instead of the generic "brak danych" -- only ratio/ratioInverse can
+  // land here (shareWomen/shareMen's denominator is the 0/0 case instead).
+  if (!Number.isFinite(v)) {
+    if (view === VIEWS.ratio) return "brak mężczyzn"; // k/m, m was the zero denominator
+    if (view === VIEWS.ratioInverse) return "brak kobiet"; // m/k, k was the zero denominator
+    return "brak danych"; // shouldn't be reachable from any other view, but stay safe
+  }
   // Subtracting two percentages is a point difference, not itself a
   // percentage (e.g. 65% minus 60% is "5 p.p.", not "5%") -- only applies to
   // Różnica, since ratio/share views already override their own unit above.
-  if (state.view === "diff" && unit === "%") unit = "p.p.";
+  if (view === VIEWS.diff && unit === "%") unit = "p.p.";
   // Same idea for a "per 100 000" rate: the difference of two such rates
   // isn't itself "per 100 000" of anything -- there's no clean unit for it
   // (unlike % -> p.p.), so it's shown bare rather than with a misleading
   // "na 100 tys." suffix.
-  if (state.view === "diff" && unit === "na 100 tys.") unit = "";
+  if (view === VIEWS.diff && unit === "na 100 tys.") unit = "";
   const formatted = formatPl(v, view.decimals);
   return unit ? formatted + " " + unit : formatted;
+}
+
+function formatValue(v) {
+  const view = VIEWS[state.view];
+  const unit = view.unit !== undefined ? view.unit : unitFor(VARIABLE_META[state.variable], state.measure);
+  return formatValueWithView(v, view, unit);
 }
 
 async function updateAll() {
@@ -1494,6 +1525,7 @@ async function updateAll() {
   updateLegend(domain);
   updateRankings(domain);
   updateUrl();
+  refreshOpenUnitOverviewTopics("current"); // keeps "Stan obecny" in sync with the map's own year slider
 }
 
 // Deliberately does NOT reuse formatPl() -- that function drops decimals
@@ -2477,6 +2509,48 @@ function canShowShares(meta, measure) {
   return meta.sharesMeaningful === true && !isRateMeasure(measure);
 }
 
+// shareWomen/shareMen replicate the same gate the map's own view buttons use
+// (canShowShares) -- disabled there for a measure that isn't a raw headcount,
+// so blank them in CSV exports too rather than exporting a k/(k+m) share
+// that isn't a meaningful operation for that measure. Deliberately NOT the
+// fuller applicableViewKeys() gate below (which also hides total/women/men/
+// diff/ratio for sex-less or women-only variables) -- those already come out
+// blank via VIEWS[key].pick()'s own null propagation when k/m are null, so
+// the extra gating there only matters for deciding which table COLUMN to
+// render at all, not what a CSV cell contains. Shared by downloadCsv() and
+// the unit-overview panel's own CSV export.
+function viewAppliesForCsv(viewKey, meta, measureKey) {
+  if (viewKey !== "shareWomen" && viewKey !== "shareMen") return true;
+  return canShowShares(meta, measureKey);
+}
+
+// Blank string for null/undefined/non-finite, otherwise the raw number --
+// shared by every CSV row builder so a cell with no real value renders as
+// empty rather than the literal string "null"/"undefined"/"NaN".
+function numOrBlank(v) {
+  return v === null || v === undefined || !Number.isFinite(v) ? "" : v;
+}
+
+// Every VIEWS key actually meaningful for one (variable, ageGroup, measure)
+// combo -- extracted from populateCorrViewOptions (which built this same
+// filtered key list inline) so the unit-overview panel's tables can use the
+// identical gate to decide which widok COLUMNS to render at all, not just
+// which cells to blank. See that function for what each branch mirrors on
+// the map's own view buttons.
+function applicableViewKeys(variable, meta, ageGroup, measure) {
+  const totalOk = hasTotalFor(meta, ageGroup, measure);
+  const sharesOk = canShowShares(meta, measure);
+  const womenOnly = meta.sexScope === "women";
+  const sexOk = hasSexData(variable);
+  return Object.keys(VIEWS).filter((key) => {
+    if (key === "total") return totalOk && !womenOnly;
+    if (key === "shareWomen" || key === "shareMen") return sharesOk;
+    if (key === "women") return sexOk;
+    if (key === "men" || key === "diff" || key === "ratio" || key === "ratioInverse") return sexOk && !womenOnly;
+    return true;
+  });
+}
+
 function hasTotalForCurrentSelection() {
   return hasTotalFor(VARIABLE_META[state.variable], state.ageGroup, state.measure);
 }
@@ -2695,6 +2769,394 @@ function buildSearch() {
   });
 }
 
+// Builds (once, lazily) the {teryt, level, name} index the "Sprawdź gminę /
+// ..." panel searches across all four levels with -- unlike the main search
+// above, which only ever searches whichever ONE level's terytToName is
+// currently on screen. loadBoundaries() itself already caches per level, so
+// this just reshapes whatever's loaded (fetching the other levels for the
+// first time here if the user hasn't switched to them on the map yet).
+async function ensureUnitOverviewIndex() {
+  if (!unitOverviewIndexPromise) unitOverviewIndexPromise = buildUnitOverviewIndex();
+  return unitOverviewIndexPromise;
+}
+
+async function buildUnitOverviewIndex() {
+  const levels = Object.keys(BOUNDARY_FILES);
+  const boundaries = await Promise.all(levels.map(loadBoundaries));
+  const index = [];
+  unitOverviewNameCounts = {};
+  levels.forEach((level, i) => {
+    const counts = {};
+    for (const feature of boundaries[i].features) {
+      const teryt = feature.properties.JPT_KOD_JE;
+      const name = feature.properties.JPT_NAZWA_;
+      index.push({ teryt, level, name });
+      counts[name] = (counts[name] || 0) + 1;
+    }
+    unitOverviewNameCounts[level] = counts;
+  });
+  return index;
+}
+
+// Always shows the level (unlike the map's own displayName, which only adds
+// a qualifier for same-level name collisions) -- a bare "Bielany" is
+// ambiguous here in a way it isn't on the map, since this search spans all
+// four levels and the same name can legitimately exist at more than one.
+function unitOverviewDisplayName(entry) {
+  const levelLabel = LEVEL_LABELS[entry.level];
+  const count = unitOverviewNameCounts[entry.level][entry.name] || 0;
+  if (count <= 1) return `${entry.name} (${levelLabel})`;
+  const voivodeship = VOIVODESHIP_BY_CODE[entry.teryt.slice(0, 2)] || entry.teryt.slice(0, 2);
+  return `${entry.name} (${levelLabel}, ${voivodeship})`;
+}
+
+function buildUnitOverviewSearch() {
+  const input = document.getElementById("unit-overview-search-input");
+  const list = document.getElementById("unit-overview-search-results");
+  // Pre-warms the index on focus (before the user finishes typing) since it
+  // can mean fetching boundary files tens of MB in size -- doesn't await it,
+  // the input handler below awaits the same cached promise regardless.
+  input.addEventListener("focus", () => ensureUnitOverviewIndex(), { once: true });
+  input.addEventListener("input", async () => {
+    const q = normalizePl(input.value.trim());
+    list.innerHTML = "";
+    if (q.length < 2) return;
+    const index = await ensureUnitOverviewIndex();
+    const matches = index.filter((e) => normalizePl(e.name).includes(q)).slice(0, 8);
+    matches.forEach((entry) => {
+      const item = document.createElement("li");
+      item.textContent = unitOverviewDisplayName(entry);
+      item.addEventListener("click", () => {
+        selectUnitOverview(entry.teryt, entry.level, entry.name);
+        input.value = "";
+        list.innerHTML = "";
+      });
+      list.appendChild(item);
+    });
+  });
+}
+
+// Only topics with at least one variable actually available at `level` --
+// e.g. election variables (gmina/powiat/wojewodztwo) don't offer "Zdrowie"
+// at all if every health variable there is powiat-only and level is gmina.
+function topicsForLevel(level) {
+  return topicsInUse().filter((topic) => variablesForLevelInTopic(level, topic).length > 0);
+}
+
+function variablesForLevelInTopic(level, topic) {
+  return variablesInTopic(topic).filter((k) => VARIABLE_META[k].levels.some((l) => l.key === level));
+}
+
+// Closest entry in `years` (ascending) to `target`; exact ties favor the
+// more recent year (iterating ascending and replacing on <= keeps moving
+// forward through equal-distance candidates). Used by the "Stan obecny" tab
+// to still show *something* for a variable whose own year granularity
+// (e.g. election years only) doesn't include the map's currently selected
+// year.
+function nearestAvailableYear(years, target) {
+  return years.reduce((best, y) => (Math.abs(y - target) <= Math.abs(best - target) ? y : best));
+}
+
+async function selectUnitOverview(teryt, level, name) {
+  unitOverviewState = { teryt, level, name, tab: unitOverviewState?.tab ?? "current", topicData: new Map() };
+  document.getElementById("unit-overview-content").hidden = false;
+  document.getElementById("unit-overview-title").textContent = `${name} (${LEVEL_LABELS[level]})`;
+  setUnitOverviewTab(unitOverviewState.tab);
+  renderUnitOverviewTopics();
+}
+
+function setUnitOverviewTab(tab) {
+  unitOverviewState.tab = tab;
+  document.getElementById("unit-overview-tab-current").classList.toggle("active", tab === "current");
+  document.getElementById("unit-overview-tab-trend").classList.toggle("active", tab === "trend");
+  document.getElementById("unit-overview-pane-current").hidden = tab !== "current";
+  document.getElementById("unit-overview-pane-trend").hidden = tab !== "trend";
+}
+
+// Rebuilds the topic <details> skeletons (collapsed) in both tabs for
+// whichever unit was just selected -- cheap, just topic labels, no variable
+// data fetched until a topic is actually opened (see ensureTopicLoaded).
+function renderUnitOverviewTopics() {
+  const { level } = unitOverviewState;
+  const topics = topicsForLevel(level);
+  const containerIds = { current: "unit-overview-pane-current", trend: "unit-overview-pane-trend-topics" };
+  for (const paneKey of Object.keys(containerIds)) {
+    const container = document.getElementById(containerIds[paneKey]);
+    if (topics.length === 0) {
+      container.innerHTML = '<p class="corr-note">Brak zmiennych dla tego poziomu.</p>';
+      continue;
+    }
+    container.innerHTML = topics
+      .map(
+        (topic) => `
+      <details class="variable-details unit-overview-topic" data-topic="${topic}">
+        <summary>${TOPICS[topic]}</summary>
+        <div class="unit-overview-topic-body"></div>
+      </details>`
+      )
+      .join("");
+    container.querySelectorAll("details").forEach((el) => {
+      el.addEventListener("toggle", async () => {
+        if (!el.open) return;
+        const rows = await ensureTopicLoaded(el.dataset.topic);
+        renderTopicBody(paneKey, el, rows);
+      });
+      // Delegated (not per-select, since every render throws the selects
+      // away and rebuilds them) -- a group's Miara choice is mutated
+      // directly on its cached group object, so it survives being
+      // re-rendered and is shared between both tabs (picking a month in
+      // "Stan obecny" also changes what "Zmiana w czasie" shows for that
+      // same variable, deliberately -- it's one selection, not a per-tab
+      // one). ageGroup has no selector to delegate for -- see below, every
+      // ageGroup option now gets its own row automatically instead.
+      el.addEventListener("change", (e) => {
+        const select = e.target;
+        if (!select.matches("select[data-group-key]")) return;
+        const groups = unitOverviewState.topicData.get(el.dataset.topic);
+        const group = groups.find((g) => g.key === select.dataset.groupKey);
+        group.measureKey = select.value;
+        refreshOpenUnitOverviewTopics("current");
+        refreshOpenUnitOverviewTopics("trend");
+      });
+    });
+  }
+}
+
+// Lazy-loads (and caches on unitOverviewState.topicData) every variable in
+// `topic` available at the selected unit's level, keeping only the ones
+// present at all for this exact teryt -- most of a topic's variables
+// commonly won't be (e.g. checking a podregion against a topic full of
+// powiat/gmina-only variables). One entry per VARIABLE (not per ageGroup --
+// every ageGroup this variable has gets its own table row automatically, see
+// expandGroupRows), starting on its FIRST measure option (Miara stays a
+// pick-one control, unlike ageGroup -- see renderMeasureSelector). Keeps
+// the FULL per-year data (every ageGroup x measure), not just one slice, so
+// switching Miara or scanning every ageGroup doesn't need a re-fetch.
+async function ensureTopicLoaded(topic) {
+  const { teryt, level, topicData } = unitOverviewState;
+  if (topicData.has(topic)) return topicData.get(topic);
+  const variableKeys = variablesForLevelInTopic(level, topic);
+  await Promise.all(variableKeys.map(loadVariable));
+  const groups = [];
+  for (const key of variableKeys) {
+    const meta = VARIABLE_META[key];
+    const rawData = (loadedData[key] || {})[teryt];
+    if (!rawData) continue; // this unit has no data at all for this variable, under ANY combo
+    groups.push({ key, meta, measureKey: meta.measures[0].key, rawData });
+  }
+  topicData.set(topic, groups);
+  return groups;
+}
+
+// One sub-row per ageGroup option of `group` (all of them, shown regardless
+// of whether this exact unit has data there -- a section/category with
+// nothing shows "brak danych" rather than silently vanishing, keeping the
+// row set predictable rather than shifting with data availability),
+// combined with that group's single shared Miara selection.
+function expandGroupRows(group) {
+  return group.meta.ageGroups.map((ageGroupOpt) => {
+    const slice = sliceKey(ageGroupOpt.key, group.measureKey);
+    const years = Object.keys(group.rawData)
+      .filter((y) => group.rawData[y][slice])
+      .map(Number)
+      .sort((a, b) => a - b);
+    const dataByYear = new Map(years.map((y) => [y, group.rawData[String(y)][slice]]));
+    const viewKeys = applicableViewKeys(group.key, group.meta, ageGroupOpt.key, group.measureKey);
+    return { ageGroupOpt, years, dataByYear, viewKeys };
+  });
+}
+
+// The variable-name cell, spanning every one of its ageGroup sub-rows
+// (rowspan) so it reads as one grouped "index" entry rather than repeating
+// per section/category -- only rendered once per group, by the caller, on
+// that group's FIRST sub-row. Miara lives here (not per sub-row) since it's
+// one shared choice across the whole group, same reasoning as the rowspan
+// itself.
+function renderGroupNameCell(group, rowCount) {
+  const measureSelect =
+    group.meta.measures.length > 1
+      ? `<div class="unit-overview-dim-selects"><label class="unit-overview-dim-select">Miara <select data-group-key="${group.key}" data-dim="measure">${group.meta.measures
+          .map((o) => `<option value="${o.key}" ${o.key === group.measureKey ? "selected" : ""}>${escapeXml(o.label)}</option>`)
+          .join("")}</select></label></div>`
+      : "";
+  // class, not relying on nth-child -- a sub-row that omits this cell (every
+  // one after the group's first, since this one has rowspan) shifts every
+  // OTHER cell's nth-child index in that <tr> back by one, so a position-
+  // based CSS selector would silently target the wrong column there.
+  return `<td class="unit-overview-name-col" rowspan="${rowCount}" title="${escapeXml(group.meta.meaning)}">
+    <div class="unit-overview-var-label">${escapeXml(group.meta.label)}</div>
+    ${measureSelect}
+  </td>`;
+}
+
+function renderTopicBody(paneKey, detailsEl, groups) {
+  const body = detailsEl.querySelector(".unit-overview-topic-body");
+  if (paneKey === "current") {
+    body.innerHTML = renderCurrentTable(groups);
+  } else {
+    const widokKey = document.getElementById("unit-overview-widok-select").value;
+    body.innerHTML = renderTrendTable(groups, widokKey);
+    // Years run oldest -> newest left to right (see renderTrendTable), so
+    // the newest data is what should be in view without scrolling -- the
+    // pinned name/ageGroup columns stay put regardless (see their sticky
+    // CSS), only the year columns actually scroll.
+    const wrap = body.querySelector(".unit-overview-table-wrap");
+    if (wrap) wrap.scrollLeft = wrap.scrollWidth;
+  }
+}
+
+// Re-renders whichever topics are already expanded, from cached data (no
+// re-fetch) -- called when state.year changes (map's own year slider, so
+// "Stan obecny" always reflects it, per the "inherit the map's year" choice)
+// and when the trend tab's widok selector changes.
+function refreshOpenUnitOverviewTopics(paneKey) {
+  if (!unitOverviewState) return;
+  const containerId = paneKey === "current" ? "unit-overview-pane-current" : "unit-overview-pane-trend-topics";
+  document.getElementById(containerId).querySelectorAll("details[open]").forEach((el) => {
+    const groups = unitOverviewState.topicData.get(el.dataset.topic);
+    if (groups) renderTopicBody(paneKey, el, groups);
+  });
+}
+
+function renderCurrentTable(groups) {
+  if (groups.length === 0) return '<p class="corr-note">Brak danych dla tej jednostki w tym temacie.</p>';
+  const cols = Object.keys(VIEWS);
+  const header = `<tr><th class="unit-overview-name-col">Zmienna</th><th class="unit-overview-agegroup-col">Grupa wieku / Kategoria</th>${cols.map((k) => `<th>${VIEWS[k].label}</th>`).join("")}</tr>`;
+  const body = groups
+    .map((group) => {
+      const subRows = expandGroupRows(group);
+      return subRows
+        .map((sub, i) => {
+          const nameCell = i === 0 ? renderGroupNameCell(group, subRows.length) : "";
+          if (sub.years.length === 0) {
+            // The variable is real here, just not for this ageGroup (e.g.
+            // this PKD section has nothing) -- distinct from "—", which
+            // means a widok doesn't apply to the variable at all.
+            return `<tr>${nameCell}<td class="unit-overview-agegroup-col">${escapeXml(sub.ageGroupOpt.label)}</td>${cols.map(() => "<td>brak danych</td>").join("")}</tr>`;
+          }
+          const year = nearestAvailableYear(sub.years, state.year);
+          const d = sub.dataByYear.get(year);
+          const yearNote = year !== state.year ? ` <span class="unit-overview-year-note">(${year})</span>` : "";
+          const cells = cols
+            .map((k) => {
+              if (!sub.viewKeys.includes(k)) return "<td>—</td>";
+              const view = VIEWS[k];
+              const unit = view.unit !== undefined ? view.unit : unitFor(group.meta, group.measureKey);
+              return `<td>${formatValueWithView(view.pick(d), view, unit)}</td>`;
+            })
+            .join("");
+          return `<tr>${nameCell}<td class="unit-overview-agegroup-col">${escapeXml(sub.ageGroupOpt.label)}${yearNote}</td>${cells}</tr>`;
+        })
+        .join("");
+    })
+    .join("");
+  return `<div class="unit-overview-table-wrap"><table class="unit-overview-table">${header}${body}</table></div>`;
+}
+
+function renderTrendTable(groups, widokKey) {
+  if (groups.length === 0) return '<p class="corr-note">Brak danych dla tej jednostki w tym temacie.</p>';
+  const view = VIEWS[widokKey];
+  const expandedGroups = groups.map((group) => ({ group, subRows: expandGroupRows(group) }));
+  const years = [...new Set(expandedGroups.flatMap(({ subRows }) => subRows.flatMap((sub) => sub.years)))].sort((a, b) => a - b);
+  if (years.length === 0) return '<p class="corr-note">Brak danych dla tej jednostki w tym temacie.</p>';
+  const header = `<tr><th class="unit-overview-name-col">Zmienna</th><th class="unit-overview-agegroup-col">Grupa wieku / Kategoria</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr>`;
+  const body = expandedGroups
+    .map(({ group, subRows }) => {
+      const unit = view.unit !== undefined ? view.unit : unitFor(group.meta, group.measureKey);
+      return subRows
+        .map((sub, i) => {
+          const nameCell = i === 0 ? renderGroupNameCell(group, subRows.length) : "";
+          const applicable = sub.viewKeys.includes(widokKey);
+          const cells = years
+            .map((y) => {
+              if (!applicable || !sub.dataByYear.has(y)) return "<td>—</td>";
+              return `<td>${formatValueWithView(view.pick(sub.dataByYear.get(y)), view, unit)}</td>`;
+            })
+            .join("");
+          return `<tr>${nameCell}<td class="unit-overview-agegroup-col">${escapeXml(sub.ageGroupOpt.label)}</td>${cells}</tr>`;
+        })
+        .join("");
+    })
+    .join("");
+  return `<div class="unit-overview-table-wrap"><table class="unit-overview-table">${header}${body}</table></div>`;
+}
+
+function slugifyForFilename(s) {
+  return s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+// Full data dump for the selected unit: every variable applicable to its
+// level (not just the topics currently expanded on screen -- expand/collapse
+// there is a display convenience, not a data filter), every ageGroup x
+// measure x year combination it has (unlike the on-screen tables, which use
+// only each variable's first ageGroup/measure option for readability), all 8
+// widoki. Same row shape and ";"-delimited/","-decimal formatting as the
+// main "Pobierz dane" panel's downloadCsv(), via the same triggerCsvDownload.
+async function downloadUnitOverviewCsv() {
+  if (!unitOverviewState) return;
+  const { teryt, level, name } = unitOverviewState;
+  const btn = document.getElementById("unit-overview-csv-btn");
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Wczytywanie danych...";
+  try {
+    const variableKeys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].levels.some((l) => l.key === level));
+    await Promise.all(variableKeys.map(loadVariable));
+
+    const levelLabel = LEVEL_LABELS[level];
+    const header = ["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"];
+    for (const viewKey of Object.keys(VIEWS)) header.push(VIEWS[viewKey].csvSlug);
+    const rows = [header];
+
+    for (const key of variableKeys) {
+      const meta = VARIABLE_META[key];
+      const data = (loadedData[key] || {})[teryt];
+      if (!data) continue;
+      for (const ageGroupOpt of meta.ageGroups) {
+        for (const measureOpt of meta.measures) {
+          const slice = sliceKey(ageGroupOpt.key, measureOpt.key);
+          for (const year in data) {
+            const d = data[year][slice];
+            if (!d) continue;
+            const row = [meta.label, levelLabel, ageGroupOpt.label, measureOpt.label, teryt, name, year, numOrBlank(d.k), numOrBlank(d.m), numOrBlank(d.t)];
+            for (const viewKey of Object.keys(VIEWS)) {
+              const v = viewAppliesForCsv(viewKey, meta, measureOpt.key) ? VIEWS[viewKey].pick(d) : null;
+              row.push(numOrBlank(v));
+            }
+            rows.push(row);
+          }
+        }
+      }
+    }
+    triggerCsvDownload(rows, `dane_${slugifyForFilename(name)}.csv`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+function buildUnitOverviewPanel() {
+  buildUnitOverviewSearch();
+  document.getElementById("unit-overview-tab-current").addEventListener("click", () => {
+    if (unitOverviewState) setUnitOverviewTab("current");
+  });
+  document.getElementById("unit-overview-tab-trend").addEventListener("click", () => {
+    if (unitOverviewState) setUnitOverviewTab("trend");
+  });
+  const widokSelect = document.getElementById("unit-overview-widok-select");
+  widokSelect.innerHTML = Object.entries(VIEWS)
+    .map(([k, v]) => `<option value="${k}">${v.label}</option>`)
+    .join("");
+  widokSelect.value = "total";
+  widokSelect.addEventListener("change", () => refreshOpenUnitOverviewTopics("trend"));
+  document.getElementById("unit-overview-csv-btn").addEventListener("click", downloadUnitOverviewCsv);
+}
+
 function updateRankings(domain) {
   const rows = [];
   const data = loadedData[state.variable] || {};
@@ -2904,15 +3366,6 @@ async function downloadCsv() {
     return hits.length ? hits : [options[0]];
   };
 
-  // shareWomen/shareMen replicate the same gate the map's own view buttons
-  // use (canShowShares) -- disabled there for a measure that isn't a raw
-  // headcount, so blank them here too rather than exporting a k/(k+m) share
-  // that isn't a meaningful operation for that measure.
-  const viewApplies = (viewKey, meta, measureKey) => {
-    if (viewKey !== "shareWomen" && viewKey !== "shareMen") return true;
-    return canShowShares(meta, measureKey);
-  };
-
   const header = ["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"];
   for (const viewKey of chosenViews) header.push(VIEWS[viewKey].csvSlug);
   const rows = [header];
@@ -2931,10 +3384,9 @@ async function downloadCsv() {
             if (yearTo && y > Number(yearTo)) continue;
             const d = data[teryt][year][key];
             if (!d) continue;
-            const numOrBlank = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "" : v);
             const row = [meta.label, levelLabel, ageGroupOpt.label, measureOpt.label, teryt, name, year, numOrBlank(d.k), numOrBlank(d.m), numOrBlank(d.t)];
             for (const viewKey of chosenViews) {
-              const v = viewApplies(viewKey, meta, measureOpt.key) ? VIEWS[viewKey].pick(d) : null;
+              const v = viewAppliesForCsv(viewKey, meta, measureOpt.key) ? VIEWS[viewKey].pick(d) : null;
               row.push(numOrBlank(v));
             }
             rows.push(row);
