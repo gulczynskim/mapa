@@ -1067,15 +1067,38 @@ function linearBoundariesSequential(domain, n) {
   return Array.from({ length: n + 1 }, (_, i) => min + (i / n) * (max - min));
 }
 
-// Sequential, "quantile" mode: boundaries sit at the i/n percentile of the
-// actual data, so each bucket gets roughly equal COUNT of powiats regardless
-// of how the raw values are distributed. This is what fixes variables with a
-// few extreme outliers (e.g. a couple of counties with a huge wage gap): the
-// bulk of ordinary counties still gets spread across the full color range
-// instead of piling into one bucket.
-function quantileBoundariesSequential(domain, n) {
+// Quantile-mode boundaries, shared by both sequential and diverging quantile
+// palettes below. Plain percentile interpolation (quantile()) assumes a
+// roughly continuous distribution spread across many distinct values -- for
+// genuinely discrete data with few of them (e.g. a binary 0/1 "Wybrani"
+// measure, or a "Kandydaci" count with only half a dozen possible values),
+// interpolating between ranks either lands on a fractional boundary that
+// never actually occurs (0,5 between a binary 0/1) or, when many data
+// points repeat the same value, produces several IDENTICAL boundaries --
+// several buckets covering nothing, which is what showed up as "several
+// identical quantiles" for real. Below `n` distinct values, use one bucket
+// per distinct value instead (split at the midpoints between them, so
+// nothing repeats and nothing falls on a value that can't occur).
+//
+// Above `n` distinct values, plain percentile interpolation is used, but
+// its own result is STILL deduplicated afterward -- a distribution that's
+// heavily skewed toward a few small values (typical for a count, e.g. most
+// gminy having 0-3 candidates and a handful having many more) can have
+// SEVERAL of the n+1 percentile cuts land on that exact same crowded value
+// even though the domain has plenty of other distinct values elsewhere.
+//
+// Either way, returns FEWER than n+1 boundaries whenever this collapsing
+// happens; callers must size their own bucket count/color ramp off the
+// returned array's actual length, not assume it's always n+1 (see
+// quantileSequentialPalette/quantileDivergingPalette).
+function quantileBoundaries(domain, n) {
   const sorted = [...domain].sort((a, b) => a - b);
-  return Array.from({ length: n + 1 }, (_, i) => quantile(sorted, i / n));
+  const unique = [...new Set(sorted)];
+  if (unique.length <= n) {
+    return [unique[0], ...unique.slice(1).map((v, i) => (unique[i] + v) / 2), unique[unique.length - 1]];
+  }
+  const raw = Array.from({ length: n + 1 }, (_, i) => quantile(sorted, i / n));
+  return raw.filter((v, i) => i === 0 || v !== raw[i - 1]);
 }
 
 // Sequential, "log" mode: equal-WIDTH buckets in log space, i.e. equal
@@ -1242,12 +1265,21 @@ function shadesTowardWhite(hexColor, n) {
 // there, not sampled from a fixed-length array.
 function quantileDivergingPalette(domain, view) {
   const center = view.center ?? 0;
-  const n = QUANTILE_BUCKETS;
   if (domain.length === 0) {
-    return { steps: Array.from({ length: n }, () => "#ffffff"), boundaries: Array.from({ length: n + 1 }, () => center) };
+    return {
+      steps: Array.from({ length: QUANTILE_BUCKETS }, () => "#ffffff"),
+      boundaries: Array.from({ length: QUANTILE_BUCKETS + 1 }, () => center),
+    };
   }
-  const sorted = [...domain].sort((a, b) => a - b);
-  const boundaries = Array.from({ length: n + 1 }, (_, i) => quantile(sorted, i / n));
+  // See quantileBoundaries's own comment -- returns FEWER than
+  // QUANTILE_BUCKETS+1 boundaries for a domain with few distinct values
+  // (e.g. Różnica's -1/0/1 for a binary elected-mayor measure), so `n` here
+  // is the ACTUAL bucket count, not necessarily QUANTILE_BUCKETS -- every
+  // loop below already keys off `n`, so this is the only line that needed
+  // to change to make the rest of the function correctly handle fewer
+  // buckets.
+  const boundaries = quantileBoundaries(domain, QUANTILE_BUCKETS);
+  const n = boundaries.length - 1;
   const aboveIsRed = !view.reverseDiverging;
 
   const classOf = (i) => {
@@ -1383,7 +1415,16 @@ function hueForView(view) {
 // looked up, everything else (precomputed steps + quantile boundaries at
 // the fixed QUANTILE_BUCKETS count) was identical.
 function quantileSequentialPalette(domain, hue) {
-  return { steps: QUANTILE_STEPS_BY_HUE[hue], boundaries: quantileBoundariesSequential(domain, QUANTILE_BUCKETS) };
+  const boundaries = quantileBoundaries(domain, QUANTILE_BUCKETS);
+  const n = boundaries.length - 1;
+  // The precomputed QUANTILE_STEPS_BY_HUE cache is always QUANTILE_BUCKETS
+  // long -- fine for the common case, but reusing just its first n entries
+  // for a domain with fewer distinct values would hand out only the
+  // PALEST shades (a binary 0/1 domain would get shade 1-of-7 and
+  // 2-of-7, barely distinguishable) instead of a ramp that actually
+  // spans pale-to-full across however many buckets there really are.
+  const steps = n === QUANTILE_BUCKETS ? QUANTILE_STEPS_BY_HUE[hue] : shadesTowardWhite(hue, n);
+  return { steps, boundaries };
 }
 
 function paletteFor(domain, view) {
@@ -1481,7 +1522,7 @@ function formatPl(n, maxFractionDigits, padDecimals) {
 // for an arbitrary (view, unit) pair -- one table there mixes several
 // variables and several widoki at once, none of it tied to the map's own
 // state.view/state.variable/state.measure the way every other caller is.
-function formatValueWithView(v, view, unit) {
+function formatValueWithView(v, view, unit, isIntegerData) {
   if (v === null || v === undefined) return "brak danych";
   // 0/0 -- both sexes genuinely zero (e.g. a variable with zero students of
   // either sex some year), as distinct from Infinity below. Only shareWomen/
@@ -1509,14 +1550,15 @@ function formatValueWithView(v, view, unit) {
   // (unlike % -> p.p.), so it's shown bare rather than with a misleading
   // "na 100 tys." suffix.
   if (view === VIEWS.diff && unit === "na 100 tys.") unit = "";
-  const formatted = formatPl(v, view.decimals, true);
+  const formatted = formatPl(v, effectiveDecimals(view, isIntegerData), true);
   return unit ? formatted + " " + unit : formatted;
 }
 
 function formatValue(v) {
   const view = VIEWS[state.view];
   const unit = view.unit !== undefined ? view.unit : unitFor(VARIABLE_META[state.variable], state.measure);
-  return formatValueWithView(v, view, unit);
+  const isIntegerData = isIntegerValuedSlice(state.variable, state.ageGroup, state.measure);
+  return formatValueWithView(v, view, unit, isIntegerData);
 }
 
 async function updateAll() {
@@ -1550,7 +1592,9 @@ async function updateAll() {
 // "999,5 – 1500" (formatPl would drop both the decimal and the grouping on
 // the second number just because it crossed 1000).
 function legendValueFormat(v) {
-  const decimals = VIEWS[state.view].decimals;
+  const view = VIEWS[state.view];
+  const isIntegerData = isIntegerValuedSlice(state.variable, state.ageGroup, state.measure);
+  const decimals = effectiveDecimals(view, isIntegerData);
   const formatted = v.toLocaleString("pl-PL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: true });
   return stripNegativeZero(formatted);
 }
@@ -1579,9 +1623,18 @@ function realBuckets(view, boundaries, steps, domain) {
   if (view.kind !== "diverging") {
     return steps.map((c, i) => ({ color: c, lo: boundaries[i], hi: boundaries[i + 1] }));
   }
+  // A single-bucket palette (steps.length === 1) is a THIRD, narrower
+  // exception to the zero-width drop above: quantileBoundaries collapses a
+  // domain with only one distinct value to a genuinely zero-width [v, v]
+  // (e.g. Proporcja for a binary elected-mayor measure, where the domain
+  // ends up being a single repeated ratio) -- unlike the two documented
+  // cases above, there's no OTHER bucket to defer to here, so dropping it
+  // leaves an empty legend for a map that's still very much rendering a
+  // real color. Keeping it regardless of width is strictly better than
+  // showing nothing.
   const real = [];
   for (let i = 0; i < steps.length; i++) {
-    if (boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1], index: i });
+    if (steps.length === 1 || boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1], index: i });
   }
   if (!domain || domain.length === 0 || real.length === 0) return real;
 
@@ -1633,9 +1686,43 @@ function legendBuckets(view, boundaries, steps) {
 // more-common practice over literally repeating shared boundary values.
 // The very lowest bucket overall keeps its exact lower bound (nothing
 // below it to disambiguate against).
-function bucketRangeLabel(lo, hi, isLowest) {
-  const decimals = VIEWS[state.view].decimals;
+//
+// EXCEPT: if every real value actually landing in this bucket is the SAME
+// number, a "lo – hi" range implies a spread that doesn't exist -- shows
+// just that one value instead. Happens for genuinely discrete data with
+// few distinct values (a binary 0/1 "Wybrani" measure puts every teryt at
+// exactly 0 or 1, never in between) and can also happen incidentally with
+// a quantile bucket that only one teryt's value occupies even when the
+// domain has plenty of OTHER distinct values elsewhere. Checked directly
+// against the real domain values, not by comparing formatted lo/hi strings
+// -- which one that would even catch depends on incidental rounding at
+// the current decimals, not on whether they're actually the same value.
+function bucketRangeLabel(lo, hi, isLowest, isHighest, domain) {
+  if (domain) {
+    const inBucket = domain.filter((v) => v >= lo && (isHighest ? v <= hi : v < hi));
+    const distinct = new Set(inBucket);
+    if (distinct.size === 1) return legendValueFormat([...distinct][0]);
+  }
+  const view = VIEWS[state.view];
+  const isIntegerData = isIntegerValuedSlice(state.variable, state.ageGroup, state.measure);
+  const decimals = effectiveDecimals(view, isIntegerData);
   const increment = Math.pow(10, -decimals);
+  // Integer data nudges the UPPER bound down instead of the lower bound up
+  // -- bucketIndex's buckets are half-open ([lo, hi)), so a bucket's true
+  // integer members are lo..hi-1 (lo..hi inclusive only for the highest
+  // bucket, already handled above). Nudging lo up the way the continuous
+  // case below does would visibly EXCLUDE a real, correctly-colored value
+  // from its own bucket's label (a bucket [3, 9) would show "4 – 9", even
+  // though a teryt with exactly 3 is genuinely in this bucket) -- fine for
+  // continuous data, where the gap being glossed over is finer than the
+  // display precision anyway, but a whole visible integer here. Nudging hi
+  // down instead loses nothing (hi is never itself a member of a non-
+  // highest bucket) and still avoids two consecutive buckets both
+  // displaying the shared boundary value.
+  if (isIntegerData) {
+    const hiLabel = legendValueFormat(isHighest ? hi : hi - increment);
+    return `${legendValueFormat(lo)} – ${hiLabel}`;
+  }
   const loLabel = legendValueFormat(isLowest ? lo : lo + increment);
   return `${loLabel} – ${legendValueFormat(hi)}`;
 }
@@ -1648,7 +1735,7 @@ function bucketRangeLabel(lo, hi, isLowest) {
 function legendBlockList(view, boundaries, steps, domain) {
   const real = realBuckets(view, boundaries, steps, domain);
   return real
-    .map((b, i) => ({ color: b.color, label: bucketRangeLabel(b.lo, b.hi, i === 0) }))
+    .map((b, i) => ({ color: b.color, label: bucketRangeLabel(b.lo, b.hi, i === 0, i === real.length - 1, domain) }))
     .reverse();
 }
 
@@ -2604,6 +2691,53 @@ function hasSexData(variable) {
   return found;
 }
 
+// Whether a (variable, ageGroup, measure) slice's raw t/m/k are ALWAYS
+// whole numbers across every teryt/year it has -- true for a genuine
+// headcount/vote/incident count (BDL/PKW/CKE only ever publish those as
+// integers), false for anything continuous (average scores, wages, rates,
+// density...). Drives whether Kobiety/Mężczyźni/Ogółem/Różnica should show
+// a decimal at all (see effectiveDecimals) -- data-driven rather than
+// guessed from the unit string, so it doesn't need a hand-maintained list
+// of which units are "count-like" and can't silently miss one. Cached per
+// slice the same way hasSexData caches per variable, for the same reason
+// (scanning every row is only worth doing once).
+let integerSliceCache = {};
+function isIntegerValuedSlice(variable, ageGroup, measure) {
+  const key = `${variable}__${ageGroup}__${measure}`;
+  if (key in integerSliceCache) return integerSliceCache[key];
+  const slice = sliceKey(ageGroup, measure);
+  const data = loadedData[variable] || {};
+  let allInteger = true;
+  outer: for (const teryt in data) {
+    for (const year in data[teryt]) {
+      const d = data[teryt][year][slice];
+      if (!d) continue;
+      for (const v of [d.t, d.m, d.k]) {
+        if (v !== null && !Number.isInteger(v)) {
+          allInteger = false;
+          break outer;
+        }
+      }
+    }
+  }
+  integerSliceCache[key] = allInteger;
+  return allInteger;
+}
+
+// Kobiety/Mężczyźni/Ogółem/Różnica read the raw stored value directly (or a
+// plain difference of two such values) -- their precision should match the
+// SOURCE data's own. Proporcja (K/M, M/K) and % kobiet/% mężczyzn always
+// involve a division, which stays genuinely fractional even when k/m/t
+// themselves are always whole numbers (e.g. 15/10 = 1,5), so those keep
+// their own fixed decimals unconditionally.
+function isDirectCountView(view) {
+  return view === VIEWS.women || view === VIEWS.men || view === VIEWS.total || view === VIEWS.diff;
+}
+
+function effectiveDecimals(view, isIntegerData) {
+  return isIntegerData && isDirectCountView(view) ? 0 : view.decimals;
+}
+
 function updateViewAvailability() {
   const totalBtn = document.querySelector('#view-buttons button[data-view-key="total"]');
   if (!totalBtn) return;
@@ -3050,12 +3184,13 @@ function renderCurrentTable(groups) {
           const year = nearestAvailableYear(sub.years, state.year);
           const d = sub.dataByYear.get(year);
           const yearNote = year !== state.year ? ` <span class="unit-overview-year-note">(${year})</span>` : "";
+          const isIntegerData = isIntegerValuedSlice(group.key, sub.ageGroupOpt.key, group.measureKey);
           const cells = cols
             .map((k) => {
               if (!sub.viewKeys.includes(k)) return "<td>—</td>";
               const view = VIEWS[k];
               const unit = view.unit !== undefined ? view.unit : unitFor(group.meta, group.measureKey);
-              return `<td>${formatValueWithView(view.pick(d), view, unit)}</td>`;
+              return `<td>${formatValueWithView(view.pick(d), view, unit, isIntegerData)}</td>`;
             })
             .join("");
           return `<tr>${nameCell}<td class="unit-overview-agegroup-col">${escapeXml(sub.ageGroupOpt.label)}${yearNote}</td>${cells}</tr>`;
@@ -3080,10 +3215,11 @@ function renderTrendTable(groups, widokKey) {
         .map((sub, i) => {
           const nameCell = i === 0 ? renderGroupNameCell(group, subRows.length) : "";
           const applicable = sub.viewKeys.includes(widokKey);
+          const isIntegerData = isIntegerValuedSlice(group.key, sub.ageGroupOpt.key, group.measureKey);
           const cells = years
             .map((y) => {
               if (!applicable || !sub.dataByYear.has(y)) return "<td>—</td>";
-              return `<td>${formatValueWithView(view.pick(sub.dataByYear.get(y)), view, unit)}</td>`;
+              return `<td>${formatValueWithView(view.pick(sub.dataByYear.get(y)), view, unit, isIntegerData)}</td>`;
             })
             .join("");
           return `<tr>${nameCell}<td class="unit-overview-agegroup-col">${escapeXml(sub.ageGroupOpt.label)}</td>${cells}</tr>`;
