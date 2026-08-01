@@ -1092,6 +1092,16 @@ function linearBoundariesSequential(domain, n) {
 // returned array's actual length, not assume it's always n+1 (see
 // quantileSequentialPalette/quantileDivergingPalette).
 function quantileBoundaries(domain, n) {
+  // An EMPTY domain (e.g. a no-sex-data variable's Kobiety view, gated off
+  // in the real UI but still reachable by legend-building code directly)
+  // has 0 unique values, which satisfies "unique.length <= n" same as any
+  // other sparse domain below -- but unique[0]/unique[last] on an empty
+  // array are both undefined, which crashed legendValueFormat downstream.
+  // Nothing will ever actually be colored against these boundaries anyway
+  // (colorFor short-circuits on value === null before reaching them), so
+  // any valid constant boundary set is fine here -- just needs to not be
+  // undefined.
+  if (domain.length === 0) return Array.from({ length: n + 1 }, () => 0);
   const sorted = [...domain].sort((a, b) => a - b);
   const unique = [...new Set(sorted)];
   if (unique.length <= n) {
@@ -1199,12 +1209,27 @@ function symmetricDivergingBoundaries(belowDists, aboveDists, n, combine) {
 // that shared range differently. A fully-empty domain collapses both
 // edges to `center` (radius 0), matching symmetricDivergingBoundaries's
 // own empty-domain fallback.
+//
+// A ratio can be exactly 0 for real (not just theoretically) -- e.g.
+// Proporcja K/M for a unit with zero women candidates -- and unlike the
+// sequential/one-sided log path (logBoundariesSequential's own
+// magnitude()), this had NO clamp before taking Math.log(), so a single
+// real 0 anywhere in the domain made belowLogDist come out Infinity (log
+// center - log(0) = log center - (-Infinity)), which cascaded through
+// radiusLog into aboveEdge = Infinity and every downstream boundary
+// becoming NaN or Infinity -- confirmed live: "Wybory wójtów" ->
+// Kandydaci -> Proporcja K/M under Logarytmiczna painted literally every
+// gmina the same single color (bucketIndex's `value < NaN` comparison is
+// always false, so every value fell through to the same last bucket), and
+// under Liniowa the upper half of the scale was equally broken. Clamped
+// the same way magnitude() already does for the sequential case.
 function ratioDivergingEdges(domain, center) {
-  const logCenter = Math.log(center);
+  const safeLog = (v) => Math.log(Math.max(v, 1e-6));
+  const logCenter = safeLog(center);
   const belowVals = domain.filter((v) => v < center);
   const aboveVals = domain.filter((v) => v >= center);
-  const belowLogDist = belowVals.length ? Math.max(...belowVals.map((v) => logCenter - Math.log(v))) : 0;
-  const aboveLogDist = aboveVals.length ? Math.max(...aboveVals.map((v) => Math.log(v) - logCenter)) : 0;
+  const belowLogDist = belowVals.length ? Math.max(...belowVals.map((v) => logCenter - safeLog(v))) : 0;
+  const aboveLogDist = aboveVals.length ? Math.max(...aboveVals.map((v) => safeLog(v) - logCenter)) : 0;
   const radiusLog = Math.max(belowLogDist, aboveLogDist);
   return { belowEdge: Math.exp(logCenter - radiusLog), aboveEdge: Math.exp(logCenter + radiusLog) };
 }
@@ -1427,11 +1452,71 @@ function quantileSequentialPalette(domain, hue) {
   return { steps, boundaries };
 }
 
+// Below this many distinct values, "equal-width" (Liniowa), "equal-ratio"
+// (Logarytmiczna) and "equal-count" (Kwantyle) stop being meaningfully
+// different choices -- with only a couple of real data points (a binary
+// 0/1 "Wybrani" measure, say), all three would just be describing the same
+// handful of points under a different label, and forcing a FIXED 8-bucket
+// split (whatever the scale's own steps array length happens to be) fills
+// the legend with equal-width ranges that never actually occur -- the same
+// class of bug quantileBoundaries fixed for Kwantyle specifically, but
+// Liniowa/Logarytmiczna go through entirely separate boundary functions
+// that know nothing about it (confirmed live: switching a binary domain to
+// Liniowa still showed six empty intermediate ranges even after that fix).
+// Below the threshold, paletteFor routes to the quantile-style one-bucket-
+// per-value palette regardless of which scale is actually selected.
+function sparseDomain(domain) {
+  return new Set(domain).size <= QUANTILE_BUCKETS;
+}
+
+// The view's own "nothing happened here" value always renders white for a
+// sequential-shaped palette (both the pure-sequential kind, and the
+// one-sided-diverging-as-sequential case below), matching the convention
+// the diverging scales already use for their own center. For plain
+// magnitude views (Kobiety/Mężczyźni/Ogółem/% udziału) that baseline is
+// literally 0 -- but for a one-sided RATIO view (Proporcja K/M, center=1,
+// e.g. every unit happens to have more men than women this year) it's 1,
+// true equality, not the number 0, same reasoning the two-sided diverging
+// branch already applies unconditionally to its own center. Both callers
+// below pass `view.center ?? 0`, so this one function covers both.
+//
+// For Logarytmiczna specifically, excluding the baseline from the ramp
+// also removes the need to smuggle a literal 0 into a log-scaled range at
+// all: log(0) is undefined, which is why that path clamped 0 to a tiny
+// epsilon magnitude in the first place, wasting most of the ramp on the
+// empty gap between that epsilon and the first real value (see
+// trimEmptyEdges) -- excluding it up front means whatever's left really is
+// strictly on one side, no clamping hack needed.
+//
+// `computeFor` is whichever of the existing scale-specific palette
+// functions would have run on the full domain -- called instead on
+// whatever's left after excluding the baseline, which -- given this is
+// only ever called from a branch already confirmed one-sided -- must be
+// entirely on ONE side of it (never straddling), so the white bucket goes
+// at whichever end the baseline actually sits at: the low end for a plain
+// magnitude view (0 is always the domain's minimum, never its maximum,
+// short of every value being exactly 0), but possibly the HIGH end for a
+// one-sided ratio view (e.g. every unit ≤ 1 -- 1 would be the domain's
+// maximum, not minimum, in that case). Kept domain-agnostic (doesn't care
+// which scale/hue) so it wraps all three scales identically, per "as in
+// the standard scales" -- Liniowa, Logarytmiczna and Kwantyle all get the
+// same treatment.
+function paletteWithBaselineWhite(domain, baseline, computeFor) {
+  if (!domain.some((v) => v === baseline)) return computeFor(domain);
+  const rest = domain.filter((v) => v !== baseline);
+  if (rest.length === 0) return { steps: ["#ffffff"], boundaries: [baseline, baseline] };
+  const sub = computeFor(rest);
+  if (baseline <= Math.min(...rest)) return { steps: ["#ffffff", ...sub.steps], boundaries: [baseline, ...sub.boundaries] };
+  return { steps: [...sub.steps, "#ffffff"], boundaries: [...sub.boundaries, baseline] };
+}
+
 function paletteFor(domain, view) {
   if (view.kind === "sequential") {
-    if (state.colorScale === "quantile") return quantileSequentialPalette(domain, hueForView(view));
-    const steps = stepsForView(view);
-    return { steps, boundaries: colorBoundaries(domain, view, steps) };
+    return paletteWithBaselineWhite(domain, view.center ?? 0, (d) => {
+      if (state.colorScale === "quantile" || sparseDomain(d)) return quantileSequentialPalette(d, hueForView(view));
+      const steps = stepsForView(view);
+      return { steps, boundaries: colorBoundaries(d, view, steps) };
+    });
   }
   const center = view.center ?? 0;
   const hasBelow = domain.some((v) => v < center);
@@ -1440,7 +1525,7 @@ function paletteFor(domain, view) {
     // Either genuinely two-sided (both true), or no real data at all
     // (both false) -- the latter already collapses to one repeated
     // center/white value, no special-casing needed either way.
-    if (state.colorScale === "quantile") return quantileDivergingPalette(domain, view);
+    if (state.colorScale === "quantile" || sparseDomain(domain)) return quantileDivergingPalette(domain, view);
     const steps = stepsForView(view);
     return { steps, boundaries: colorBoundaries(domain, view, steps) };
   }
@@ -1448,11 +1533,13 @@ function paletteFor(domain, view) {
   // men" (blue) -- same convention stepsForView already applies to the
   // two-sided palette (see ratioInverse's comment near VIEWS above).
   const redSide = view.reverseDiverging ? hasBelow : hasAbove;
-  if (state.colorScale === "quantile") return quantileSequentialPalette(domain, redSide ? RED_HUE : BLUE_HUE);
-  const steps = redSide ? SEQUENTIAL_STEPS_RED : SEQUENTIAL_STEPS_BLUE;
-  const n = steps.length;
-  const boundaries = state.colorScale === "log" ? logBoundariesSequential(domain, n) : linearBoundariesSequential(domain, n);
-  return { steps, boundaries };
+  return paletteWithBaselineWhite(domain, center, (d) => {
+    if (state.colorScale === "quantile" || sparseDomain(d)) return quantileSequentialPalette(d, redSide ? RED_HUE : BLUE_HUE);
+    const steps = redSide ? SEQUENTIAL_STEPS_RED : SEQUENTIAL_STEPS_BLUE;
+    const n = steps.length;
+    const boundaries = state.colorScale === "log" ? logBoundariesSequential(d, n) : linearBoundariesSequential(d, n);
+    return { steps, boundaries };
+  });
 }
 
 function colorFor(value, domain) {
@@ -1599,11 +1686,41 @@ function legendValueFormat(v) {
   return stripNegativeZero(formatted);
 }
 
+// Trims a CONTIGUOUS run of buckets with no real value at either END (an
+// empty bucket sandwiched between two real ones stays -- that's a genuine
+// gap in the data, not scale overreach, and hiding it would misrepresent
+// the shape of the distribution). The outermost SURVIVING bucket on each
+// side gets its edge clamped to the real domain min/max for DISPLAY only
+// -- bucketIndex()/colorFor still use the original, untrimmed boundaries,
+// so which bucket a real value actually renders in never changes. Shared
+// by both realBuckets branches below -- SEQUENTIAL needed this just as
+// much as diverging (Logarytmiczna in particular: a domain that includes
+// 0, clamped to a tiny epsilon since log(0) is undefined, can spend most
+// of its equal-RATIO steps on the near-empty range between that epsilon
+// and the first real value, leaving several genuinely empty buckets at
+// the low end -- confirmed live for "Kandydaci", 6 of 8 buckets), it just
+// never had the chance to run before this was pulled out into its own
+// function.
+function trimEmptyEdges(real, boundaries, domain) {
+  if (!domain || domain.length === 0 || real.length === 0) return real;
+  const usedIndices = new Set(domain.map((v) => bucketIndex(v, boundaries)));
+  let start = 0;
+  while (start < real.length - 1 && !usedIndices.has(real[start].index)) start++;
+  let end = real.length - 1;
+  while (end > start && !usedIndices.has(real[end].index)) end--;
+  const trimmed = real.slice(start, end + 1);
+
+  trimmed[0] = { ...trimmed[0], lo: Math.min(...domain) };
+  trimmed[trimmed.length - 1] = { ...trimmed[trimmed.length - 1], hi: Math.max(...domain) };
+  return trimmed;
+}
+
 // Real per-bucket {color, lo, hi} triples -- lo/hi are the actual boundary
 // VALUES (not screen positions), shared by both legend styles below.
-// Two kinds of "not real" bucket get dropped for DIVERGING views (`domain`
-// optional -- omitted, only the zero-width check applies, see the dead
-// legendBuckets()/updateLegendContinuous() below):
+// Two kinds of "not real" bucket get dropped for DIVERGING views specifically
+// (SEQUENTIAL only needs the empty-edge trim, see trimEmptyEdges) -- `domain`
+// optional, omitted only by the dead legendBuckets()/updateLegendContinuous()
+// below, where only the zero-width check still applies:
 // 1. Zero-width (lo === hi) -- a whole arm can collapse to `center` in the
 //    fully-empty-domain case (see symmetricDivergingBoundaries).
 // 2. Non-degenerate but EMPTY of any real value -- the narrower arm's
@@ -1612,16 +1729,10 @@ function legendValueFormat(v) {
 //    generally) that can reach past every real value on that side ON
 //    PURPOSE, so linear/log modes always span the exact same overall range
 //    -- but a bucket nothing ever falls into just clutters the legend.
-// Only a CONTIGUOUS run of empty buckets at either END is trimmed (an
-// empty bucket sandwiched between two real ones stays -- that's a genuine
-// gap in the data, not scale overreach, and hiding it would misrepresent
-// the shape of the distribution). The outermost SURVIVING bucket on each
-// side gets its edge clamped to the real domain min/max for DISPLAY only
-// -- bucketIndex()/colorFor still use the original, untrimmed boundaries,
-// so which bucket a real value actually renders in never changes.
 function realBuckets(view, boundaries, steps, domain) {
   if (view.kind !== "diverging") {
-    return steps.map((c, i) => ({ color: c, lo: boundaries[i], hi: boundaries[i + 1] }));
+    const real = steps.map((c, i) => ({ color: c, lo: boundaries[i], hi: boundaries[i + 1], index: i }));
+    return trimEmptyEdges(real, boundaries, domain);
   }
   // A single-bucket palette (steps.length === 1) is a THIRD, narrower
   // exception to the zero-width drop above: quantileBoundaries collapses a
@@ -1636,18 +1747,7 @@ function realBuckets(view, boundaries, steps, domain) {
   for (let i = 0; i < steps.length; i++) {
     if (steps.length === 1 || boundaries[i + 1] !== boundaries[i]) real.push({ color: steps[i], lo: boundaries[i], hi: boundaries[i + 1], index: i });
   }
-  if (!domain || domain.length === 0 || real.length === 0) return real;
-
-  const usedIndices = new Set(domain.map((v) => bucketIndex(v, boundaries)));
-  let start = 0;
-  while (start < real.length - 1 && !usedIndices.has(real[start].index)) start++;
-  let end = real.length - 1;
-  while (end > start && !usedIndices.has(real[end].index)) end--;
-  const trimmed = real.slice(start, end + 1);
-
-  trimmed[0] = { ...trimmed[0], lo: Math.min(...domain) };
-  trimmed[trimmed.length - 1] = { ...trimmed[trimmed.length - 1], hi: Math.max(...domain) };
-  return trimmed;
+  return trimEmptyEdges(real, boundaries, domain);
 }
 
 // Every bucket gets EQUAL on-screen width regardless of scale mode -- the
@@ -1719,8 +1819,20 @@ function bucketRangeLabel(lo, hi, isLowest, isHighest, domain) {
   // down instead loses nothing (hi is never itself a member of a non-
   // highest bucket) and still avoids two consecutive buckets both
   // displaying the shared boundary value.
+  //
+  // The nudge itself is Math.ceil(hi) - 1 (the largest integer BELOW hi),
+  // not "hi - increment" -- that only happens to coincide when hi sits
+  // exactly on a half-integer, true for quantileBoundaries' midpoint-
+  // between-distinct-values boundaries but NOT for Liniowa/Logarytmiczna's
+  // boundaries, which can land anywhere (e.g. hi=1,125 under an 8-way
+  // equal-width split of 0..9) -- "hi - 1" there gave 0,125, which rounds
+  // to display "0" and silently implies the bucket excludes the real
+  // value 1 even though it's genuinely inside [lo, 1,125). Math.ceil(hi)-1
+  // is correct either way: for an exact integer hi it reduces to hi-1
+  // (ceil of an integer is itself), for a fractional hi it's the true
+  // largest integer strictly below it.
   if (isIntegerData) {
-    const hiLabel = legendValueFormat(isHighest ? hi : hi - increment);
+    const hiLabel = legendValueFormat(isHighest ? hi : Math.ceil(hi) - 1);
     return `${legendValueFormat(lo)} – ${hiLabel}`;
   }
   const loLabel = legendValueFormat(isLowest ? lo : lo + increment);
