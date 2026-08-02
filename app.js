@@ -2754,11 +2754,13 @@ function applicableViewKeys(variable, meta, ageGroup, measure) {
   const sharesOk = canShowShares(meta, measure);
   const womenOnly = meta.sexScope === "women";
   const sexOk = hasSexData(variable);
+  const binaryOk = !isBinaryMeasure(meta, measure);
   return Object.keys(VIEWS).filter((key) => {
     if (key === "total") return totalOk && !womenOnly;
     if (key === "shareWomen" || key === "shareMen") return sharesOk;
     if (key === "women") return sexOk;
-    if (key === "men" || key === "diff" || key === "ratio" || key === "ratioInverse") return sexOk && !womenOnly;
+    if (key === "men" || key === "diff") return sexOk && !womenOnly;
+    if (key === "ratio" || key === "ratioInverse") return sexOk && !womenOnly && binaryOk;
     return true;
   });
 }
@@ -2773,6 +2775,21 @@ function hasTotalForCurrentSelection() {
 function unitFor(meta, measure) {
   const measureOpt = meta.measures.find((o) => o.key === measure);
   return measureOpt?.unit ?? meta.unit;
+}
+
+// True for a measure metadata-flagged `binary: true` (e.g. wybory_wojtowie's
+// "elected" -- exactly one winner per gmina/year). VIEWS.ratio/ratioInverse
+// divide k/m or m/k directly with no zero guard (bothOrNull only checks for
+// null, not zero), so whenever the LOSING side is 0 -- the normal outcome for
+// a single-winner count, not an edge case -- the result is JS Infinity,
+// which valueFor()'s Number.isFinite check then renders as "brak danych".
+// Confirmed live: 2024 alone shows 2085/2479 gminy as missing under
+// Proporcja (M/K), all with complete real data, just because the winner was
+// male. Gating the two ratio views off for binary measures (this function,
+// used by applicableViewKeys/updateViewAvailability) steers users to Różnica
+// or %kobiet/%mężczyzn instead, which both handle a zero side correctly.
+function isBinaryMeasure(meta, measure) {
+  return meta.measures.find((o) => o.key === measure)?.binary === true;
 }
 
 // Cached per variable (scanning every row is only worth doing once, same
@@ -2874,15 +2891,25 @@ function updateViewAvailability() {
   // womenOnly variable is the one exception: Kobiety itself stays gated on
   // real data (sexOk), but the other four are forced off regardless.
   const sexOk = hasSexData(state.variable);
+  // Proporcja (K/M)/(M/K) additionally need a non-binary measure -- see
+  // isBinaryMeasure()'s comment: dividing straight through a zero side
+  // (the NORMAL outcome for a single-winner count like wybory_wojtowie's
+  // "elected") produces Infinity, which valueFor() then renders as missing
+  // for the overwhelming majority of units. Różnica/%kobiet/%mężczyzn all
+  // handle a zero side correctly, so only the two ratio views are gated.
+  const binaryOk = !isBinaryMeasure(VARIABLE_META[state.variable], state.measure);
   for (const key of ["women", "men", "diff", "ratio", "ratioInverse"]) {
     const btn = document.querySelector(`#view-buttons button[data-view-key="${key}"]`);
     if (!btn) continue;
-    const enabled = key === "women" ? sexOk : sexOk && !womenOnly;
+    const isRatio = key === "ratio" || key === "ratioInverse";
+    const enabled = key === "women" ? sexOk : sexOk && !womenOnly && (!isRatio || binaryOk);
     btn.disabled = !enabled;
     btn.title = enabled
       ? ""
       : womenOnly
       ? "Zmienna dotyczy wyłącznie kobiet -- dostępny jest tylko widok Kobiety"
+      : isRatio && sexOk && !binaryOk
+      ? "Zmienna ma dokładnie jednego zwycięzcę -- proporcja K/M dzieli przez zero w większości gmin. Użyj Różnicy lub % kobiet/mężczyzn"
       : "Ta zmienna nie ma danych w podziale na płeć -- dostępne jest tylko Ogółem";
   }
 

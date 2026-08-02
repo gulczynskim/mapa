@@ -211,7 +211,11 @@ const VARIABLE_META = {
     ageGroups: [{ key: "default", label: "Wszyscy kandydaci" }],
     measures: [
       { key: "candidates", label: "Kandydaci", unit: "osób" },
-      { key: "elected", label: "Wybrani", unit: "osób" },
+      // binary: true -- exactly one winner per gmina/year, so k or m is 0 in
+      // the overwhelming majority of rows (that's the normal outcome, not a
+      // gap). Proporcja (K/M)/(M/K) divide straight through zero there --
+      // see isBinaryMeasure()/applicableViewKeys() in app.js.
+      { key: "elected", label: "Wybrani", unit: "osób", binary: true },
       { key: "votes_r1", label: "Zdobyte głosy I tura", unit: "głosów" },
       { key: "votes_r2", label: "Zdobyte głosy II tura", unit: "głosów" },
     ],
