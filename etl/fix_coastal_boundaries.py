@@ -119,11 +119,18 @@ COASTAL_POWIATY = [
 
 # Generous regional bboxes covering the whole coast, split to stay under
 # Overpass/GUGiK size & timeout limits (minlat, minlon, maxlat, maxlon).
+#
+# Real coverage gap found and fixed 2026-08-02: for lon > 17.00, no tile
+# covered lat < 54.30 -- Elbląg-gmina (2804012, lat 54.03-54.28, lon
+# 19.25-19.59) and powiat elbląski (2804, lat down to 53.93) fall entirely
+# in that gap, causing a KeyError crash mid-run (before any file write, so
+# harmless) rather than a silent bad result. Tile 5 below closes it.
 GMINA_BBOXES = [
     (53.85, 14.20, 54.10, 15.10),
     (53.75, 14.80, 54.60, 17.00),
     (54.30, 16.55, 54.85, 18.05),
     (54.30, 17.85, 54.85, 19.90),
+    (53.85, 17.75, 54.40, 20.10),
 ]
 POWIAT_BBOXES = GMINA_BBOXES
 
