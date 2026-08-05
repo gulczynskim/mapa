@@ -108,7 +108,12 @@ def audit_variable(vmeta, boundary_teryts):
                 # across sexes the same way, so skip those measures here
                 # rather than flooding this check with expected mismatches.
                 measure_key = slice_key.split("__", 1)[1] if "__" in slice_key else slice_key
-                is_rate_measure = measure_key.endswith("_per100k") or measure_key.endswith("_odsetek") or measure_key == "odsetek"
+                is_rate_measure = (
+                    measure_key.endswith("_per100k")
+                    or measure_key.endswith("_odsetek")
+                    or measure_key == "odsetek"
+                    or measure_key.endswith("_srednia")
+                )
                 if shares_meaningful and not is_rate_measure and all(isinstance(v, (int, float)) for v in (tt, mm, kk)):
                     diff = abs((mm + kk) - tt)
                     denom = max(abs(tt), 1)

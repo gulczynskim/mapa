@@ -673,6 +673,39 @@ const VARIABLE_META = {
     ],
     sharesMeaningful: true,
   },
+  jednorazowe_odszkodowania: {
+    label: "Jednorazowe odszkodowania powypadkowe",
+    unit: "osób",
+    topic: "rynek_pracy",
+    file: "data/jednorazowe_odszkodowania.json",
+    meaning:
+      "Liczba jednorazowych odszkodowań z tytułu wypadku przy pracy lub choroby zawodowej " +
+      "wypłaconych przez ZUS w danym roku oraz przeciętna wysokość tych wypłat, wg płci. " +
+      "Odszkodowanie przysługuje ubezpieczonemu, który wskutek wypadku przy pracy lub choroby " +
+      "zawodowej doznał stałego lub długotrwałego uszczerbku na zdrowiu, a także uprawnionym " +
+      "członkom rodziny osoby zmarłej wskutek takiego wypadku lub choroby – wypłacane wyłącznie na " +
+      "wniosek, nie automatycznie. Wysokość zależy od procentu uszczerbku na zdrowiu: ZUS wypłaca " +
+      "ustaloną kwotę za każdy procent stałego lub długotrwałego uszczerbku (od kwietnia 2025 do " +
+      "końca marca 2026 r.: 1636 zł za 1%), stawka aktualizowana raz w roku (od 1 kwietnia). Powiat " +
+      "przypisany na podstawie adresu siedziby płatnika składek, NIE miejsca zamieszkania " +
+      "poszkodowanego. Nie obejmuje świadczeń realizowanych na mocy umów międzynarodowych. W 6 " +
+      "powiatach liczba kobiet była w źródle zamaskowana jako 0 z powodu tajemnicy statystycznej " +
+      "(próg <3 osób) – tutaj odtworzona jako ogółem minus mężczyźni.",
+    source: "Zakład Ubezpieczeń Społecznych (ZUS)",
+    accessNote:
+      "Publikacja ZUS \"Jednorazowe odszkodowania z tytułu wypadku przy pracy lub choroby zawodowej " +
+      "wypłacone przez ZUS w 2025 r. oraz przeciętna wysokość wypłat według płci i powiatu\" (plik " +
+      "Excel, arkusz \"JO 2025\"), wgrywana ręcznie, nie z API – " +
+      "https://www.zus.pl/jednorazowe-odszkodowanie-z-tytulu-wypadku-przy-pracy-lub-choroby-zawodowej. " +
+      "Konwersja: etl/convert_zus_odszkodowania.py.",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [{ key: "default", label: "Ogółem" }],
+    measures: [
+      { key: "liczba", label: "Liczba osób" },
+      { key: "wysokosc_srednia", label: "Przeciętna wysokość", unit: "zł" },
+    ],
+    sharesMeaningful: true,
+  },
   kluby_sportowe: {
     label: "Ćwiczący w klubach sportowych",
     unit: "osób",

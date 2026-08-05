@@ -2701,13 +2701,20 @@ function hasTotalFor(meta, ageGroup, measure) {
 // sharesMeaningful was designed for. Deliberately a DIFFERENT suffix than
 // "_odsetek" (stan_cywilny_nsp/pkd_zatrudnienie's composition-of-a-whole
 // share, where %kobiet/%mężczyzn stays meaningful and must keep working) --
-// name kept as "isRateMeasure" for now despite covering two suffixes, since
-// every caller already routes through this one function; splitting the name
-// isn't worth it for what's still a single boolean gate. Checked in addition
-// to (not instead of) the variable-level sharesMeaningful flag, in both the
-// map's own view buttons and the correlation tool's per-axis view list.
+// name kept as "isRateMeasure" for now despite covering three suffixes,
+// since every caller already routes through this one function; splitting
+// the name isn't worth it for what's still a single boolean gate. Measures
+// ending "_srednia" (e.g. jednorazowe_odszkodowania's "wysokosc_srednia")
+// are an average value (zł per payout), not a headcount -- %kobiet of an
+// average is meaningless the same way wynagrodzenia's mean/median measures
+// are (those instead set sharesMeaningful: false for the whole variable,
+// since ALL their measures are averages; "_srednia" covers variables that
+// mix a real count measure with an average one, like this one's "liczba"
+// alongside "wysokosc_srednia"). Checked in addition to (not instead of) the
+// variable-level sharesMeaningful flag, in both the map's own view buttons
+// and the correlation tool's per-axis view list.
 function isRateMeasure(measure) {
-  return measure.endsWith("_per100k") || measure.endsWith("_udzial");
+  return measure.endsWith("_per100k") || measure.endsWith("_udzial") || measure.endsWith("_srednia");
 }
 
 // Single source of truth for "does %kobiet/%mężczyzn make sense here" --

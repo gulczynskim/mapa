@@ -76,11 +76,11 @@ def resolve_unit(level, name=None, teryt=None):
 
 
 def is_rate_measure(measure_key):
-    """Mirrors isRateMeasure() in app.js -- "_per100k" and "_udzial" are
-    excluded from shares, "_odsetek" is not (matches the app's own actual
-    behavior, an existing quirk rather than something this export should
-    second-guess)."""
-    return measure_key.endswith("_per100k") or measure_key.endswith("_udzial")
+    """Mirrors isRateMeasure() in app.js -- "_per100k", "_udzial" and
+    "_srednia" are excluded from shares, "_odsetek" is not (matches the
+    app's own actual behavior, an existing quirk rather than something this
+    export should second-guess)."""
+    return measure_key.endswith("_per100k") or measure_key.endswith("_udzial") or measure_key.endswith("_srednia")
 
 
 def safe_div(a, b):
