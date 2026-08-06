@@ -15,24 +15,28 @@
 </head>
 <body>
   <header>
-    <h1>Interaktywna Mapa Nierówności Płci</h1>
-    <p>Mapa powstaje jako narzędzie do eksploracji lokalnych nierówności między kobietami i mężczyznami.<br>Dane pochodzą z BDL GUS, PKW, CKE, ZUS i MPZ.</p>
+    <div class="lang-switch" role="group" aria-label="Language / Język">
+      <button type="button" id="lang-pl-btn" class="lang-btn" title="Polski" aria-label="Polski">🇵🇱</button>
+      <button type="button" id="lang-en-btn" class="lang-btn" title="English" aria-label="English">🇬🇧</button>
+    </div>
+    <h1 data-i18n="page_title">Interaktywna Mapa Nierówności Płci</h1>
+    <p><span data-i18n="header_intro">Mapa powstaje jako narzędzie do eksploracji lokalnych nierówności między kobietami i mężczyznami.</span><br><span data-i18n="header_sources">Dane pochodzą z BDL GUS, PKW, CKE, ZUS i MPZ.</span></p>
     <p class="author-name"><span>Michał Gulczyński</span></p>
-    <p class="author-link"><a href="http://michalgulczynski.pl">O autorze i dane kontaktowe</a></p>
+    <p class="author-link"><a href="http://michalgulczynski.pl" data-i18n="author_link">O autorze i dane kontaktowe</a></p>
   </header>
 
   <div class="layout">
     <aside class="controls">
       <div class="control-group">
-        <label for="topic-select">Temat</label>
+        <label for="topic-select" data-i18n="label_topic">Temat</label>
         <select id="topic-select"></select>
       </div>
 
       <div class="control-group">
-        <label for="variable-select">Zmienna</label>
+        <label for="variable-select" data-i18n="label_variable">Zmienna</label>
         <select id="variable-select"></select>
         <details class="variable-details">
-          <summary>Opis zmiennej</summary>
+          <summary data-i18n="variable_description_summary">Opis zmiennej</summary>
           <p id="variable-description" class="variable-description"></p>
           <p id="variable-availability" class="variable-availability"></p>
           <p id="variable-source" class="variable-source"></p>
@@ -41,27 +45,27 @@
       </div>
 
       <div class="control-group">
-        <label for="level-select">Poziom agregacji</label>
+        <label for="level-select" data-i18n="label_level">Poziom agregacji</label>
         <select id="level-select"></select>
       </div>
 
       <div class="control-group">
-        <label for="agegroup-select" id="agegroup-label">Grupa wieku</label>
+        <label for="agegroup-select" id="agegroup-label" data-i18n="label_agegroup_default">Grupa wieku</label>
         <select id="agegroup-select"></select>
       </div>
 
       <div class="control-group">
-        <label for="measure-select">Miara</label>
+        <label for="measure-select" data-i18n="label_measure">Miara</label>
         <select id="measure-select"></select>
       </div>
 
       <div class="control-group">
-        <label>Widok</label>
+        <label data-i18n="label_view">Widok</label>
         <div id="view-buttons" class="view-buttons"></div>
       </div>
 
       <div class="control-group">
-        <label>Rok: <span id="year-value"></span></label>
+        <label><span data-i18n="label_year">Rok:</span> <span id="year-value"></span></label>
         <input type="range" id="year-slider" />
       </div>
     </aside>
@@ -73,24 +77,24 @@
 
     <aside class="controls-secondary">
       <div class="control-group">
-        <label>Zakres skali</label>
+        <label data-i18n="label_scale_scope">Zakres skali</label>
         <div id="scale-scope-buttons" class="view-buttons"></div>
       </div>
 
       <div class="control-group">
-        <label>Skala kolorów</label>
+        <label data-i18n="label_color_scale">Skala kolorów</label>
         <div id="scale-buttons" class="view-buttons"></div>
       </div>
 
       <div class="control-group">
-        <label>Legenda</label>
+        <label data-i18n="label_legend">Legenda</label>
         <div class="legend">
           <div id="legend-blocks" class="legend-blocks"></div>
         </div>
       </div>
 
       <div class="control-group">
-        <label>Pobierz mapę</label>
+        <label data-i18n="label_download_map">Pobierz mapę</label>
         <div class="view-buttons">
           <button type="button" id="export-png-btn">PNG</button>
           <button type="button" id="export-svg-btn">SVG</button>
@@ -98,17 +102,17 @@
       </div>
 
       <div class="control-group" id="gif-export-group">
-        <label>Pobierz dynamiczną mapę zmian</label>
-        <p class="corr-note" id="gif-export-note">Jedna kolorowa skala dla całego zakresu lat -- dostępne
+        <label data-i18n="label_download_gif">Pobierz dynamiczną mapę zmian</label>
+        <p class="corr-note" id="gif-export-note" data-i18n="gif_export_note">Jedna kolorowa skala dla całego zakresu lat -- dostępne
           tylko przy zakresie skali "Wspólna dla wszystkich lat".</p>
         <div class="gif-years">
-          <label>Od <select id="gif-year-from"></select></label>
-          <label>Do <select id="gif-year-to"></select></label>
+          <label><span data-i18n="gif_from">Od</span> <select id="gif-year-from"></select></label>
+          <label><span data-i18n="gif_to">Do</span> <select id="gif-year-to"></select></label>
         </div>
-        <button type="button" id="gif-export-btn" class="action-btn">Generuj GIF</button>
+        <button type="button" id="gif-export-btn" class="action-btn" data-i18n="gif_generate_btn">Generuj GIF</button>
       </div>
 
-      <p class="source-note">
+      <p class="source-note" data-i18n="source_note_boundaries">
         Granice administracyjne: Państwowy Rejestr Granic (GUGiK) dla powiatów, gmin i województw;
         podregiony wg GISCO/Eurostat (NUTS 3); dwie historyczne granice gmin (Ostrowice,
         Zielona Góra wiejska) uzupełnione na podstawie © OpenStreetMap contributors (ODbL).
@@ -118,84 +122,84 @@
 
   <main class="below-map">
     <section class="panel">
-      <h2>Szukaj gminy / powiatu / podregionu / województwa</h2>
-      <input type="text" id="search-input" placeholder="Wpisz nazwę lub kod teryt" class="search-input" />
-      <p class="corr-note">Szuka w obrębie poziomu agregacji aktualnie wybranej zmiennej (powiat, gmina, podregion lub województwo).</p>
+      <h2 data-i18n="search_heading">Szukaj gminy / powiatu / podregionu / województwa</h2>
+      <input type="text" id="search-input" placeholder="Wpisz nazwę lub kod teryt" class="search-input" data-i18n-placeholder="search_placeholder" />
+      <p class="corr-note" data-i18n="search_note">Szuka w obrębie poziomu agregacji aktualnie wybranej zmiennej (powiat, gmina, podregion lub województwo).</p>
       <ul id="search-results" class="search-results"></ul>
     </section>
 
     <section class="panel rankings-panel">
-      <h2>Rankingi</h2>
+      <h2 data-i18n="rankings_heading">Rankingi</h2>
       <div class="rankings-columns">
         <div>
-          <h3>Najwyższe 20</h3>
+          <h3 data-i18n="rankings_top">Najwyższe 20</h3>
           <ol id="ranking-top" class="ranking-list"></ol>
         </div>
         <div>
-          <h3>Najniższe 20</h3>
+          <h3 data-i18n="rankings_bottom">Najniższe 20</h3>
           <ol id="ranking-bottom" class="ranking-list"></ol>
         </div>
       </div>
     </section>
 
     <section class="panel">
-      <h2>Sprawdź gminę / powiat / podregion / województwo</h2>
-      <input type="text" id="unit-overview-search-input" placeholder="Wpisz nazwę lub kod teryt" class="search-input" />
+      <h2 data-i18n="unit_overview_heading">Sprawdź gminę / powiat / podregion / województwo</h2>
+      <input type="text" id="unit-overview-search-input" placeholder="Wpisz nazwę lub kod teryt" class="search-input" data-i18n-placeholder="search_placeholder" />
       <ul id="unit-overview-search-results" class="search-results"></ul>
 
       <div id="unit-overview-content" hidden>
         <h3 id="unit-overview-title"></h3>
         <div class="view-buttons unit-overview-tabs">
-          <button type="button" id="unit-overview-tab-current" class="active">Stan obecny</button>
-          <button type="button" id="unit-overview-tab-trend">Zmiana w czasie</button>
+          <button type="button" id="unit-overview-tab-current" class="active" data-i18n="unit_overview_tab_current">Stan obecny</button>
+          <button type="button" id="unit-overview-tab-trend" data-i18n="unit_overview_tab_trend">Zmiana w czasie</button>
         </div>
 
         <div id="unit-overview-pane-current" class="unit-overview-pane"></div>
         <div id="unit-overview-pane-trend" class="unit-overview-pane" hidden>
-          <label class="unit-overview-widok-label">Widok
+          <label class="unit-overview-widok-label"><span data-i18n="unit_overview_widok_label">Widok</span>
             <select id="unit-overview-widok-select"></select>
           </label>
           <div id="unit-overview-pane-trend-topics"></div>
         </div>
 
-        <button type="button" id="unit-overview-csv-btn" class="action-btn">Pobierz CSV</button>
+        <button type="button" id="unit-overview-csv-btn" class="action-btn" data-i18n="unit_overview_csv_btn">Pobierz CSV</button>
       </div>
     </section>
 
     <section class="panel">
-      <h2>Korelacja zmiennych</h2>
-      <p class="corr-note">Możesz porównać dowolne dwie kombinacje zmienna/rok/widok -- np. tę samą
+      <h2 data-i18n="correlation_heading">Korelacja zmiennych</h2>
+      <p class="corr-note" data-i18n="correlation_note">Możesz porównać dowolne dwie kombinacje zmienna/rok/widok -- np. tę samą
         zmienną w dwóch latach, kobiety vs. mężczyźni, albo którąś z map nierówności (różnica, proporcja,
         % udziału). Obie osie muszą być na tym samym poziomie agregacji (powiat/gmina/podregion/województwo).</p>
       <div class="corr-axes">
         <fieldset class="corr-axis">
-          <legend>Oś X</legend>
-          <label>Temat <select id="corr-x-topic"></select></label>
-          <label>Zmienna <select id="corr-x-var"></select></label>
-          <label>Poziom <select id="corr-x-level"></select></label>
-          <label>Grupa wieku / Kategoria <select id="corr-x-agegroup"></select></label>
-          <label>Miara <select id="corr-x-measure"></select></label>
-          <label>Rok <select id="corr-x-year"></select></label>
-          <label>Widok <select id="corr-x-view"></select></label>
-          <label class="corr-log"><input type="checkbox" id="corr-x-log" /> log&#8321;&#8320; (logarytm dziesiętny)</label>
+          <legend data-i18n="axis_x">Oś X</legend>
+          <label><span data-i18n="label_topic">Temat</span> <select id="corr-x-topic"></select></label>
+          <label><span data-i18n="label_variable">Zmienna</span> <select id="corr-x-var"></select></label>
+          <label><span data-i18n="download_dim_level">Poziom</span> <select id="corr-x-level"></select></label>
+          <label><span data-i18n="corr_agegroup_label">Grupa wieku / Kategoria</span> <select id="corr-x-agegroup"></select></label>
+          <label><span data-i18n="label_measure">Miara</span> <select id="corr-x-measure"></select></label>
+          <label><span data-i18n="label_year_bare">Rok</span> <select id="corr-x-year"></select></label>
+          <label><span data-i18n="label_view">Widok</span> <select id="corr-x-view"></select></label>
+          <label class="corr-log"><input type="checkbox" id="corr-x-log" /> <span data-i18n="corr_log_label">log&#8321;&#8320; (logarytm dziesiętny)</span></label>
         </fieldset>
         <fieldset class="corr-axis">
-          <legend>Oś Y</legend>
-          <label>Temat <select id="corr-y-topic"></select></label>
-          <label>Zmienna <select id="corr-y-var"></select></label>
-          <label>Poziom <select id="corr-y-level"></select></label>
-          <label>Grupa wieku / Kategoria <select id="corr-y-agegroup"></select></label>
-          <label>Miara <select id="corr-y-measure"></select></label>
-          <label>Rok <select id="corr-y-year"></select></label>
-          <label>Widok <select id="corr-y-view"></select></label>
-          <label class="corr-log"><input type="checkbox" id="corr-y-log" /> log&#8321;&#8320; (logarytm dziesiętny)</label>
+          <legend data-i18n="axis_y">Oś Y</legend>
+          <label><span data-i18n="label_topic">Temat</span> <select id="corr-y-topic"></select></label>
+          <label><span data-i18n="label_variable">Zmienna</span> <select id="corr-y-var"></select></label>
+          <label><span data-i18n="download_dim_level">Poziom</span> <select id="corr-y-level"></select></label>
+          <label><span data-i18n="corr_agegroup_label">Grupa wieku / Kategoria</span> <select id="corr-y-agegroup"></select></label>
+          <label><span data-i18n="label_measure">Miara</span> <select id="corr-y-measure"></select></label>
+          <label><span data-i18n="label_year_bare">Rok</span> <select id="corr-y-year"></select></label>
+          <label><span data-i18n="label_view">Widok</span> <select id="corr-y-view"></select></label>
+          <label class="corr-log"><input type="checkbox" id="corr-y-log" /> <span data-i18n="corr_log_label">log&#8321;&#8320; (logarytm dziesiętny)</span></label>
         </fieldset>
       </div>
-      <button id="corr-run" class="action-btn corr-run-btn">Porównaj</button>
+      <button id="corr-run" class="action-btn corr-run-btn" data-i18n="corr_run_btn">Porównaj</button>
       <p id="corr-coefficient" class="corr-coefficient"></p>
       <svg id="corr-svg" class="corr-svg"></svg>
       <div class="control-group">
-        <label>Pobierz wykres</label>
+        <label data-i18n="corr_download_chart">Pobierz wykres</label>
         <div class="view-buttons">
           <button type="button" id="corr-export-png-btn">PNG</button>
           <button type="button" id="corr-export-svg-btn">SVG</button>
@@ -204,54 +208,56 @@
     </section>
 
     <section class="panel">
-      <h2>Pobierz dane</h2>
-      <p class="corr-note">Wybierz zmienne, zakres lat oraz poziomy/grupy wieku/miary/widoki, które mają się
+      <h2 data-i18n="download_data_heading">Pobierz dane</h2>
+      <p class="corr-note" data-i18n="download_data_note">Wybierz zmienne, zakres lat oraz poziomy/grupy wieku/miary/widoki, które mają się
         znaleźć w pliku CSV (można zaznaczyć wiele opcji). Kombinacje niedostępne dla danej zmiennej
         są pomijane; jeśli żadna z zaznaczonych opcji nie pasuje, użyta zostanie domyślna. Kobiety,
         Mężczyźni i Ogółem są eksportowane zawsze — zaznaczone widoki dodają dodatkowe kolumny.</p>
-      <label class="dim-select-all"><input type="checkbox" id="download-variables-select-all"> Zaznacz wszystkie zmienne</label>
+      <label class="dim-select-all"><input type="checkbox" id="download-variables-select-all"> <span data-i18n="select_all_variables">Zaznacz wszystkie zmienne</span></label>
       <div id="download-variables" class="download-variables"></div>
       <div class="download-dims">
         <details class="download-dim">
-          <summary>Poziom</summary>
-          <label class="dim-select-all"><input type="checkbox" id="download-level-select-all"> Zaznacz wszystko</label>
+          <summary data-i18n="download_dim_level">Poziom</summary>
+          <label class="dim-select-all"><input type="checkbox" id="download-level-select-all"> <span data-i18n="select_all">Zaznacz wszystko</span></label>
           <div id="download-level" class="dim-options"></div>
         </details>
         <details class="download-dim">
-          <summary>Grupa wieku / Kategoria</summary>
-          <label class="dim-select-all"><input type="checkbox" id="download-agegroup-select-all"> Zaznacz wszystko</label>
+          <summary data-i18n="download_dim_agegroup">Grupa wieku / Kategoria</summary>
+          <label class="dim-select-all"><input type="checkbox" id="download-agegroup-select-all"> <span data-i18n="select_all">Zaznacz wszystko</span></label>
           <div id="download-agegroup" class="dim-options"></div>
         </details>
         <details class="download-dim">
-          <summary>Miara</summary>
-          <label class="dim-select-all"><input type="checkbox" id="download-measure-select-all"> Zaznacz wszystko</label>
+          <summary data-i18n="download_dim_measure">Miara</summary>
+          <label class="dim-select-all"><input type="checkbox" id="download-measure-select-all"> <span data-i18n="select_all">Zaznacz wszystko</span></label>
           <div id="download-measure" class="dim-options"></div>
         </details>
         <details class="download-dim">
-          <summary>Widok</summary>
-          <label class="dim-select-all"><input type="checkbox" id="download-view-select-all"> Zaznacz wszystko</label>
+          <summary data-i18n="download_dim_view">Widok</summary>
+          <label class="dim-select-all"><input type="checkbox" id="download-view-select-all"> <span data-i18n="select_all">Zaznacz wszystko</span></label>
           <div id="download-view" class="dim-options"></div>
         </details>
       </div>
       <div class="download-years">
-        <label>Rok od <input type="number" id="download-year-from" /></label>
-        <label>Rok do <input type="number" id="download-year-to" /></label>
+        <label><span data-i18n="download_year_from">Rok od</span> <input type="number" id="download-year-from" /></label>
+        <label><span data-i18n="download_year_to">Rok do</span> <input type="number" id="download-year-to" /></label>
       </div>
-      <button id="download-btn" class="action-btn">Pobierz CSV</button>
+      <button id="download-btn" class="action-btn" data-i18n="download_csv_btn">Pobierz CSV</button>
     </section>
 
   </main>
 
   <footer>
-    <p>Mapa: Michał Gulczyński &middot; <a href="https://github.com/gulczynskim/mapa">kod źródłowy</a>
-      &middot; Jeśli masz sugestie albo coś nie działa,
-      <a href="https://github.com/gulczynskim/mapa/issues">skontaktuj się z autorem</a>.</p>
+    <p><span data-i18n="footer_map_by">Mapa: Michał Gulczyński</span> &middot; <a href="https://github.com/gulczynskim/mapa" data-i18n="footer_source_code">kod źródłowy</a>
+      &middot; <span data-i18n="footer_suggestions">Jeśli masz sugestie albo coś nie działa,</span>
+      <a href="https://github.com/gulczynskim/mapa/issues" data-i18n="footer_contact">skontaktuj się z autorem</a>.</p>
   </footer>
 
   <script data-goatcounter="https://gulczynski.goatcounter.com/count"
           async src="//gc.zgo.at/count.js"></script>
 
   <script src="variables.js"></script>
+  <script src="variables.en.js"></script>
+  <script src="i18n.js"></script>
   <script src="gif-encoder.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>

@@ -41,10 +41,33 @@ body {
 }
 
 header {
+  position: relative;
   padding: 1.4rem 1.25rem;
   border-bottom: 1px solid var(--hairline);
   background: var(--surface-1);
   text-align: center;
+}
+.lang-switch {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  display: flex;
+  gap: 0.3rem;
+}
+.lang-btn {
+  padding: 0.25rem 0.4rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  opacity: 0.45;
+  cursor: pointer;
+}
+.lang-btn.active {
+  opacity: 1;
+  border-color: var(--hairline);
+  background: var(--page);
 }
 header h1 { margin: 0 0 0.7rem; font-size: 1.65rem; }
 header p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--text-secondary); }

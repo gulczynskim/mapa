@@ -16,6 +16,19 @@ const BOUNDARY_FILES = {
 // map's currently-selected variable happens to use.
 const LEVEL_LABELS = { powiat: "Powiat", gmina: "Gmina", podregion: "Podregion", wojewodztwo: "Województwo" };
 
+// Every variable's own `levels` entries (variables.js) carry a `label` baked
+// in at data-authoring time ({key:"powiat", label:"Powiat"}) that's always
+// IDENTICAL to LEVEL_LABELS[key] -- confirmed true for all 37 variables, not
+// enforced by the data shape itself. That duplication means a variable's own
+// `.levels[i].label` is stale Polish text no language switch ever touches,
+// unlike LEVEL_LABELS itself (mutated in place by applyFixedLabelsLanguage).
+// Every DISPLAY use of a variable's levels should route through this rather
+// than reading `.label` directly, so it always reflects the current
+// language -- structural uses (`.key`, `.length`) are unaffected either way.
+function localizedLevels(levels) {
+  return levels.map((o) => ({ key: o.key, label: LEVEL_LABELS[o.key] }));
+}
+
 // Single anchor hex per hue, shared by every place that grades a hue toward
 // white at an arbitrary bucket count (shadesTowardWhite below) -- the
 // quantile color scale (see QUANTILE_BUCKETS) uses these directly instead of
@@ -170,6 +183,17 @@ const QUANTILE_STEPS_BY_HUE = {
 // scale itself -- see currentDomain() below for when each reads better.
 const SCALE_SCOPES = { year: "Dla danego roku", all: "Wspólna dla wszystkich lat" };
 
+// ?lang= takes precedence over a remembered choice, so a shared "?lang=en"
+// link always opens in English regardless of what's in the visitor's own
+// localStorage -- localStorage is only consulted when the URL is silent on
+// the question. Neither present -> Polish, the site's default language.
+function initialLang() {
+  const fromUrl = new URLSearchParams(location.search).get("lang");
+  if (fromUrl === "en" || fromUrl === "pl") return fromUrl;
+  const stored = localStorage.getItem("lang");
+  return stored === "en" ? "en" : "pl";
+}
+
 let state = {
   variable: "e8_matematyka",
   view: "diff",
@@ -179,7 +203,124 @@ let state = {
   measure: "mean",
   colorScale: "linear",
   colorScaleScope: "year",
+  lang: initialLang(),
 };
+
+// --- Language (i18n) ---
+// Rather than threading a lang parameter through the ~40+ existing call
+// sites that already read VARIABLE_META[state.variable].label/.meaning/etc,
+// TOPICS[t], VIEWS[k].label, LEVEL_LABELS[level], COLOR_SCALES[key] and so
+// on, applyLanguage() MUTATES those objects' string fields IN PLACE on
+// every toggle -- every one of those call sites keeps working completely
+// unchanged, since the object identities never change, only their string
+// contents do. VARIABLE_META/TOPICS specifically need a snapshot of their
+// untouched Polish originals (taken once, before the first mutation) to
+// restore from, since variables.en.js/TOPICS_EN are deliberately allowed to
+// be incomplete (a future variable added without its EN translation yet
+// should fall back to Polish, not show "undefined"). VIEWS/LEVEL_LABELS/
+// EXPORT_LEVEL_LABEL_PLURAL/COLOR_SCALES/SCALE_SCOPES don't need that
+// fallback dance -- they're small fixed enums where I own both language's
+// full content directly in STRINGS, so both directions just re-read from
+// STRINGS.pl/STRINGS.en with no snapshot involved.
+function t(key, ...args) {
+  const table = STRINGS[state.lang] && key in STRINGS[state.lang] ? STRINGS[state.lang] : STRINGS.pl;
+  const entry = table[key];
+  return typeof entry === "function" ? entry(...args) : entry;
+}
+
+const VIEW_LABEL_KEYS = { women: "view_women", men: "view_men", total: "view_total", diff: "view_diff", ratio: "view_ratio", ratioInverse: "view_ratio_inverse", shareWomen: "view_share_women", shareMen: "view_share_men" };
+// CSV column header for each view's optional export column (VIEWS[k].csvSlug
+// below) -- kept ASCII/snake_case in both languages (identifiers for
+// spreadsheet/script consumption, not prose), but still translated so an
+// English CSV export doesn't have a lone "widok_kobiety" column header sitting
+// in an otherwise-English header row.
+const VIEW_CSV_SLUG_PL = { women: "widok_kobiety", men: "widok_mezczyzni", total: "widok_ogolem", diff: "widok_roznica_k_m", ratio: "widok_proporcja_k_m", ratioInverse: "widok_proporcja_m_k", shareWomen: "widok_pct_kobiet", shareMen: "widok_pct_mezczyzn" };
+const VIEW_CSV_SLUG_EN = { women: "view_women", men: "view_men", total: "view_total", diff: "view_diff_w_m", ratio: "view_ratio_w_m", ratioInverse: "view_ratio_m_w", shareWomen: "view_pct_women", shareMen: "view_pct_men" };
+const LEVEL_LABEL_KEYS = { powiat: "level_powiat", gmina: "level_gmina", podregion: "level_podregion", wojewodztwo: "level_wojewodztwo" };
+const LEVEL_LABEL_PLURAL_KEYS = { powiat: "level_powiat_plural", gmina: "level_gmina_plural", podregion: "level_podregion_plural", wojewodztwo: "level_wojewodztwo_plural" };
+const COLOR_SCALE_KEYS = { linear: "scale_linear", log: "scale_log", quantile: "scale_quantile" };
+const SCALE_SCOPE_KEYS = { year: "scope_year", all: "scope_all" };
+
+let VARIABLE_META_PL_SNAPSHOT = null;
+function snapshotVariableMetaPl() {
+  const snap = {};
+  for (const key in VARIABLE_META) {
+    const v = VARIABLE_META[key];
+    snap[key] = {
+      label: v.label, meaning: v.meaning, source: v.source, accessNote: v.accessNote,
+      unit: v.unit, agegroupLabel: v.agegroupLabel,
+      ageGroups: v.ageGroups.map((o) => ({ label: o.label, unit: o.unit })),
+      measures: v.measures.map((o) => ({ label: o.label, unit: o.unit })),
+    };
+  }
+  return snap;
+}
+
+// Applies `lang` to one option-list field (ageGroups or measures): an
+// override entry is either a plain string (label only, unit inherited from
+// the Polish snapshot's own unit for that option) or `{label, unit}`
+// (overrides both) -- see variables.en.js's own header comment for why.
+function applyOptionListLanguage(options, plOptions, overrideMap) {
+  options.forEach((o, i) => {
+    const ov = overrideMap && overrideMap[o.key];
+    const plOpt = plOptions[i];
+    if (typeof ov === "string") { o.label = ov; o.unit = plOpt.unit; }
+    else if (ov) { o.label = ov.label; o.unit = ov.unit ?? plOpt.unit; }
+    else { o.label = plOpt.label; o.unit = plOpt.unit; }
+  });
+}
+
+function applyVariableMetaLanguage(lang) {
+  if (!VARIABLE_META_PL_SNAPSHOT) VARIABLE_META_PL_SNAPSHOT = snapshotVariableMetaPl();
+  for (const key in VARIABLE_META) {
+    const v = VARIABLE_META[key];
+    const pl = VARIABLE_META_PL_SNAPSHOT[key];
+    const override = lang === "en" ? VARIABLE_META_EN[key] : null;
+    v.label = override?.label ?? pl.label;
+    v.meaning = override?.meaning ?? pl.meaning;
+    v.source = override?.source ?? pl.source;
+    v.accessNote = override?.accessNote ?? pl.accessNote;
+    v.unit = override?.unit ?? pl.unit;
+    v.agegroupLabel = override?.agegroupLabel ?? pl.agegroupLabel;
+    applyOptionListLanguage(v.ageGroups, pl.ageGroups, override?.ageGroups);
+    applyOptionListLanguage(v.measures, pl.measures, override?.measures);
+  }
+}
+
+let TOPICS_PL_SNAPSHOT = null;
+function applyTopicsLanguage(lang) {
+  if (!TOPICS_PL_SNAPSHOT) TOPICS_PL_SNAPSHOT = { ...TOPICS };
+  for (const key in TOPICS) TOPICS[key] = lang === "en" ? (TOPICS_EN[key] ?? TOPICS_PL_SNAPSHOT[key]) : TOPICS_PL_SNAPSHOT[key];
+}
+
+// VIEWS/LEVEL_LABELS/EXPORT_LEVEL_LABEL_PLURAL/COLOR_SCALES/SCALE_SCOPES are
+// all defined further down in this file (as `const`), but that's fine --
+// this function is only ever CALLED later (from init()/the toggle handler),
+// well after every one of those has already been assigned, regardless of
+// where its own declaration happens to sit in the file.
+function applyFixedLabelsLanguage(lang) {
+  for (const key in VIEWS) {
+    VIEWS[key].label = STRINGS[lang][VIEW_LABEL_KEYS[key]];
+    VIEWS[key].csvSlug = (lang === "en" ? VIEW_CSV_SLUG_EN : VIEW_CSV_SLUG_PL)[key];
+  }
+  for (const key in LEVEL_LABELS) LEVEL_LABELS[key] = STRINGS[lang][LEVEL_LABEL_KEYS[key]];
+  for (const key in EXPORT_LEVEL_LABEL_PLURAL) EXPORT_LEVEL_LABEL_PLURAL[key] = STRINGS[lang][LEVEL_LABEL_PLURAL_KEYS[key]];
+  for (const key in COLOR_SCALES) COLOR_SCALES[key] = STRINGS[lang][COLOR_SCALE_KEYS[key]];
+  for (const key in SCALE_SCOPES) SCALE_SCOPES[key] = STRINGS[lang][SCALE_SCOPE_KEYS[key]];
+}
+
+// Fills every [data-i18n]/[data-i18n-placeholder] node in the static HTML
+// shell (index.html) from the current language, plus the handful of
+// document-level fields (title, meta tags) that don't have a DOM node of
+// their own to tag.
+function applyStaticStrings() {
+  document.title = t("page_title");
+  document.querySelector('meta[name="description"]')?.setAttribute("content", t("meta_description"));
+  document.querySelector('meta[property="og:title"]')?.setAttribute("content", t("page_title"));
+  document.querySelector('meta[property="og:description"]')?.setAttribute("content", t("meta_description"));
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+}
 
 // Every variable defaults to showing the gender GAP (Różnica K-M) first
 // rather than a raw total -- that's the map's whole reason for existing.
@@ -214,6 +355,8 @@ let geoLayer = null;
 let map = null;
 let attributionControl = null;
 let currentSourceAttribution = null;
+let currentCreditAttribution = null;
+let resetViewBtn = null;
 let terytToLayer = {};
 let terytToName = {};
 // Names for TERYT codes with 1998 election data but no boundary geometry --
@@ -305,8 +448,22 @@ let appliedPowiatOverrides = {}; // "asOf2001" | dissolvedTeryt -> whatever stat
 function updateMapAttribution() {
   if (!attributionControl) return;
   if (currentSourceAttribution) attributionControl.removeAttribution(currentSourceAttribution);
-  currentSourceAttribution = "Dane: " + VARIABLE_META[state.variable].source;
+  currentSourceAttribution = t("data_prefix") + VARIABLE_META[state.variable].source;
   attributionControl.addAttribution(currentSourceAttribution);
+}
+
+// The site-name credit link -- separate from updateMapAttribution() above
+// (that one refreshes on every variable change; this one only needs to
+// refresh on a language toggle) but uses the exact same Leaflet
+// remove-then-add pattern, since L.Control.Attribution accumulates text by
+// exact string match rather than replacing -- calling addAttribution again
+// with new-language text would show BOTH languages at once without first
+// removing whatever's currently there.
+function setMapAttributionText() {
+  if (!attributionControl) return;
+  if (currentCreditAttribution) attributionControl.removeAttribution(currentCreditAttribution);
+  currentCreditAttribution = `${t("page_title")}: <a href="https://mapa.michalgulczynski.pl">Michał Gulczyński</a>`;
+  attributionControl.addAttribution(currentCreditAttribution);
 }
 
 function sliceKey(ageGroup, measure) {
@@ -694,23 +851,185 @@ async function ensureLevel(level) {
   document.getElementById("search-results").innerHTML = "";
 }
 
+// Applies `lang` to VARIABLE_META/TOPICS/VIEWS/LEVEL_LABELS/etc and the
+// static HTML shell -- safe to call before ANY of the map/dropdown/panel UI
+// exists (used at the very top of init()), since it only mutates data and
+// the already-present static DOM. Does NOT touch anything built later
+// (dropdowns, buttons, tables) -- see switchLanguage() below for the
+// version that also re-renders already-built UI, used by the toggle itself.
+function applyLanguageData(lang) {
+  state.lang = lang;
+  applyVariableMetaLanguage(lang);
+  applyTopicsLanguage(lang);
+  applyFixedLabelsLanguage(lang);
+  document.documentElement.lang = lang;
+  applyStaticStrings();
+  document.getElementById("lang-pl-btn")?.classList.toggle("active", lang === "pl");
+  document.getElementById("lang-en-btn")?.classList.toggle("active", lang === "en");
+}
+
+// Relabels both correlation axes' selects in place, preserving whatever
+// topic/variable/level/ageGroup/measure/view is currently selected on each
+// -- reuses the exact same functions the axis's own change handlers already
+// call (refreshCorrVariableOptions/populateDimensionSelect/
+// populateCorrViewOptions), all of which rebuild <option> innerHTML without
+// touching any listener, so no risk of duplicating the 8 listeners
+// buildCorrelationSelectors() wires at init(). Deliberately does NOT call
+// buildCorrelationSelectors() itself -- that reseeds X/Y to fresh defaults
+// every time, which would silently discard whatever comparison the user had
+// actually set up just because they switched language.
+function relabelCorrelationSelectors() {
+  for (const prefix of ["x", "y"]) {
+    const topicSelect = document.getElementById(`corr-${prefix}-topic`);
+    if (!topicSelect.options.length) continue; // correlation tool not built yet (shouldn't happen post-init, stay safe)
+    const keepTopic = topicSelect.value;
+    topicSelect.innerHTML = topicsInUse().map((k) => `<option value="${k}">${TOPICS[k]}</option>`).join("");
+    topicSelect.value = keepTopic;
+    refreshCorrVariableOptions(prefix);
+    const variable = document.getElementById(`corr-${prefix}-var`).value;
+    const meta = VARIABLE_META[variable];
+    if (meta) {
+      const levelSel = document.getElementById(`corr-${prefix}-level`);
+      const ageSel = document.getElementById(`corr-${prefix}-agegroup`);
+      const measureSel = document.getElementById(`corr-${prefix}-measure`);
+      populateDimensionSelect(levelSel, localizedLevels(meta.levels), levelSel.value);
+      populateDimensionSelect(ageSel, meta.ageGroups, ageSel.value);
+      populateDimensionSelect(measureSel, meta.measures, measureSel.value);
+    }
+    populateCorrViewOptions(prefix);
+  }
+}
+
+// Relabels the "Pobierz dane" panel's variable checklist + topic headers +
+// Widok checklist in place, preserving every checkbox's `checked` state
+// (only the trailing label TEXT node is rewritten, the checkbox itself is
+// never touched) -- deliberately NOT a call to buildDownloadPanel() itself,
+// which would both re-wire the static "Zaznacz wszystko" master checkboxes'
+// listeners a second time (see its own comment on why it's "wired once")
+// AND reset every variable checkbox back to "only the current map variable
+// checked", discarding the user's actual multi-select CSV choices.
+//
+// download-level/agegroup/measure are the one exception: those checklists
+// are keyed by LABEL TEXT itself as their checkbox `value` (see
+// updateDownloadDimensionOptions), not a stable key, so a language switch
+// can't map an old checked Polish label onto its new English counterpart --
+// falls back to updateDownloadDimensionOptions()'s own "nothing checked ->
+// treat as all checked" default instead, the same reset a variable-checkbox
+// change would trigger anyway.
+function relabelDownloadPanel() {
+  // Walks the EXISTING DOM by each element's own identity (data-topic on
+  // <details>, the checkbox's own `value` for each variable) rather than
+  // zipping against a freshly-sorted topicsInUse()/variablesInTopic() list
+  // by array position -- both of those sort by the CURRENT label text
+  // (PL_COLLATOR.compare against TOPICS[...]/VARIABLE_META[...].label), so
+  // their order silently changes between languages (e.g. Edukacja/Ludność/
+  // Polityka/... vs. Agriculture/Education/Health/...). The DOM itself was
+  // only ever built once, in whatever order applied at that time, and never
+  // reordered on a language switch (see the header comment on why -- order
+  // stability across a toggle was a deliberate simplification) -- a
+  // position-based zip against a re-sorted list silently paired the WRONG
+  // topic/variable with each DOM node once the two orders diverged (real
+  // bug, reported 2026-08-06: entries like "wykształcenie ludności" stayed
+  // Polish, or worse, could show a variable name that isn't even in that
+  // topic). Identity-based lookup can't drift this way regardless of
+  // whether the two orderings agree.
+  document.querySelectorAll("#download-variables > details.download-dim").forEach((details) => {
+    const topic = details.dataset.topic;
+    details.querySelector("summary").textContent = TOPICS[topic];
+    details.querySelectorAll(".download-var-item").forEach((label) => {
+      const key = label.querySelector('input[type="checkbox"]').value;
+      const textNode = [...label.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
+      if (textNode) textNode.textContent = " " + VARIABLE_META[key].label;
+    });
+  });
+
+  const viewKeys = Object.keys(VIEWS);
+  [...document.querySelectorAll("#download-view .dim-option")].forEach((label, i) => {
+    const key = viewKeys[i];
+    if (!key) return;
+    const textNode = [...label.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
+    if (textNode) textNode.textContent = " " + VIEWS[key].label;
+  });
+
+  updateDownloadDimensionOptions(); // also re-syncs the level/agegroup/measure "Zaznacz wszystko" masters
+}
+
+// Relabels the unit-overview panel's already-rendered content in place --
+// the title (unit name, never translated, + its level label, which is),
+// each topic <summary>, and any topic body that's currently expanded
+// (reusing refreshOpenUnitOverviewTopics, the same function the year slider
+// already relies on to redraw from cached data without a re-fetch).
+// Deliberately does NOT call renderUnitOverviewTopics(), which would rebuild
+// every <details> from scratch and collapse whatever the user had open.
+function relabelUnitOverviewTopics() {
+  if (!unitOverviewState) return;
+  document.getElementById("unit-overview-title").textContent = `${unitOverviewState.name} (${LEVEL_LABELS[unitOverviewState.level]})`;
+  for (const containerId of ["unit-overview-pane-current", "unit-overview-pane-trend-topics"]) {
+    document.getElementById(containerId).querySelectorAll("details.unit-overview-topic").forEach((el) => {
+      const summary = el.querySelector("summary");
+      if (summary) summary.textContent = TOPICS[el.dataset.topic];
+    });
+  }
+  refreshOpenUnitOverviewTopics("current");
+  refreshOpenUnitOverviewTopics("trend");
+}
+
+// The actual toggle handler -- wired to both #lang-pl-btn/#lang-en-btn
+// clicks. Mutates the underlying data (applyLanguageData), then re-renders
+// every already-built piece of UI that read from it before the switch:
+// dropdowns/buttons that are cheap/safe to rebuild wholesale, and the
+// panels above that need a narrower relabel-in-place pass to avoid losing
+// user state (checked boxes, open accordions, the correlation tool's
+// current axis selections) that a full rebuild would silently discard.
+function switchLanguage(lang) {
+  if (lang === state.lang) return;
+  applyLanguageData(lang);
+
+  buildTopicSelect();
+  buildVariableSelect();
+  buildViewButtons();
+  buildScaleButtons();
+  buildScaleScopeButtons();
+  buildDimensionSelectors();
+  relabelCorrelationSelectors();
+  relabelDownloadPanel();
+  relabelUnitOverviewTopics();
+
+  const widokSelect = document.getElementById("unit-overview-widok-select");
+  if (widokSelect) {
+    const keepWidok = widokSelect.value;
+    widokSelect.innerHTML = Object.entries(VIEWS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("");
+    widokSelect.value = keepWidok;
+  }
+
+  if (resetViewBtn) resetViewBtn.title = t("reset_view_title");
+  setMapAttributionText();
+  updateMapAttribution();
+
+  updateViewAvailability();
+  updateMeta();
+  updateAll(); // also calls updateUrl(), which re-adds ?lang= itself -- see its own comment
+
+  localStorage.setItem("lang", lang);
+}
+
 async function init() {
+  applyLanguageData(state.lang);
+  document.getElementById("lang-pl-btn").addEventListener("click", () => switchLanguage("pl"));
+  document.getElementById("lang-en-btn").addEventListener("click", () => switchLanguage("en"));
+
   if (location.protocol === "file:") {
-    showError(
-      "Ta strona nie zadziała otwarta bezpośrednio jako plik (file://) -- przeglądarki blokują " +
-      "wtedy wczytywanie danych. Uruchom lokalny serwer (np. \"python3 -m http.server\" w tym " +
-      "folderze) i otwórz http://localhost:8000, albo przeglądaj przez wdrożoną stronę."
-    );
+    showError(t("err_file_protocol"));
     return;
   }
-  showLoading("Wczytywanie granic i danych...");
+  showLoading(t("loading_boundaries"));
   try {
     await Promise.all([
       loadBoundaries(VARIABLE_META[state.variable].levels[0].key),
       loadVariable(state.variable),
     ]);
   } catch (err) {
-    showError("Nie udało się wczytać danych. Spróbuj odświeżyć stronę. (" + err.message + ")");
+    showError(t("err_load_failed_retry") + err.message + ")");
     return;
   }
   hideLoading();
@@ -742,7 +1061,7 @@ async function init() {
   // requirement (Leaflet is BSD-2-Clause, which doesn't mandate on-screen
   // attribution), removed per explicit request.
   attributionControl = L.control.attribution({ prefix: false }).addTo(map);
-  attributionControl.addAttribution('Interaktywna Mapa Nierówności Płci: <a href="https://mapa.michalgulczynski.pl">Michał Gulczyński</a>');
+  setMapAttributionText();
   updateMapAttribution();
 
   const ResetViewControl = L.Control.extend({
@@ -750,10 +1069,11 @@ async function init() {
     onAdd: () => {
       const btn = L.DomUtil.create("button", "leaflet-bar map-reset-btn");
       btn.type = "button";
-      btn.title = "Przywróć domyślny widok";
+      btn.title = t("reset_view_title");
       btn.textContent = "100%";
       L.DomEvent.disableClickPropagation(btn);
       btn.addEventListener("click", setDefaultView);
+      resetViewBtn = btn; // so a later language toggle can retitle it -- see switchLanguage()
       return btn;
     },
   });
@@ -814,8 +1134,8 @@ function buildDimensionSelectors() {
   // something else entirely -- agegroupLabel lets those override the
   // sidebar's label instead of showing "Grupa wieku" next to a list of
   // industry sections.
-  document.getElementById("agegroup-label").textContent = meta.agegroupLabel || "Grupa wieku";
-  state.level = populateDimensionSelect(document.getElementById("level-select"), meta.levels, state.level);
+  document.getElementById("agegroup-label").textContent = meta.agegroupLabel || t("label_agegroup_default");
+  state.level = populateDimensionSelect(document.getElementById("level-select"), localizedLevels(meta.levels), state.level);
   state.ageGroup = populateDimensionSelect(document.getElementById("agegroup-select"), meta.ageGroups, state.ageGroup);
   state.measure = populateDimensionSelect(document.getElementById("measure-select"), meta.measures, state.measure);
 
@@ -895,7 +1215,7 @@ async function populateCorrDimensions(prefix, preferred = {}) {
   if (!variable) return; // this axis's current Temat has no variable at all (shouldn't happen for a real topic)
   await loadVariable(variable);
   const meta = VARIABLE_META[variable];
-  populateDimensionSelect(document.getElementById(`corr-${prefix}-level`), meta.levels, preferred.level ?? meta.levels[0].key);
+  populateDimensionSelect(document.getElementById(`corr-${prefix}-level`), localizedLevels(meta.levels), preferred.level ?? meta.levels[0].key);
   populateDimensionSelect(document.getElementById(`corr-${prefix}-agegroup`), meta.ageGroups, preferred.ageGroup ?? meta.ageGroups[0].key);
   populateDimensionSelect(document.getElementById(`corr-${prefix}-measure`), meta.measures, preferred.measure ?? meta.measures[0].key);
   refreshCorrYears(prefix);
@@ -1596,12 +1916,21 @@ function stripNegativeZero(formatted) {
 // "right" number of decimals varies per tick and forcing one would print
 // misleading trailing zeros on otherwise-round numbers (e.g. a log-scale
 // tick at exactly 100 showing "100,00").
+// Locale follows state.lang (pl-PL / en-US) despite the name -- kept as
+// "formatPl" rather than renamed, since it's called from ~30 sites across
+// this file and a rename buys nothing functional. The ">= 1000 -> drop
+// grouping/decimals" rule above is a Polish-specific readability call (see
+// the comment above this function) that doesn't apply to English, where
+// comma-grouped four-digit-plus numbers (e.g. "12,345") are the completely
+// normal, unambiguous way to read them -- so that branch only fires for
+// "pl", English always takes the grouped/precision-respecting branch.
 function formatPl(n, maxFractionDigits, padDecimals) {
+  const locale = state.lang === "en" ? "en-US" : "pl-PL";
   const decimals = maxFractionDigits ?? 2;
   const formatted =
-    Math.abs(n) >= 1000
-      ? n.toLocaleString("pl-PL", { maximumFractionDigits: 0, useGrouping: false })
-      : n.toLocaleString("pl-PL", { minimumFractionDigits: padDecimals ? decimals : 0, maximumFractionDigits: decimals, useGrouping: true });
+    state.lang !== "en" && Math.abs(n) >= 1000
+      ? n.toLocaleString(locale, { maximumFractionDigits: 0, useGrouping: false })
+      : n.toLocaleString(locale, { minimumFractionDigits: padDecimals ? decimals : 0, maximumFractionDigits: decimals, useGrouping: true });
   return stripNegativeZero(formatted);
 }
 
@@ -1609,34 +1938,41 @@ function formatPl(n, maxFractionDigits, padDecimals) {
 // for an arbitrary (view, unit) pair -- one table there mixes several
 // variables and several widoki at once, none of it tied to the map's own
 // state.view/state.variable/state.measure the way every other caller is.
+// "na 100 tys." (pl) / "per 100,000" (en) -- the unit STRING itself changes
+// per language (see variables.en.js), so a plain `unit === "na 100 tys."`
+// comparison would silently stop matching once VARIABLE_META's own unit
+// fields are mutated to English. Checking membership in both languages'
+// spellings here keeps this correct regardless of which one is currently
+// live, same pattern as AXIS_LABEL_GENERIC above.
+const PER100K_UNITS = new Set(["na 100 tys.", "per 100,000"]);
 function formatValueWithView(v, view, unit, isIntegerData) {
-  if (v === null || v === undefined) return "brak danych";
+  if (v === null || v === undefined) return t("no_data");
   // 0/0 -- both sexes genuinely zero (e.g. a variable with zero students of
   // either sex some year), as distinct from Infinity below. Only shareWomen/
   // shareMen's k+(k+m) can land here: their shared denominator k+m is zero
   // ONLY when both k and m are (a lone-sided zero can't make k+m zero when
   // counts are never negative), so there's no single empty side to name --
-  // "brak danych" is the honest label, not "brak kobiet"/"brak mężczyzn".
-  if (Number.isNaN(v)) return "brak danych";
+  // "brak danych"/"no data" is the honest label, not "no men"/"no women".
+  if (Number.isNaN(v)) return t("no_data");
   // Infinity -- a nonzero count divided by a genuine zero on the OTHER side
   // (e.g. Proporcja M/K for an all-women council: zero men). Unlike the 0/0
   // case above, this DOES identify a single empty side, so name it directly
-  // instead of the generic "brak danych" -- only ratio/ratioInverse can
-  // land here (shareWomen/shareMen's denominator is the 0/0 case instead).
+  // instead of the generic "no data" -- only ratio/ratioInverse can land
+  // here (shareWomen/shareMen's denominator is the 0/0 case instead).
   if (!Number.isFinite(v)) {
-    if (view === VIEWS.ratio) return "brak mężczyzn"; // k/m, m was the zero denominator
-    if (view === VIEWS.ratioInverse) return "brak kobiet"; // m/k, k was the zero denominator
-    return "brak danych"; // shouldn't be reachable from any other view, but stay safe
+    if (view === VIEWS.ratio) return t("no_men"); // k/m, m was the zero denominator
+    if (view === VIEWS.ratioInverse) return t("no_women"); // m/k, k was the zero denominator
+    return t("no_data"); // shouldn't be reachable from any other view, but stay safe
   }
   // Subtracting two percentages is a point difference, not itself a
   // percentage (e.g. 65% minus 60% is "5 p.p.", not "5%") -- only applies to
   // Różnica, since ratio/share views already override their own unit above.
-  if (view === VIEWS.diff && unit === "%") unit = "p.p.";
+  if (view === VIEWS.diff && unit === "%") unit = t("percentage_point_unit");
   // Same idea for a "per 100 000" rate: the difference of two such rates
   // isn't itself "per 100 000" of anything -- there's no clean unit for it
   // (unlike % -> p.p.), so it's shown bare rather than with a misleading
   // "na 100 tys." suffix.
-  if (view === VIEWS.diff && unit === "na 100 tys.") unit = "";
+  if (view === VIEWS.diff && PER100K_UNITS.has(unit)) unit = "";
   const formatted = formatPl(v, effectiveDecimals(view, isIntegerData), true);
   return unit ? formatted + " " + unit : formatted;
 }
@@ -1682,7 +2018,8 @@ function legendValueFormat(v) {
   const view = VIEWS[state.view];
   const isIntegerData = isIntegerValuedSlice(state.variable, state.ageGroup, state.measure);
   const decimals = effectiveDecimals(view, isIntegerData);
-  const formatted = v.toLocaleString("pl-PL", { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: true });
+  const locale = state.lang === "en" ? "en-US" : "pl-PL";
+  const formatted = v.toLocaleString(locale, { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: true });
   return stripNegativeZero(formatted);
 }
 
@@ -1907,20 +2244,20 @@ function updateLegend(domain) {
 function updateMeta() {
   const meta = VARIABLE_META[state.variable];
   document.getElementById("variable-description").textContent = meta.meaning;
-  document.getElementById("variable-source").textContent = "Źródło: " + meta.source;
+  document.getElementById("variable-source").textContent = t("source_prefix") + meta.source;
   document.getElementById("variable-access").textContent = meta.accessNote;
 
   const years = availableYears(state.variable).map(Number);
-  const yearsStr = years.length > 1 ? `${Math.min(...years)}-${Math.max(...years)}` : String(years[0] ?? "brak danych");
-  const levelsStr = meta.levels.map((o) => o.label).join(", ");
+  const yearsStr = years.length > 1 ? `${Math.min(...years)}-${Math.max(...years)}` : String(years[0] ?? t("no_data"));
+  const levelsStr = localizedLevels(meta.levels).map((o) => o.label).join(", ");
   const ageGroupsStr = meta.ageGroups.map((o) => o.label).join(", ");
   const lines = [
-    `Poziom agregacji: ${levelsStr}`,
-    `Lata: ${yearsStr}`,
-    `${meta.agegroupLabel || "Grupa wieku"}: ${ageGroupsStr}`,
+    `${t("label_level")}: ${levelsStr}`,
+    `${t("meta_years_prefix")}: ${yearsStr}`,
+    `${meta.agegroupLabel || t("label_agegroup_default")}: ${ageGroupsStr}`,
   ];
   if (meta.measures.length > 1) {
-    lines.push(`Miara: ${meta.measures.map((o) => o.label).join(", ")}`);
+    lines.push(`${t("label_measure")}: ${meta.measures.map((o) => o.label).join(", ")}`);
   }
   document.getElementById("variable-availability").textContent = lines.join(" · ");
 }
@@ -2020,8 +2357,20 @@ const EXPORT_SCALE_SCOPE_PHRASE = { year: ["dla danego roku"], all: ["wspólna d
 // always broken this way regardless of whether a shorter combination would
 // fit on fewer lines, per explicit user request, rather than word-wrapping
 // reactively only when a single joined line overflows the panel width.
+// English mirrors the exact same "bare adjective, paren on its own line"
+// shape as the Polish branch below (see EXPORT_SCALE_ADJ's own comment for
+// why it's not just COLOR_SCALES' already-combined button text) -- i18n.js's
+// export_scale_linear/log/quantile are deliberately paren-free for the same
+// reason EXPORT_SCALE_ADJ is.
+const EXPORT_SCALE_KEY_EN = { linear: "export_scale_linear", log: "export_scale_log", quantile: "export_scale_quantile" };
 function exportScaleSentenceLines() {
-  const lines = [`Skala ${EXPORT_SCALE_ADJ[state.colorScale]}`];
+  if (state.lang === "en") {
+    const lines = [`${t("export_scale_prefix")} ${t(EXPORT_SCALE_KEY_EN[state.colorScale])}`];
+    if (state.colorScale === "linear") lines.push(t("export_scale_linear_paren"));
+    lines.push(...(state.colorScaleScope === "all" ? [t("export_scope_all_line1"), t("export_scope_all_line2")] : [t("export_scope_year_line")]));
+    return lines;
+  }
+  const lines = [`${t("export_scale_prefix")} ${EXPORT_SCALE_ADJ[state.colorScale]}`];
   const paren = EXPORT_SCALE_ADJ_PAREN[state.colorScale];
   if (paren) lines.push(paren);
   lines.push(...EXPORT_SCALE_SCOPE_PHRASE[state.colorScaleScope]);
@@ -2237,7 +2586,7 @@ function buildExportSvg({ pixelScale = 1 } = {}) {
   const totalW = mapW + EXPORT_LEGEND_GAP + legendPanelW;
   const availW = totalW - EXPORT_PAD_X * 2;
 
-  const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
+  const creditText = t("export_watermark");
   const creditFontSize = fitFontSize(creditText, 12, 9, availW);
 
   // Title: the variable name alone, large, centered over the whole image.
@@ -2351,7 +2700,7 @@ function exportMapPng() {
   };
   img.onerror = () => {
     URL.revokeObjectURL(url);
-    showError("Nie udało się wygenerować obrazu PNG.");
+    showError(t("err_png_failed"));
   };
   img.src = url;
 }
@@ -2391,7 +2740,7 @@ function rasterizeSvgToImageData(svgString) {
 // where each frame would silently get its own incomparable scale.
 async function exportChangeGif() {
   if (state.colorScaleScope !== "all") {
-    showError("Dynamiczna mapa zmian wymaga zakresu skali \"Wspólna dla wszystkich lat\".");
+    showError(t("err_gif_needs_common_scale"));
     return;
   }
   const fromYear = Number(document.getElementById("gif-year-from").value);
@@ -2400,7 +2749,7 @@ async function exportChangeGif() {
     .map(Number)
     .filter((y) => y >= Math.min(fromYear, toYear) && y <= Math.max(fromYear, toYear));
   if (years.length === 0) {
-    showError("Brak dostępnych lat w wybranym zakresie.");
+    showError(t("err_gif_no_years"));
     return;
   }
 
@@ -2411,7 +2760,7 @@ async function exportChangeGif() {
     const frames = [];
     let width = null, height = null;
     for (let i = 0; i < years.length; i++) {
-      showLoading(`Generowanie mapy zmian... rok ${years[i]} (${i + 1}/${years.length})`);
+      showLoading(t("loading_gif_frame", years[i], i + 1, years.length));
       state.year = years[i];
       await updateAll();
       const svg = buildExportSvg({ pixelScale: 1 });
@@ -2423,7 +2772,7 @@ async function exportChangeGif() {
       frames.push(imageData.data);
     }
 
-    showLoading("Kodowanie GIF-a...");
+    showLoading(t("loading_gif_encoding"));
     // Give the "Kodowanie GIF-a..." message a chance to actually paint --
     // encodeGif's quantization+LZW loop runs synchronously and can take a
     // couple of seconds, which would otherwise block the frame that draws
@@ -2437,7 +2786,7 @@ async function exportChangeGif() {
     hideLoading();
   } catch (err) {
     hideLoading();
-    showError("Nie udało się wygenerować mapy zmian: " + err.message);
+    showError(t("err_gif_failed") + err.message);
   } finally {
     state.year = originalYear;
     btn.disabled = false;
@@ -2455,7 +2804,7 @@ let variableRequestSeq = 0;
 
 async function selectVariable(requested) {
   const seq = ++variableRequestSeq;
-  showLoading("Wczytywanie danych...");
+  showLoading(t("loading_data"));
   const meta = VARIABLE_META[requested];
   try {
     // loadBoundaries only fetches+caches -- it doesn't touch the map, so it's
@@ -2464,7 +2813,7 @@ async function selectVariable(requested) {
     await Promise.all([loadVariable(requested), loadBoundaries(meta.levels[0].key)]);
   } catch (err) {
     if (seq !== variableRequestSeq) return; // superseded by a newer selection
-    showError("Nie udało się wczytać danych: " + err.message);
+    showError(t("err_load_failed") + err.message);
     return;
   }
   if (seq !== variableRequestSeq) return; // superseded by a newer selection
@@ -2533,22 +2882,27 @@ function populateVariableOptions(topic) {
   select.innerHTML = keys.map((k) => `<option value="${k}">${VARIABLE_META[k].label}</option>`).join("");
 }
 
+// Both use `.onchange =` (property assignment, replaces any previous
+// handler) rather than `.addEventListener` -- makes both functions safe to
+// call again later purely to relabel their <option> text on a language
+// toggle (see switchLanguage()) without stacking a second handler on top of
+// the one from the first call at init().
 function buildTopicSelect() {
   const select = document.getElementById("topic-select");
-  select.innerHTML = topicsInUse().map((t) => `<option value="${t}">${TOPICS[t]}</option>`).join("");
+  select.innerHTML = topicsInUse().map((k) => `<option value="${k}">${TOPICS[k]}</option>`).join("");
   select.value = VARIABLE_META[state.variable].topic;
-  select.addEventListener("change", () => {
+  select.onchange = () => {
     populateVariableOptions(select.value);
     const firstVar = Object.keys(VARIABLE_META).find((k) => VARIABLE_META[k].topic === select.value);
     selectVariable(firstVar);
-  });
+  };
 }
 
 function buildVariableSelect() {
   populateVariableOptions(VARIABLE_META[state.variable].topic);
   const select = document.getElementById("variable-select");
   select.value = state.variable;
-  select.addEventListener("change", () => selectVariable(select.value));
+  select.onchange = () => selectVariable(select.value);
 }
 
 // Keeps the year slider's min/max in sync with whatever the current
@@ -2889,8 +3243,8 @@ function updateViewAvailability() {
   totalBtn.title = totalOk
     ? ""
     : womenOnly
-    ? "Zmienna dotyczy wyłącznie kobiet -- dostępny jest tylko widok Kobiety"
-    : "Ogółem niedostępne dla tej grupy wieku/miary (patrz opis zmiennej)";
+    ? t("gate_women_only")
+    : t("gate_total_unavailable");
 
   // Kobiety/Mężczyźni obviously need m/k, but so do the diverging views --
   // Różnica is k-m, both Proporcje are k/m or m/k -- so all five are gated
@@ -2914,10 +3268,10 @@ function updateViewAvailability() {
     btn.title = enabled
       ? ""
       : womenOnly
-      ? "Zmienna dotyczy wyłącznie kobiet -- dostępny jest tylko widok Kobiety"
+      ? t("gate_women_only")
       : isRatio && sexOk && !binaryOk
-      ? "Zmienna ma dokładnie jednego zwycięzcę -- proporcja K/M dzieli przez zero w większości gmin. Użyj Różnicy lub % kobiet/mężczyzn"
-      : "Ta zmienna nie ma danych w podziale na płeć -- dostępne jest tylko Ogółem";
+      ? t("gate_single_winner")
+      : t("gate_no_sex_breakdown");
   }
 
   // % kobiet / % mężczyzn compute k/(k+m) -- only meaningful when k and m
@@ -2931,7 +3285,7 @@ function updateViewAvailability() {
     const btn = document.querySelector(`#view-buttons button[data-view-key="${key}"]`);
     if (!btn) continue;
     btn.disabled = !sharesOk;
-    btn.title = sharesOk ? "" : "Dostępne tylko dla zmiennych liczebnościowych (np. liczba uczniów), nie dla wskaźników i wyników";
+    btn.title = sharesOk ? "" : t("gate_shares_not_applicable");
   }
 
   // Read back off the DOM rather than re-deriving which of the three
@@ -3176,7 +3530,7 @@ function renderUnitOverviewTopics() {
   for (const paneKey of Object.keys(containerIds)) {
     const container = document.getElementById(containerIds[paneKey]);
     if (topics.length === 0) {
-      container.innerHTML = '<p class="corr-note">Brak zmiennych dla tego poziomu.</p>';
+      container.innerHTML = `<p class="corr-note">${t("unit_overview_no_variables_level")}</p>`;
       continue;
     }
     container.innerHTML = topics
@@ -3268,7 +3622,7 @@ function expandGroupRows(group) {
 function renderGroupNameCell(group, rowCount) {
   const measureSelect =
     group.meta.measures.length > 1
-      ? `<div class="unit-overview-dim-selects"><label class="unit-overview-dim-select">Miara <select data-group-key="${group.key}" data-dim="measure">${group.meta.measures
+      ? `<div class="unit-overview-dim-selects"><label class="unit-overview-dim-select">${t("label_measure")} <select data-group-key="${group.key}" data-dim="measure">${group.meta.measures
           .map((o) => `<option value="${o.key}" ${o.key === group.measureKey ? "selected" : ""}>${escapeXml(o.label)}</option>`)
           .join("")}</select></label></div>`
       : "";
@@ -3312,9 +3666,9 @@ function refreshOpenUnitOverviewTopics(paneKey) {
 }
 
 function renderCurrentTable(groups) {
-  if (groups.length === 0) return '<p class="corr-note">Brak danych dla tej jednostki w tym temacie.</p>';
+  if (groups.length === 0) return `<p class="corr-note">${t("unit_overview_no_data_topic")}</p>`;
   const cols = Object.keys(VIEWS);
-  const header = `<tr><th class="unit-overview-name-col">Zmienna</th><th class="unit-overview-agegroup-col">Grupa wieku / Kategoria</th>${cols.map((k) => `<th>${VIEWS[k].label}</th>`).join("")}</tr>`;
+  const header = `<tr><th class="unit-overview-name-col">${t("label_variable")}</th><th class="unit-overview-agegroup-col">${t("corr_agegroup_label")}</th>${cols.map((k) => `<th>${VIEWS[k].label}</th>`).join("")}</tr>`;
   const body = groups
     .map((group) => {
       const subRows = expandGroupRows(group);
@@ -3325,7 +3679,7 @@ function renderCurrentTable(groups) {
             // The variable is real here, just not for this ageGroup (e.g.
             // this PKD section has nothing) -- distinct from "—", which
             // means a widok doesn't apply to the variable at all.
-            return `<tr>${nameCell}<td class="unit-overview-agegroup-col">${escapeXml(sub.ageGroupOpt.label)}</td>${cols.map(() => "<td>brak danych</td>").join("")}</tr>`;
+            return `<tr>${nameCell}<td class="unit-overview-agegroup-col">${escapeXml(sub.ageGroupOpt.label)}</td>${cols.map(() => `<td>${t("no_data")}</td>`).join("")}</tr>`;
           }
           const year = nearestAvailableYear(sub.years, state.year);
           const d = sub.dataByYear.get(year);
@@ -3348,12 +3702,12 @@ function renderCurrentTable(groups) {
 }
 
 function renderTrendTable(groups, widokKey) {
-  if (groups.length === 0) return '<p class="corr-note">Brak danych dla tej jednostki w tym temacie.</p>';
+  if (groups.length === 0) return `<p class="corr-note">${t("unit_overview_no_data_topic")}</p>`;
   const view = VIEWS[widokKey];
   const expandedGroups = groups.map((group) => ({ group, subRows: expandGroupRows(group) }));
   const years = [...new Set(expandedGroups.flatMap(({ subRows }) => subRows.flatMap((sub) => sub.years)))].sort((a, b) => a - b);
-  if (years.length === 0) return '<p class="corr-note">Brak danych dla tej jednostki w tym temacie.</p>';
-  const header = `<tr><th class="unit-overview-name-col">Zmienna</th><th class="unit-overview-agegroup-col">Grupa wieku / Kategoria</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr>`;
+  if (years.length === 0) return `<p class="corr-note">${t("unit_overview_no_data_topic")}</p>`;
+  const header = `<tr><th class="unit-overview-name-col">${t("label_variable")}</th><th class="unit-overview-agegroup-col">${t("corr_agegroup_label")}</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr>`;
   const body = expandedGroups
     .map(({ group, subRows }) => {
       const unit = view.unit !== undefined ? view.unit : unitFor(group.meta, group.measureKey);
@@ -3398,13 +3752,13 @@ async function downloadUnitOverviewCsv() {
   const btn = document.getElementById("unit-overview-csv-btn");
   const originalLabel = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Wczytywanie danych...";
+  btn.textContent = t("loading_data");
   try {
     const variableKeys = Object.keys(VARIABLE_META).filter((k) => VARIABLE_META[k].levels.some((l) => l.key === level));
     await Promise.all(variableKeys.map(loadVariable));
 
     const levelLabel = LEVEL_LABELS[level];
-    const header = ["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"];
+    const header = [...t("csv_header")];
     for (const viewKey of Object.keys(VIEWS)) header.push(VIEWS[viewKey].csvSlug);
     const rows = [header];
 
@@ -3428,7 +3782,7 @@ async function downloadUnitOverviewCsv() {
         }
       }
     }
-    triggerCsvDownload(rows, `dane_${slugifyForFilename(name)}.csv`);
+    triggerCsvDownload(rows, `${t("csv_filename_unit_prefix")}${slugifyForFilename(name)}.csv`);
   } finally {
     btn.disabled = false;
     btn.textContent = originalLabel;
@@ -3534,7 +3888,7 @@ function buildDownloadPanel() {
             `<label class="download-var-item"><input type="checkbox" value="${key}" ${key === state.variable ? "checked" : ""}> ${VARIABLE_META[key].label}</label>`
         )
         .join("");
-      return `<details class="download-dim"${topic === currentTopic ? " open" : ""}><summary>${TOPICS[topic]}</summary><div class="dim-options">${items}</div></details>`;
+      return `<details class="download-dim" data-topic="${topic}"${topic === currentTopic ? " open" : ""}><summary>${TOPICS[topic]}</summary><div class="dim-options">${items}</div></details>`;
     })
     .join("");
 
@@ -3581,7 +3935,12 @@ function updateDownloadDimensionOptions() {
   const unionLabelsFor = (dim) => {
     const labels = new Set();
     for (const key of relevantVars) {
-      for (const o of VARIABLE_META[key][dim]) labels.add(o.label);
+      // "levels" specifically needs localizedLevels() -- variables.js's own
+      // per-variable levels[].label is never mutated by a language switch
+      // (see localizedLevels()'s own comment), unlike ageGroups/measures,
+      // whose labels ARE updated in place by applyVariableMetaLanguage().
+      const options = dim === "levels" ? localizedLevels(VARIABLE_META[key][dim]) : VARIABLE_META[key][dim];
+      for (const o of options) labels.add(o.label);
     }
     return [...labels];
   };
@@ -3622,13 +3981,20 @@ function resolveDimension(variable, dim, chosenKey) {
 // this treatment (bare, no quotes needed since neither "," nor ";" nor '"'
 // can appear in one) -- text fields (teryt, names, labels) stay quoted
 // exactly as before.
+// English mode swaps to the convention English-locale Excel actually
+// expects -- "," field delimiter, "." decimal mark -- rather than keeping
+// the Polish-Excel-specific ";"/","  pairing from the comment above
+// regardless of which language the rest of the page is in. Text fields stay
+// quoted the same way either way (neither delimiter nor '"' can appear in a
+// bare number, so only strings ever need escaping).
 function csvField(v) {
-  if (typeof v === "number") return String(v).replace(".", ",");
+  if (typeof v === "number") return state.lang === "en" ? String(v) : String(v).replace(".", ",");
   return `"${String(v).replace(/"/g, '""')}"`;
 }
 
 function triggerCsvDownload(rows, filename) {
-  const csv = rows.map((r) => r.map(csvField).join(";")).join("\r\n");
+  const delimiter = state.lang === "en" ? "," : ";";
+  const csv = rows.map((r) => r.map(csvField).join(delimiter)).join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -3641,7 +4007,7 @@ function triggerCsvDownload(rows, filename) {
 async function downloadCsv() {
   const variables = [...document.querySelectorAll(".download-variables input:checked")].map((cb) => cb.value);
   if (variables.length === 0) {
-    showError("Wybierz co najmniej jedną zmienną do pobrania.");
+    showError(t("err_select_variable"));
     return;
   }
   await Promise.all(variables.map(loadVariable));
@@ -3661,13 +4027,13 @@ async function downloadCsv() {
     return hits.length ? hits : [options[0]];
   };
 
-  const header = ["zmienna", "poziom", "grupa_wieku", "miara", "teryt", "powiat", "rok", "kobiety", "mezczyzni", "ogolem"];
+  const header = [...t("csv_header")];
   for (const viewKey of chosenViews) header.push(VIEWS[viewKey].csvSlug);
   const rows = [header];
   for (const variable of variables) {
     const data = loadedData[variable] || {};
     const meta = VARIABLE_META[variable];
-    const levelLabel = meta.levels[0].label;
+    const levelLabel = LEVEL_LABELS[meta.levels[0].key];
     for (const ageGroupOpt of matching(meta.ageGroups, chosenAgeGroups)) {
       for (const measureOpt of matching(meta.measures, chosenMeasures)) {
         const key = sliceKey(ageGroupOpt.key, measureOpt.key);
@@ -3690,7 +4056,7 @@ async function downloadCsv() {
       }
     }
   }
-  triggerCsvDownload(rows, "dane_mapa.csv");
+  triggerCsvDownload(rows, t("csv_filename_main"));
 }
 
 // --- URL state ---
@@ -3704,6 +4070,11 @@ function updateUrl() {
   params.set("measure", state.measure);
   params.set("scale", state.colorScale);
   params.set("scaleScope", state.colorScaleScope);
+  // Built from scratch (not preserving whatever was already in the query
+  // string), so lang has to be re-added here too -- otherwise the very next
+  // updateAll() after a language switch (this function's own caller) would
+  // silently drop the "?lang=en" switchLanguage() just set.
+  if (state.lang !== "pl") params.set("lang", state.lang);
   history.replaceState(null, "", "?" + params.toString());
 }
 async function restoreFromUrl() {
@@ -3719,7 +4090,7 @@ async function restoreFromUrl() {
       ensureLevel(VARIABLE_META[state.variable].levels[0].key),
     ]);
   } catch (err) {
-    showError("Nie udało się wczytać danych z linku: " + err.message);
+    showError(t("err_load_failed_link") + err.message);
     return;
   }
 
@@ -3791,12 +4162,20 @@ function axisValue(cfg, teryt) {
   return v;
 }
 
+// The "generic, not worth showing in brackets" label list is Polish-text
+// literals by construction (Wartość/Ósmoklasiści/Wiek produkcyjny), which
+// would silently stop matching once these render in English -- listing
+// both languages' text here keeps this correct once variables.en.js's
+// translations of the same three labels ("Value"/"Eighth-graders"/"Working
+// age") are actually flowing through meta.ageGroups/meta.measures, without
+// needing this function to know about state.lang itself.
+const AXIS_LABEL_GENERIC = new Set(["Wartość", "Value", "Ósmoklasiści", "Eighth-graders", "Wiek produkcyjny", "Working age"]);
 function axisLabel(cfg) {
   const viewLabel = VIEWS[cfg.view].label;
   const meta = VARIABLE_META[cfg.variable];
   const ageGroupLabel = meta.ageGroups.find((o) => o.key === cfg.ageGroup).label;
   const measureLabel = meta.measures.find((o) => o.key === cfg.measure).label;
-  const extra = [ageGroupLabel, measureLabel].filter((l) => l !== "Wartość" && l !== "Ósmoklasiści" && l !== "Wiek produkcyjny");
+  const extra = [ageGroupLabel, measureLabel].filter((l) => !AXIS_LABEL_GENERIC.has(l));
   const extraStr = extra.length ? ` [${extra.join(", ")}]` : "";
   return `${cfg.log ? "log₁₀ " : ""}${meta.label}${extraStr} (${viewLabel}, ${cfg.year})`;
 }
@@ -3817,9 +4196,9 @@ async function runCorrelation() {
   if (levelOf(cfgX.variable) !== levelOf(cfgY.variable)) {
     document.getElementById("corr-svg").innerHTML = "";
     lastCorrResult = null;
-    const levelXLabel = VARIABLE_META[cfgX.variable].levels[0].label;
-    const levelYLabel = VARIABLE_META[cfgY.variable].levels[0].label;
-    coeffEl.textContent = `Wybrane zmienne mają różne poziomy (${levelXLabel} vs ${levelYLabel}) i nie można ich porównać -- wybierz dwie zmienne na tym samym poziomie.`;
+    const levelXLabel = LEVEL_LABELS[VARIABLE_META[cfgX.variable].levels[0].key];
+    const levelYLabel = LEVEL_LABELS[VARIABLE_META[cfgY.variable].levels[0].key];
+    coeffEl.textContent = t("err_corr_level_mismatch", levelXLabel, levelYLabel);
     return;
   }
 
@@ -3842,11 +4221,11 @@ async function runCorrelation() {
   renderScatter(points, labelX, labelY, cfgX.log, cfgY.log);
   lastCorrResult = { points, labelX, labelY, logX: cfgX.log, logY: cfgY.log };
   if (points.length < 2) {
-    coeffEl.textContent = "Za mało wspólnych danych dla tej kombinacji, żeby policzyć korelację.";
+    coeffEl.textContent = t("err_corr_not_enough_data");
     return;
   }
   const r = pearson(points.map((p) => p.x), points.map((p) => p.y));
-  coeffEl.textContent = `Korelacja Pearsona: r = ${formatPl(r, 3, true)} (n = ${points.length})`;
+  coeffEl.textContent = t("corr_coefficient_readout", formatPl(r, 3, true), points.length);
 }
 
 // Ticks for a linear axis: ~5 evenly spaced steps. For a log10 axis (values
@@ -3957,13 +4336,13 @@ function buildCorrExportSvg({ pixelScale = 1 } = {}) {
   // chart's own axis-label size (11px) -- per explicit user request, the
   // title/coefficient readout were disproportionately large next to the
   // chart itself.
-  const titleText = "Korelacja zmiennych";
+  const titleText = t("correlation_heading");
   const titleFontSize = 13;
   const titleH = 24;
   const coeffText = document.getElementById("corr-coefficient").textContent || "";
   const coeffFontSize = 11;
   const coeffH = coeffText ? 18 : 0;
-  const creditText = "Interaktywna Mapa Nierówności Płci: Michał Gulczyński · mapa.michalgulczynski.pl";
+  const creditText = t("export_watermark");
   const creditH = 30;
 
   const totalW = width;
@@ -3994,7 +4373,7 @@ function corrExportFileBaseName() {
 function exportCorrSvg() {
   const svg = buildCorrExportSvg({ pixelScale: 1 });
   if (!svg) {
-    showError("Najpierw wykonaj porównanie (przycisk „Porównaj”), zanim wyeksportujesz wykres.");
+    showError(t("err_corr_run_first"));
     return;
   }
   downloadBlob(`${corrExportFileBaseName()}.svg`, new Blob([svg], { type: "image/svg+xml" }));
@@ -4006,7 +4385,7 @@ function exportCorrSvg() {
 function exportCorrPng() {
   const svg = buildCorrExportSvg({ pixelScale: 2 });
   if (!svg) {
-    showError("Najpierw wykonaj porównanie (przycisk „Porównaj”), zanim wyeksportujesz wykres.");
+    showError(t("err_corr_run_first"));
     return;
   }
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
@@ -4021,7 +4400,7 @@ function exportCorrPng() {
   };
   img.onerror = () => {
     URL.revokeObjectURL(url);
-    showError("Nie udało się wygenerować obrazu PNG.");
+    showError(t("err_png_failed"));
   };
   img.src = url;
 }
