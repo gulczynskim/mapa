@@ -677,7 +677,8 @@ const VARIABLE_META_EN = {
       "separate variable published directly by the LDB (not computed locally): the county's average " +
       "wage as a percentage of the national average (Poland = 100). The LDB doesn't publish this " +
       "indicator by sex (for wages by sex, see the \"Wages\" variable, based on a GUS publication " +
-      "that does break it down by sex and place of residence). Replaces the earlier \"Income per " +
+      "that does break it down by sex and place of residence, or the newer \"Median monthly wages\", " +
+      "published directly by the LDB, by sex and month). Replaces the earlier \"Income per " +
       "resident\" (municipality/county) variable.",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
@@ -687,6 +688,35 @@ const VARIABLE_META_EN = {
     measures: {
       default: { label: "Average wage", unit: "PLN" },
       relative: { label: "Relative to national average (Poland=100)", unit: "%" },
+    },
+  },
+  mediana_wynagrodzen: {
+    label: "Median monthly wages",
+    unit: "PLN",
+    agegroupLabel: "Basis",
+    meaning:
+      "Median gross monthly wage, by sex and month (Measure -- all 12 months, same as the " +
+      "\"Employment by economic activity (PKD)\" variable). Available in two parallel classifications " +
+      "(Basis): \"By place of residence\" (the employee's residence) and \"By employer's registered " +
+      "seat\" -- the LDB publishes both directly as separate variables, neither is computed here from " +
+      "the other. \"Total\" is also a separate variable published directly by the LDB (a median " +
+      "computed by GUS from the underlying individual records, not derived here from the women's and " +
+      "men's medians) -- the LDB's own metadata suggests municipality level for it, but it returns " +
+      "real data at county level too in practice (confirmed by querying the API directly, values " +
+      "consistent with both sexes' own medians).",
+    source: "Local Data Bank, Statistics Poland",
+    accessNote:
+      "LDB subject P4610, county level. 12 months x 2 classifications x 3 sexes = 72 variable codes, " +
+      "too many to list here -- full list in etl/fetch_mediana_wynagrodzen.py (codes discovered live " +
+      "via n1/n2/n3, not hardcoded) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{code}",
+    ageGroups: {
+      zamieszkania: "By place of residence",
+      siedziby: "By employer's registered seat",
+    },
+    measures: {
+      "01": "January", "02": "February", "03": "March", "04": "April",
+      "05": "May", "06": "June", "07": "July", "08": "August",
+      "09": "September", "10": "October", "11": "November", "12": "December",
     },
   },
   bezdomnosc_mieszkancy: {

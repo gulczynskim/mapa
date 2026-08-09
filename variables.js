@@ -854,9 +854,10 @@ const VARIABLE_META = {
       "Przeciętne miesięczne wynagrodzenie brutto w powiecie. Miara \"Wzgl. średniej krajowej\" to " +
       "osobna zmienna publikowana wprost przez BDL (nie liczona lokalnie): przeciętne wynagrodzenie " +
       "powiatu jako odsetek średniej krajowej (Polska = 100). BDL nie publikuje tego wskaźnika w " +
-      "podziale na płeć (dla wynagrodzeń wg płci zob. zmienna \"Wynagrodzenia\" oparta o publikację " +
-      "GUS, dostępną wg płci i miejsca zamieszkania). Zastępuje poprzednie \"Dochody na 1 mieszkańca\" " +
-      "(gmina/powiat).",
+      "podziale na płeć (dla wynagrodzeń wg płci zob. zmienną \"Wynagrodzenia\" opartą o publikację " +
+      "GUS, dostępną wg płci i miejsca zamieszkania, albo nowszą \"Mediana wynagrodzeń miesięcznych\" " +
+      "publikowaną wprost przez BDL, wg płci i miesiąca). Zastępuje poprzednie \"Dochody na 1 " +
+      "mieszkańca\" (gmina/powiat).",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P2497, poziom powiat. Kody zmiennych: 64428 (przeciętne wynagrodzenie), 64429 " +
@@ -866,6 +867,47 @@ const VARIABLE_META = {
     measures: [
       { key: "default", label: "Przeciętne wynagrodzenie", unit: "zł" },
       { key: "relative", label: "Wzgl. średniej krajowej (Polska=100)", unit: "%" },
+    ],
+  },
+  mediana_wynagrodzen: {
+    label: "Mediana wynagrodzeń miesięcznych",
+    unit: "zł",
+    topic: "rynek_pracy",
+    file: "data/mediana_wynagrodzen.json",
+    agegroupLabel: "Podstawa",
+    meaning:
+      "Mediana miesięcznego wynagrodzenia brutto, wg płci i miesiąca (Miara – wszystkie 12 miesięcy, " +
+      "tak jak w zmiennej \"Pracujący wg sekcji PKD\"). Dostępne w dwóch równoległych klasyfikacjach " +
+      "(Podstawa): \"Wg miejsca zamieszkania\" (miejsce zamieszkania pracownika) oraz \"Wg siedziby " +
+      "podmiotu\" (siedziba pracodawcy) – BDL publikuje obie wprost jako osobne zmienne, żadna nie " +
+      "jest tu wyliczana z drugiej. \"Ogółem\" to również osobna zmienna publikowana wprost przez " +
+      "BDL (mediana policzona przez GUS z surowych danych jednostkowych, nie wyliczona tutaj z " +
+      "median kobiet i mężczyzn) – metadane BDL sugerują dla niej poziom gminy, ale w praktyce " +
+      "zwraca też realne dane na poziomie powiatu (potwierdzone bezpośrednim zapytaniem do API, " +
+      "wartości spójne z medianami dla obu płci).",
+    source: "Bank Danych Lokalnych GUS",
+    accessNote:
+      "Temat BDL P4610, poziom powiat. 12 miesięcy × 2 klasyfikacje × 3 płcie = 72 kody zmiennych, " +
+      "za dużo, żeby wypisać tutaj – pełna lista w etl/fetch_mediana_wynagrodzen.py (kody odkrywane " +
+      "na żywo przez n1/n2/n3, nie hardkodowane) – https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "zamieszkania", label: "Wg miejsca zamieszkania" },
+      { key: "siedziby", label: "Wg siedziby podmiotu" },
+    ],
+    measures: [
+      { key: "01", label: "Styczeń" },
+      { key: "02", label: "Luty" },
+      { key: "03", label: "Marzec" },
+      { key: "04", label: "Kwiecień" },
+      { key: "05", label: "Maj" },
+      { key: "06", label: "Czerwiec" },
+      { key: "07", label: "Lipiec" },
+      { key: "08", label: "Sierpień" },
+      { key: "09", label: "Wrzesień" },
+      { key: "10", label: "Październik" },
+      { key: "11", label: "Listopad" },
+      { key: "12", label: "Grudzień" },
     ],
   },
   bezdomnosc_mieszkancy: {
