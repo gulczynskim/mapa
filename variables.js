@@ -842,7 +842,7 @@ const VARIABLE_META = {
       "krajowej (Polska = 100). BDL nie publikuje tego wskaźnika w podziale na płeć (dla wynagrodzeń wg " +
       "płci zob. zmienną \"Wynagrodzenia\" opartą o publikację GUS, dostępną wg płci i miejsca " +
       "zamieszkania, albo nowszą \"Mediana wynagrodzeń miesięcznych\" publikowaną wprost przez BDL, wg " +
-      "płci i miesiąca). Zastępuje poprzednie \"Dochody na 1 mieszkańca\" (gmina/powiat).",
+      "płci i miesiąca).",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P2497, poziom powiat. Kody zmiennych: 64428 (przeciętne wynagrodzenie), 64429 " +

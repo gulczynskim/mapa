@@ -661,7 +661,7 @@ const VARIABLE_META_EN = {
       "national average (Poland = 100). The LDB doesn't publish this indicator by sex (for wages by sex, " +
       "see the \"Wages\" variable, based on a GUS publication that does break it down by sex and place of " +
       "residence, or the newer \"Median monthly wages\", published directly by the LDB, by sex and " +
-      "month). Replaces the earlier \"Income per resident\" (municipality/county) variable.",
+      "month).",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
       "LDB subject P2497, county level. Variable codes: 64428 (average wage), 64429 (relative to " +
