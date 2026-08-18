@@ -118,14 +118,13 @@ const VARIABLE_META_EN = {
     label: "Municipal council elections",
     unit: "people",
     meaning:
-      "Candidates, elected councillors and votes cast in municipal (gmina) council elections, by " +
-      "sex. Election years only, 1998-2024 (not continuous, unlike the LDB's own \"Radni gminy\" " +
-      "series). Warsaw is counted as a single city council -- the district (dzielnica) councils of " +
-      "the capital are deliberately excluded so the numbers stay comparable with other " +
-      "municipalities. 52 municipalities from 1998-2014 (mostly the former separate Warsaw " +
+      "Candidates, elected councillors and votes cast in municipal (gmina) council elections, by sex. " +
+      "Election years only, 1998-2024 (not continuous, unlike the LDB's own \"Radni gminy\" series). " +
+      "Warsaw is counted as a single city council -- the district (dzielnica) councils of the capital are " +
+      "deliberately excluded. 52 municipalities from 1998-2014 (mostly the former separate Warsaw " +
       "municipalities that existed before the 2002 unification) have no present-day administrative " +
-      "counterpart and are listed under their historical 6-digit TERYT code -- they won't appear on " +
-      "the map until a separate boundary layer is built for them.",
+      "counterpart and are listed under their historical 6-digit TERYT code -- they won't appear on the " +
+      "map.",
     source: "National Electoral Commission (PKW)",
     accessNote:
       "PKW candidate data sets from the user's own research project (\"Bitwa o wozy i Parytety w " +
@@ -162,14 +161,13 @@ const VARIABLE_META_EN = {
     label: "Voivodeship assembly elections",
     unit: "people",
     meaning:
-      "Candidates, elected assembly members and votes cast in voivodeship assembly (sejmik) " +
-      "elections, by sex. Election years only, 1998-2024. Voivodeship boundaries on this map are " +
-      "assembled by combining counties (etl/build_wojewodztwa.py) -- they don't come from a " +
-      "separate boundary source.",
+      "Candidates, elected assembly members and votes cast in voivodeship assembly (sejmik) elections, by " +
+      "sex. Election years only, 1998-2024. Voivodeship boundaries on this map are assembled by combining " +
+      "counties -- they don't come from a separate boundary source.",
     source: "National Electoral Commission (PKW)",
     accessNote:
-      "PKW candidate data sets from the user's own research project; 2024 data from Regional/2024/ " +
-      "-- see etl/pkw_councils.py.",
+      "PKW candidate data sets from the user's own research project; 2024 data from Regional/2024/ -- see " +
+      "etl/pkw_councils.py and etl/build_wojewodztwa.py.",
     ageGroups: { default: "All candidates/members" },
     measures: {
       candidates: { label: "Candidates", unit: "people" },
@@ -202,17 +200,16 @@ const VARIABLE_META_EN = {
     label: "Population aged 25-34 (Census)",
     unit: "people",
     meaning:
-      "Resident population aged 25-34 (the 25-29 and 30-34 bands combined), by sex -- a rough " +
-      "proxy for selective migration among young adults. \"Resident population\" is the LDB's own " +
-      "concept (subject P4253, \"Resident population by age group and sex\"), based on actual place " +
-      "of residence at census time rather than official registration -- this differs from the " +
-      "ongoing annual population register used elsewhere on this map. A one-off measurement from " +
-      "the 2021 Census (as of 31 March 2021), not annual data.",
+      "Resident population aged 25-34 (the 25-29 and 30-34 bands combined), by sex -- a rough proxy for " +
+      "selective migration among young adults. \"Resident population\" is the LDB's own concept, based on " +
+      "actual place of residence at census time rather than official registration -- this differs from " +
+      "the ongoing annual population register used elsewhere on this map. A one-off measurement from the " +
+      "2021 Census (as of 31 March 2021), not annual data.",
     source: "2021 National Population and Housing Census (Local Data Bank, Statistics Poland)",
     accessNote:
-      "LDB subject P4253, county level. Variable codes: 1644517/1644518 (total 25-29/30-34), " +
-      "1644537/1644538 (men 25-29/30-34), 1644557/1644558 (women 25-29/30-34) -- " +
-      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{code}",
+      "LDB subject P4253 (\"Resident population by age group and sex\"), county level. Variable codes: " +
+      "1644517/1644518 (total 25-29/30-34), 1644537/1644538 (men 25-29/30-34), 1644557/1644558 (women " +
+      "25-29/30-34) -- https://bdl.stat.gov.pl/api/v1/data/by-variable/{code}",
     ageGroups: { default: "25-34 years" },
     measures: { default: "Value" },
   },
@@ -248,13 +245,11 @@ const VARIABLE_META_EN = {
     unit: "people",
     agegroupLabel: "PKD section",
     meaning:
-      "Number of employed persons by PKD section (Polska Klasyfikacja Działalności, Poland's " +
-      "national activity classification, aligned with EU NACE Rev. 2) and sex, as of a chosen month " +
-      "(the LDB publishes this subject as 12 independent monthly snapshots, not one annual figure -- " +
-      "the month choice is part of the \"Measure\" field below). Raw section-by-section data -- " +
-      "without a computed occupational-segregation index (e.g. Duncan's index), whose formula " +
-      "hasn't been settled on yet. The \"% of employed\" measure (for a given month): the number " +
-      "employed in that section divided by \"All sections\" for the same month (and sex), times 100.",
+      "Number of employed persons by PKD section (Polska Klasyfikacja Działalności, Poland's national " +
+      "activity classification, aligned with EU NACE Rev. 2) and sex, as of a chosen month (the LDB " +
+      "publishes this subject as 12 independent monthly snapshots, not one annual figure). The \"% of " +
+      "employed\" measure (for a given month): the number employed in that section divided by \"All " +
+      "sections\" for the same month (and sex), times 100.",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
       "LDB subject P4283, county level -- 12 sets of variables (one per month), codes discovered " +
@@ -401,13 +396,10 @@ const VARIABLE_META_EN = {
     unit: "people",
     agegroupLabel: "School type",
     meaning:
-      "Pupils (total and first-year) and graduates of post-secondary schools, by school type and " +
-      "sex. Not every school type has data for all three measures -- missing combinations show no " +
-      "data. Limited to two types: \"Total (excluding special-needs)\" and \"Special-needs\" -- the " +
-      "LDB reports three further types separately (\"Total\" including colleges, \"Post-secondary " +
-      "for adults\", \"Post-secondary for young people\"), not shown here. 2004 omitted -- the only " +
-      "year with no breakdown by sex (every \"m\"/\"k\" value empty that year), real data starts in " +
-      "2005.",
+      "Pupils (total and first-year) and graduates of post-secondary schools, by school type and sex. Not " +
+      "every school type has data for all three measures -- missing combinations show no data. Limited to " +
+      "two types: \"Total (excluding special-needs)\" and \"Special-needs\". 2004 omitted -- the only " +
+      "year with no breakdown by sex, real data starts in 2005.",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
       "LDB subject P2178, county level. 2 school types x up to 3 measures x 2 sexes = ~12 variable " +
@@ -448,32 +440,25 @@ const VARIABLE_META_EN = {
     agegroupLabel: "School type",
     meaning:
       "Pupils (total and first-year) and graduates of daytime secondary schools for young people " +
-      "(excluding special-needs schools), by school type and sex. Not every type has data for all " +
-      "three measures or every year -- specialized/profiled general secondary schools (\"licea " +
-      "profilowane\") only 2004-2014 (phased out), basic vocational schools only up to about 2019, " +
-      "first-level sectoral vocational schools (\"branżowe I stopnia\") only from 2017 (a reform " +
-      "replaced basic vocational schools with these) -- missing combinations show no data. " +
-      "\"Technical schools\" is its own type here (excluding art-profile schools) -- those are " +
-      "counted separately as their own type (\"General art schools granting vocational " +
-      "qualifications\"), matching how the LDB reports them separately.\n" +
+      "(excluding special-needs schools), by school type and sex. Not every type has data for all three " +
+      "measures or every year -- specialized/profiled general secondary schools (\"licea profilowane\") " +
+      "only 2004-2014 (phased out), basic vocational schools only up to about 2019, first-level sectoral " +
+      "vocational schools (\"branżowe I stopnia\") only from 2017 (a reform replaced basic vocational " +
+      "schools with these) -- missing combinations show no data. \"Technical schools\" is its own type " +
+      "here (excluding art-profile schools) -- those are counted separately as their own type (\"General " +
+      "art schools granting vocational qualifications\").\n" +
       "\"Total\": the sum of general secondary schools (licea ogólnokształcące), technical schools, " +
-      "general art schools granting vocational qualifications, first-level sectoral vocational " +
-      "schools, specialized/profiled general secondary schools, and basic vocational schools (each " +
-      "sex counted separately) -- does NOT include art schools that don't grant vocational " +
-      "qualifications, nor post-secondary schools (a different stage of education, a separate " +
-      "variable on this map). A type missing for a given year/county counts as 0 when summing " +
-      "(separately for women and men), unless ALL types are missing at once -- then the total is " +
-      "also treated as no data.\n" +
+      "general art schools granting vocational qualifications, first-level sectoral vocational schools, " +
+      "specialized/profiled general secondary schools, and basic vocational schools (each sex counted " +
+      "separately) -- does NOT include art schools that don't grant vocational qualifications, nor " +
+      "post-secondary schools (a different stage of education, a separate variable on this map). A type " +
+      "missing for a given year/county counts as 0 when summing (separately for women and men), unless " +
+      "ALL types are missing at once -- then the total is also treated as no data.\n" +
       "The \"Share\" measure (available only for Technical schools, General secondary schools and " +
-      "First-level sectoral vocational schools): what share of the combined pupil/first-year-pupil/" +
-      "graduate count across these THREE types falls to a given type, computed separately per sex. " +
-      "For this calculation, \"Technical schools\" also includes general art schools granting " +
-      "vocational qualifications (even though they have their own separate row above) -- confirmed " +
-      "against 2022 national data: technical schools (710,241 pupils) + these art schools (14,476) " +
-      "≈ the LDB's own ready-made combined total for \"technical schools including general art " +
-      "schools\" (725,616, about a 0.1% residual). \"% women\"/\"% men\" are disabled for the " +
-      "\"Share\" measure -- that's already a breakdown by sex, a second such breakdown wouldn't " +
-      "make sense.",
+      "First-level sectoral vocational schools): what share of the combined " +
+      "pupil/first-year-pupil/graduate count across these THREE types falls to a given type, computed " +
+      "separately per sex. For this calculation, \"Technical schools\" also includes general art schools " +
+      "granting vocational qualifications. \"% women\"/\"% men\" are disabled for the \"Share\" measure.",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
       "County level. General secondary schools: subject P2035 (same codes as the \"Secondary school " +
@@ -520,13 +505,11 @@ const VARIABLE_META_EN = {
     label: "Accidents at work",
     unit: "people",
     meaning:
-      "Number of people injured in accidents at work (total), by sex. \"Per 100,000 employed\" " +
-      "measure: the number injured divided by the total number employed in JUNE of that year " +
-      "(the \"Employment by economic activity (PKD)\" variable, \"All sections\", June -- chosen " +
-      "as a representative mid-year snapshot, since that variable is published monthly) and " +
-      "multiplied by 100,000 -- the denominator is the number employed, not the total population, " +
-      "since that's a more accurate basis for accidents at work. \"Employment by economic activity " +
-      "(PKD)\" only has data from 2024, so this measure will show no data for earlier years.",
+      "Number of people injured in accidents at work (total), by sex. \"Per 100,000 employed\" measure: " +
+      "the number injured divided by the total number employed in JUNE of that year (the \"Employment by " +
+      "economic activity (PKD)\" variable, \"All sections\", June) and multiplied by 100,000. " +
+      "\"Employment by economic activity (PKD)\" only has data from 2024, so this measure will show no " +
+      "data for earlier years.",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
       "LDB subject P2276, county level. Variable codes: 58357 (women), 58355 (men) -- " +
@@ -674,12 +657,11 @@ const VARIABLE_META_EN = {
     unit: "PLN",
     meaning:
       "Average gross monthly wage in the county. The \"Relative to national average\" measure is a " +
-      "separate variable published directly by the LDB (not computed locally): the county's average " +
-      "wage as a percentage of the national average (Poland = 100). The LDB doesn't publish this " +
-      "indicator by sex (for wages by sex, see the \"Wages\" variable, based on a GUS publication " +
-      "that does break it down by sex and place of residence, or the newer \"Median monthly wages\", " +
-      "published directly by the LDB, by sex and month). Replaces the earlier \"Income per " +
-      "resident\" (municipality/county) variable.",
+      "separate variable published directly by the LDB: the county's average wage as a percentage of the " +
+      "national average (Poland = 100). The LDB doesn't publish this indicator by sex (for wages by sex, " +
+      "see the \"Wages\" variable, based on a GUS publication that does break it down by sex and place of " +
+      "residence, or the newer \"Median monthly wages\", published directly by the LDB, by sex and " +
+      "month). Replaces the earlier \"Income per resident\" (municipality/county) variable.",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
       "LDB subject P2497, county level. Variable codes: 64428 (average wage), 64429 (relative to " +
@@ -695,15 +677,11 @@ const VARIABLE_META_EN = {
     unit: "PLN",
     agegroupLabel: "Basis",
     meaning:
-      "Median gross monthly wage, by sex and month (Measure -- all 12 months, same as the " +
-      "\"Employment by economic activity (PKD)\" variable). Available in two parallel classifications " +
-      "(Basis): \"By place of residence\" (the employee's residence) and \"By employer's registered " +
-      "seat\" -- the LDB publishes both directly as separate variables, neither is computed here from " +
-      "the other. \"Total\" is also a separate variable published directly by the LDB (a median " +
-      "computed by GUS from the underlying individual records, not derived here from the women's and " +
-      "men's medians) -- the LDB's own metadata suggests municipality level for it, but it returns " +
-      "real data at county level too in practice (confirmed by querying the API directly, values " +
-      "consistent with both sexes' own medians).",
+      "Median gross monthly wage, by sex and month (Measure -- all 12 months, same as the \"Employment by " +
+      "economic activity (PKD)\" variable). Available in two parallel classifications (Basis): \"By place " +
+      "of residence\" (the employee's residence) and \"By employer's registered seat\" -- the LDB " +
+      "publishes both directly as separate variables. \"Total\" is also a separate variable published " +
+      "directly by the LDB (a median computed by GUS from the underlying individual records).",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
       "LDB subject P4610, county level. 12 months x 2 classifications x 3 sexes = 72 variable codes, " +
@@ -768,15 +746,14 @@ const VARIABLE_META_EN = {
     meaning:
       "Beneficiaries and debtors of the alimony (child-support) fund. The LDB doesn't publish this " +
       "indicator by sex. Data available only from 2022. The six measures are six separate variables " +
-      "published directly by the LDB (not computed locally, including both \"per 10,000\"/\"per " +
-      "100,000 population\" measures -- unlike this map's own \"_per100k\" measures elsewhere, e.g. " +
-      "in \"Accidents at work\"): \"Beneficiaries per 10,000 population\" and \"Beneficiaries " +
-      "(monthly average)\" are the number of people receiving fund benefits; \"Debtors per 100,000 " +
-      "population\" is the overall number of alimony debtors; \"Debtors under evasion proceedings\" " +
-      "is a narrower subset -- debtors against whom proceedings are underway to formally declare " +
-      "them as evading their alimony obligations; \"% of funds recovered from debtors\" is the " +
-      "share of paid-out benefits recovered from debtors through enforcement; \"Total spent from " +
-      "the fund that year\" is the total amount of benefits paid out that year.",
+      "published directly by the LDB, including both \"per 10,000\"/\"per 100,000 population\" measures: " +
+      "\"Beneficiaries per 10,000 population\" and \"Beneficiaries (monthly average)\" are the number of " +
+      "people receiving fund benefits; \"Debtors per 100,000 population\" is the overall number of " +
+      "alimony debtors; \"Debtors under evasion proceedings\" is a narrower subset -- debtors against " +
+      "whom proceedings are underway to formally declare them as evading their alimony obligations; \"% " +
+      "of funds recovered from debtors\" is the share of paid-out benefits recovered from debtors through " +
+      "enforcement; \"Total spent from the fund that year\" is the total amount of benefits paid out that " +
+      "year.",
     source: "Local Data Bank, Statistics Poland",
     accessNote:
       "LDB subject P4451, county level -- variable codes: 1728280 (beneficiaries per 10,000 " +

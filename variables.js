@@ -129,11 +129,10 @@ const VARIABLE_META = {
     meaning:
       "Kandydaci, wybrani radni i oddane głosy w wyborach do rad gmin, wg płci. Dane tylko z lat " +
       "wyborczych 1998-2024 (nieciągłe, w przeciwieństwie do \"Radni gminy\" z BDL). Warszawa liczona " +
-      "jako jedna rada miasta – rady dzielnic m.st. Warszawy są celowo pominięte, żeby liczby były " +
-      "porównywalne z resztą gmin. 52 gminy z lat 1998-2014 (głównie dawne odrębne gminy Warszawy " +
-      "sprzed unifikacji w 2002 r.) nie mają dzisiejszego odpowiednika administracyjnego i figurują " +
-      "pod swoim historycznym 6-cyfrowym TERYT-em – nie pojawią się na mapie, dopóki nie powstanie " +
-      "dla nich osobna warstwa granic.",
+      "jako jedna rada miasta – rady dzielnic m.st. Warszawy są celowo pominięte. 52 gminy z lat " +
+      "1998-2014 (głównie dawne odrębne gminy Warszawy sprzed unifikacji w 2002 r.) nie mają dzisiejszego " +
+      "odpowiednika administracyjnego i figurują pod swoim historycznym 6-cyfrowym TERYT-em – nie pojawią " +
+      "się na mapie.",
     source: "Państwowa Komisja Wyborcza (PKW)",
     accessNote:
       "Zbiory kandydatów PKW z projektu badawczego użytkownika (\"Bitwa o wozy i Parytety w Polsce\") " +
@@ -177,13 +176,13 @@ const VARIABLE_META = {
     topic: "polityka",
     file: "data/wybory_sejmiku.json",
     meaning:
-      "Kandydaci, wybrani radni sejmiku i oddane głosy w wyborach do sejmików województw, wg płci. " +
-      "Dane tylko z lat wyborczych 1998-2024. Granice województw na tej mapie są dociągnięte przez " +
-      "połączenie powiatów (etl/build_wojewodztwa.py) – nie pochodzą z osobnego źródła granic.",
+      "Kandydaci, wybrani radni sejmiku i oddane głosy w wyborach do sejmików województw, wg płci. Dane " +
+      "tylko z lat wyborczych 1998-2024. Granice województw na tej mapie są dociągnięte przez połączenie " +
+      "powiatów – nie pochodzą z osobnego źródła granic.",
     source: "Państwowa Komisja Wyborcza (PKW)",
     accessNote:
       "Zbiory kandydatów PKW z projektu badawczego użytkownika; dane 2024 z Regional/2024/ – zob. " +
-      "etl/pkw_councils.py.",
+      "etl/pkw_councils.py i etl/build_wojewodztwa.py.",
     levels: [{ key: "wojewodztwo", label: "Województwo" }],
     ageGroups: [{ key: "default", label: "Wszyscy kandydaci/radni" }],
     measures: [
@@ -227,17 +226,16 @@ const VARIABLE_META = {
     topic: "ludnosc",
     file: "data/population_25_34.json",
     meaning:
-      "Liczba ludności rezydującej w wieku 25-34 lata (suma grup 25-29 i 30-34), wg płci – " +
-      "przybliżony wskaźnik migracji selektywnych młodych dorosłych. \"Ludność rezydująca\" to " +
-      "koncepcja BDL (Podgrupa P4253, \"Ludność rezydująca wg grup wieku i płci\") oparta o " +
-      "faktyczne miejsce zamieszkania w dniu spisu, nie o zameldowanie – różni się od bieżącej, " +
-      "corocznej ewidencji ludności użytej w innych zmiennych tej mapy. Jednorazowy pomiar z " +
-      "NSP 2021 (stan na 31 marca 2021), nie dane roczne.",
+      "Liczba ludności rezydującej w wieku 25-34 lata (suma grup 25-29 i 30-34), wg płci – przybliżony " +
+      "wskaźnik migracji selektywnych młodych dorosłych. \"Ludność rezydująca\" to koncepcja BDL oparta o " +
+      "faktyczne miejsce zamieszkania w dniu spisu, nie o zameldowanie – różni się od bieżącej, corocznej " +
+      "ewidencji ludności użytej w innych zmiennych tej mapy. Jednorazowy pomiar z NSP 2021 (stan na 31 " +
+      "marca 2021), nie dane roczne.",
     source: "Narodowy Spis Powszechny Ludności i Mieszkań 2021 (BDL GUS)",
     accessNote:
-      "Temat BDL P4253, poziom powiat. Kody zmiennych: 1644517/1644518 (ogółem 25-29/30-34), " +
-      "1644537/1644538 (mężczyźni 25-29/30-34), 1644557/1644558 (kobiety 25-29/30-34) – " +
-      "https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
+      "Temat BDL P4253 (\"Ludność rezydująca wg grup wieku i płci\"), poziom powiat. Kody zmiennych: " +
+      "1644517/1644518 (ogółem 25-29/30-34), 1644537/1644538 (mężczyźni 25-29/30-34), 1644557/1644558 " +
+      "(kobiety 25-29/30-34) – https://bdl.stat.gov.pl/api/v1/data/by-variable/{kod}",
     levels: [{ key: "powiat", label: "Powiat" }],
     ageGroups: [{ key: "default", label: "25-34 lata" }],
     measures: [{ key: "default", label: "Wartość" }],
@@ -293,12 +291,9 @@ const VARIABLE_META = {
     agegroupLabel: "Sekcja PKD",
     meaning:
       "Liczba pracujących wg sekcji PKD (Polska Klasyfikacja Działalności) i płci, stan na wybrany " +
-      "miesiąc (BDL publikuje ten temat jako 12 niezależnych migawek miesięcznych, nie jedną roczną – " +
-      "wybór miesiąca jest częścią pola \"Miara\" poniżej). Surowe dane sekcja po sekcji – bez " +
-      "wyliczonego wskaźnika segregacji zawodowej (np. indeksu Duncana), którego formuła nie jest " +
-      "jeszcze ustalona. Miara \"% pracujących\" (dla danego miesiąca): liczba pracujących w danej " +
-      "sekcji podzielona przez \"Wszystkie sekcje\" tego samego miesiąca (dla tej samej płci) i " +
-      "pomnożona przez 100.",
+      "miesiąc (BDL publikuje ten temat jako 12 niezależnych migawek miesięcznych, nie jedną roczną). " +
+      "Miara \"% pracujących\" (dla danego miesiąca): liczba pracujących w danej sekcji podzielona przez " +
+      "\"Wszystkie sekcje\" tego samego miesiąca (dla tej samej płci) i pomnożona przez 100.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P4283, poziom powiat – 12 zestawów zmiennych (po jednym na miesiąc), kody odkrywane " +
@@ -516,10 +511,8 @@ const VARIABLE_META = {
     meaning:
       "Uczniowie (ogółem i w 1 klasie) oraz absolwenci szkół policealnych, wg typu szkoły i płci. Nie " +
       "każdy typ szkoły ma dane dla wszystkich trzech miar – brakujące kombinacje pokazują brak danych. " +
-      "Ogranicza się do dwóch typów: \"Ogółem (bez specjalnych)\" i \"Specjalne\" – trzy pozostałe typy " +
-      "BDL raportuje osobno (\"Ogółem\" z kolegiami, \"Pomaturalne dla dorosłych\", \"Pomaturalne dla " +
-      "młodzieży\"), ale nie są tu pokazywane. Rok 2004 pominięty – jedyny rok bez podziału na płeć " +
-      "(wszystkie wartości \"m\"/\"k\" puste), dane zaczynają się realnie od 2005.",
+      "Ogranicza się do dwóch typów: \"Ogółem (bez specjalnych)\" i \"Specjalne\". Rok 2004 pominięty – " +
+      "jedyny rok bez podziału na płeć, dane zaczynają się realnie od 2005.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P2178, poziom powiat. 2 typy szkół x do 3 miar x 2 płcie = ~12 kodów zmiennych – pełna " +
@@ -575,29 +568,24 @@ const VARIABLE_META = {
     file: "data/szkolnictwo_ponadpodstawowe.json",
     agegroupLabel: "Typ szkoły",
     meaning:
-      "Uczniowie (ogółem i w 1 klasie) oraz absolwenci ponadpodstawowych szkół dziennych dla " +
-      "młodzieży (bez szkół specjalnych), wg typu szkoły i płci. Nie każdy typ ma dane dla " +
-      "wszystkich trzech miar ani wszystkich lat – licea profilowane tylko 2004-2014 (wygaszone), " +
-      "zasadnicze szkoły zawodowe tylko do ok. 2019, szkoły branżowe I stopnia dopiero od 2017 " +
-      "(reforma zastąpiła zasadnicze zawodowe branżowymi) – brakujące kombinacje pokazują brak danych. " +
-      "\"Technika\" to samodzielny typ (bez ogólnokształcących szkół artystycznych) – te liczone są " +
-      "osobno jako własny typ (\"Ogólnokształcące szkoły artystyczne dające uprawnienia zawodowe\"), " +
-      "zgodnie z tym jak BDL je oddzielnie raportuje.\n" +
+      "Uczniowie (ogółem i w 1 klasie) oraz absolwenci ponadpodstawowych szkół dziennych dla młodzieży " +
+      "(bez szkół specjalnych), wg typu szkoły i płci. Nie każdy typ ma dane dla wszystkich trzech miar " +
+      "ani wszystkich lat – licea profilowane tylko 2004-2014 (wygaszone), zasadnicze szkoły zawodowe " +
+      "tylko do ok. 2019, szkoły branżowe I stopnia dopiero od 2017 (reforma zastąpiła zasadnicze " +
+      "zawodowe branżowymi) – brakujące kombinacje pokazują brak danych. \"Technika\" to samodzielny typ " +
+      "(bez ogólnokształcących szkół artystycznych) – te liczone są osobno jako własny typ " +
+      "(\"Ogólnokształcące szkoły artystyczne dające uprawnienia zawodowe\").\n" +
       "\"Razem\": suma liceów ogólnokształcących, techników, ogólnokształcących szkół artystycznych " +
       "dających uprawnienia zawodowe, szkół branżowych I stopnia, liceów profilowanych i zasadniczych " +
       "szkół zawodowych (każda płeć liczona osobno) – NIE obejmuje szkół artystycznych niedających " +
       "uprawnień zawodowych ani szkół policealnych (to inny etap kształcenia, osobna zmienna na tej " +
-      "mapie). Brakujący typ w danym roku/powiecie liczony jest jako 0 przy sumowaniu (osobno dla " +
-      "kobiet i mężczyzn), chyba że WSZYSTKIE typy brakują naraz – wtedy suma również jest brakiem danych.\n" +
-      "Miara \"Udział\" (dostępna tylko dla Techników, Liceów ogólnokształcących i Szkół branżowych " +
-      "I stopnia): jaki odsetek łącznej liczby uczniów/uczniów w 1 klasie/absolwentów tych TRZECH " +
-      "typów przypada na dany typ, liczony osobno dla każdej płci. Przy tym wyliczeniu \"Technika\" " +
-      "obejmuje też ogólnokształcące szkoły artystyczne dające uprawnienia zawodowe (mimo że mają " +
-      "swój własny, osobny wiersz powyżej) – potwierdzone na danych krajowych za 2022: technika " +
-      "(710 241 uczniów) + te szkoły artystyczne (14 476) ≈ gotowa suma \"techników łącznie z " +
-      "ogólnokształcącymi artystycznymi\", którą BDL publikuje wprost (725 616, różnica ok. 0,1%). " +
-      "\"% kobiet\"/\"% mężczyzn\" są wyłączone dla miary \"Udział\" – to już jest udział w podziale na " +
-      "płeć, drugi taki podział nie miałby sensu.",
+      "mapie). Brakujący typ w danym roku/powiecie liczony jest jako 0 przy sumowaniu (osobno dla kobiet " +
+      "i mężczyzn), chyba że WSZYSTKIE typy brakują naraz – wtedy suma również jest brakiem danych.\n" +
+      "Miara \"Udział\" (dostępna tylko dla Techników, Liceów ogólnokształcących i Szkół branżowych I " +
+      "stopnia): jaki odsetek łącznej liczby uczniów/uczniów w 1 klasie/absolwentów tych TRZECH typów " +
+      "przypada na dany typ, liczony osobno dla każdej płci. Przy tym wyliczeniu \"Technika\" obejmuje " +
+      "też ogólnokształcące szkoły artystyczne dające uprawnienia zawodowe. \"% kobiet\"/\"% mężczyzn\" " +
+      "są wyłączone dla miary \"Udział\".",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Poziom powiat. Licea ogólnokształcące: temat P2035 (te same kody co zmienna \"Uczniowie i " +
@@ -655,12 +643,10 @@ const VARIABLE_META = {
     file: "data/wypadki_przy_pracy.json",
     meaning:
       "Liczba osób poszkodowanych w wypadkach przy pracy (ogółem), wg płci. Miara \"Na 100 000 " +
-      "pracujących\": liczba poszkodowanych podzielona przez liczbę pracujących ogółem w CZERWCU " +
-      "danego roku (zmienna \"Pracujący wg sekcji PKD\", \"Wszystkie sekcje\", miesiąc czerwiec – " +
-      "wybrany jako reprezentatywna migawka w połowie roku, skoro \"Pracujący wg sekcji PKD\" jest " +
-      "publikowane co miesiąc) i pomnożona przez 100 000 – dzielnik jest liczbą pracujących, nie " +
-      "ludności ogółem, bo to trafniejszy mianownik dla wypadków przy pracy. \"Pracujący wg sekcji " +
-      "PKD\" ma dane dopiero od 2024 r., więc ta miara pokaże brak danych dla wcześniejszych lat.",
+      "pracujących\": liczba poszkodowanych podzielona przez liczbę pracujących ogółem w CZERWCU danego " +
+      "roku (zmienna \"Pracujący wg sekcji PKD\", \"Wszystkie sekcje\", miesiąc czerwiec) i pomnożona " +
+      "przez 100 000. \"Pracujący wg sekcji PKD\" ma dane dopiero od 2024 r., więc ta miara pokaże brak " +
+      "danych dla wcześniejszych lat.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P2276, poziom powiat. Kody zmiennych: 58357 (kobiety), 58355 (mężczyźni) – " +
@@ -851,13 +837,12 @@ const VARIABLE_META = {
     topic: "rynek_pracy",
     file: "data/wynagrodzenia.json",
     meaning:
-      "Przeciętne miesięczne wynagrodzenie brutto w powiecie. Miara \"Wzgl. średniej krajowej\" to " +
-      "osobna zmienna publikowana wprost przez BDL (nie liczona lokalnie): przeciętne wynagrodzenie " +
-      "powiatu jako odsetek średniej krajowej (Polska = 100). BDL nie publikuje tego wskaźnika w " +
-      "podziale na płeć (dla wynagrodzeń wg płci zob. zmienną \"Wynagrodzenia\" opartą o publikację " +
-      "GUS, dostępną wg płci i miejsca zamieszkania, albo nowszą \"Mediana wynagrodzeń miesięcznych\" " +
-      "publikowaną wprost przez BDL, wg płci i miesiąca). Zastępuje poprzednie \"Dochody na 1 " +
-      "mieszkańca\" (gmina/powiat).",
+      "Przeciętne miesięczne wynagrodzenie brutto w powiecie. Miara \"Wzgl. średniej krajowej\" to osobna " +
+      "zmienna publikowana wprost przez BDL: przeciętne wynagrodzenie powiatu jako odsetek średniej " +
+      "krajowej (Polska = 100). BDL nie publikuje tego wskaźnika w podziale na płeć (dla wynagrodzeń wg " +
+      "płci zob. zmienną \"Wynagrodzenia\" opartą o publikację GUS, dostępną wg płci i miejsca " +
+      "zamieszkania, albo nowszą \"Mediana wynagrodzeń miesięcznych\" publikowaną wprost przez BDL, wg " +
+      "płci i miesiąca). Zastępuje poprzednie \"Dochody na 1 mieszkańca\" (gmina/powiat).",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P2497, poziom powiat. Kody zmiennych: 64428 (przeciętne wynagrodzenie), 64429 " +
@@ -876,15 +861,12 @@ const VARIABLE_META = {
     file: "data/mediana_wynagrodzen.json",
     agegroupLabel: "Podstawa",
     meaning:
-      "Mediana miesięcznego wynagrodzenia brutto, wg płci i miesiąca (Miara – wszystkie 12 miesięcy, " +
-      "tak jak w zmiennej \"Pracujący wg sekcji PKD\"). Dostępne w dwóch równoległych klasyfikacjach " +
+      "Mediana miesięcznego wynagrodzenia brutto, wg płci i miesiąca (Miara – wszystkie 12 miesięcy, tak " +
+      "jak w zmiennej \"Pracujący wg sekcji PKD\"). Dostępne w dwóch równoległych klasyfikacjach " +
       "(Podstawa): \"Wg miejsca zamieszkania\" (miejsce zamieszkania pracownika) oraz \"Wg siedziby " +
-      "podmiotu\" (siedziba pracodawcy) – BDL publikuje obie wprost jako osobne zmienne, żadna nie " +
-      "jest tu wyliczana z drugiej. \"Ogółem\" to również osobna zmienna publikowana wprost przez " +
-      "BDL (mediana policzona przez GUS z surowych danych jednostkowych, nie wyliczona tutaj z " +
-      "median kobiet i mężczyzn) – metadane BDL sugerują dla niej poziom gminy, ale w praktyce " +
-      "zwraca też realne dane na poziomie powiatu (potwierdzone bezpośrednim zapytaniem do API, " +
-      "wartości spójne z medianami dla obu płci).",
+      "podmiotu\" (siedziba pracodawcy) – BDL publikuje obie wprost jako osobne zmienne. \"Ogółem\" to " +
+      "również osobna zmienna publikowana wprost przez BDL (mediana policzona przez GUS z surowych danych " +
+      "jednostkowych).",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P4610, poziom powiat. 12 miesięcy × 2 klasyfikacje × 3 płcie = 72 kody zmiennych, " +
@@ -980,15 +962,14 @@ const VARIABLE_META = {
     meaning:
       "Świadczeniobiorcy i dłużnicy funduszu alimentacyjnego. BDL nie publikuje tego wskaźnika w podziale " +
       "na płeć. Dane dostępne tylko od 2022 r. Sześć miar to sześć osobnych zmiennych publikowanych " +
-      "wprost przez BDL (nie liczonych lokalnie, w tym oba wskaźniki \"na 10 tys.\"/\"na 100 tys. " +
-      "ludności\" – inaczej niż przy własnych miarach \"_per100k\" tej mapy, np. w zmiennej \"Wypadki " +
-      "przy pracy\"): \"Świadczeniobiorcy na 10 tys. ludności\" i \"Świadczeniobiorcy (śr. miesięczna)\" " +
-      "to liczba osób pobierających świadczenia z funduszu; \"Dłużnicy na 100 tys. ludności\" to ogólna " +
-      "liczba dłużników alimentacyjnych; \"Dłużnicy z postępowaniem ws. uchylania się\" to węższy " +
-      "podzbiór – dłużnicy, wobec których toczy się postępowanie o uznanie za uchylającego się od " +
-      "zobowiązań alimentacyjnych; \"% środków zwróconych przez dłużników\" to odsetek wypłaconych " +
-      "świadczeń odzyskanych od dłużników w drodze egzekucji; \"Suma wydatkowana z funduszu w roku\" to " +
-      "łączna kwota świadczeń wypłaconych w danym roku.",
+      "wprost przez BDL, w tym oba wskaźniki \"na 10 tys.\"/\"na 100 tys. ludności\": \"Świadczeniobiorcy " +
+      "na 10 tys. ludności\" i \"Świadczeniobiorcy (śr. miesięczna)\" to liczba osób pobierających " +
+      "świadczenia z funduszu; \"Dłużnicy na 100 tys. ludności\" to ogólna liczba dłużników " +
+      "alimentacyjnych; \"Dłużnicy z postępowaniem ws. uchylania się\" to węższy podzbiór – dłużnicy, " +
+      "wobec których toczy się postępowanie o uznanie za uchylającego się od zobowiązań alimentacyjnych; " +
+      "\"% środków zwróconych przez dłużników\" to odsetek wypłaconych świadczeń odzyskanych od dłużników " +
+      "w drodze egzekucji; \"Suma wydatkowana z funduszu w roku\" to łączna kwota świadczeń wypłaconych w " +
+      "danym roku.",
     source: "Bank Danych Lokalnych GUS",
     accessNote:
       "Temat BDL P4451, poziom powiat – kody zmiennych: 1728280 (świadczeniobiorcy na 10 tys. ludności), " +
