@@ -793,6 +793,75 @@ const VARIABLE_META_EN = {
       spent_total: { label: "Total spent from the fund that year", unit: "PLN" },
     },
   },
+  dobowy_budzet_czasu: {
+    label: "Daily time budget",
+    unit: "min",
+    agegroupLabel: "Activity",
+    meaning:
+      "Average time spent per day on each activity, by sex. Two measures: \"Duration of the " +
+      "activity\" is an average over the WHOLE population (including people who didn't do that " +
+      "activity at all that day) -- for level-1 categories these values add up to roughly 24 hours. " +
+      "\"Participation time in the activity\" is an average ONLY among people who actually did that " +
+      "activity that day -- these values do NOT add up to 24 hours.\n" +
+      "\"Activity\" is a two-level list of categories -- e.g. \"Sleep\" is a sub-category of " +
+      "\"Personal care\".\n" +
+      "Values are given in minutes (GUS records time in \"H.MM\" notation).\n" +
+      "Available at voivodeship level only (16 units) -- GUS additionally publishes a split into " +
+      "\"region warszawski stołeczny\" and \"region mazowiecki\".",
+    source: "Statistics Poland (GUS)",
+    accessNote:
+      "File \"Załącznik_Budżet Czasu Ludności 2023 wg województw i płci.xlsx\" (Table 9), a one-off " +
+      "2023 time use survey, uploaded manually, not from an API -- " +
+      "https://stat.gov.pl/obszary-tematyczne/warunki-zycia/dochody-wydatki-i-warunki-zycia-ludnosci/dobowy-budzet-czasu-ludnosci-w-2023r-,35,1.html. " +
+      "Conversion: etl/convert_dobowy_budzet_czasu.py.",
+    ageGroups: {
+      potrzeby_fizjologiczne: "Personal care",
+      potrzeby_fizjologiczne__sen: "-- Sleep",
+      potrzeby_fizjologiczne__jedzenie_i_picie: "-- Eating and drinking",
+      potrzeby_fizjologiczne__inne_potrzeby_osobiste: "-- Other personal care",
+      praca_zawodowa_glowna_i_dodatkowa: "Employment (main and secondary job)",
+      nauka: "Study",
+      nauka__nauka_w_szkole_na_uczelni: "-- School or university study",
+      nauka__samoksztalcenie_szkolenia_kursy_w_czasie: "-- Self-study, training and courses in free time",
+      prace_domowe_i_opieka_nad_czlonkami_gosp: "Household and family care",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__obrobka_zywnosci: "-- Food management",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__utrzymanie_porzadku: "-- Household upkeep",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__przygotowanie_i_utrzymanie_odziezy: "-- Making and caring for textiles",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__ogrodnictwo_i_opieka_nad_zwierzetami_dom: "-- Gardening and pet care (not related to running a farm)",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__budowa_remonty_naprawy: "-- Construction and repairs",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__zakupy_i_korzystanie_z_uslug: "-- Shopping and services",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__zarzadzanie_gospodarstwem_domowym: "-- Household management",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__opieka_nad_dziecmi: "-- Childcare",
+      prace_domowe_i_opieka_nad_czlonkami_gosp__opieka_nad_doroslymi_czlonkami_gospodars: "-- Care for adult household members",
+      wolontariat_pomoc_innym_praktyki_religij: "Voluntary work, helping others, religious practices",
+      wolontariat_pomoc_innym_praktyki_religij__wolontariat_praca_spoleczna_w_ramach_org: "-- Volunteering, community work (through an organisation or institution)",
+      wolontariat_pomoc_innym_praktyki_religij__nieformalna_pomoc_dla_innych_gospodarstw: "-- Informal help to other households",
+      wolontariat_pomoc_innym_praktyki_religij__zorganizowane_spotkania_praktyki_religij: "-- Organised gatherings, religious practices",
+      zycie_towarzyskie_uczestnictwo_w_rozrywc: "Social life, entertainment and culture",
+      zycie_towarzyskie_uczestnictwo_w_rozrywc__zycie_towarzyskie: "-- Social life",
+      zycie_towarzyskie_uczestnictwo_w_rozrywc__uczestnictwo_w_rozrywce_i_kulturze_jako_: "-- Entertainment and culture (as spectator/listener)",
+      zycie_towarzyskie_uczestnictwo_w_rozrywc__odpoczynek_bierny: "-- Passive rest",
+      uczestnictwo_w_sporcie_i_rekreacji: "Sports and outdoor recreation",
+      uczestnictwo_w_sporcie_i_rekreacji__cwiczenia_fizyczne: "-- Physical exercise",
+      uczestnictwo_w_sporcie_i_rekreacji__zbieractwo_lowiectwo_wedkarstwo: "-- Foraging, hunting, fishing",
+      zamilowania_osobiste_hobby_zainteresowan: "Personal interests -- hobbies and use of computer/internet",
+      zamilowania_osobiste_hobby_zainteresowan__zamilowania_artystyczne_hobby: "-- Arts and hobbies",
+      zamilowania_osobiste_hobby_zainteresowan__korzystanie_z_komputera_smartfona_intern: "-- Use of computer, smartphone, internet",
+      zamilowania_osobiste_hobby_zainteresowan__gry_i_zabawy: "-- Games and play",
+      korzystanie_ze_srodkow_masowego_przekazu: "Use of mass media",
+      korzystanie_ze_srodkow_masowego_przekazu__czytanie: "-- Reading",
+      korzystanie_ze_srodkow_masowego_przekazu__ogladanie_telewizji_i_filmow: "-- Watching TV and films",
+      korzystanie_ze_srodkow_masowego_przekazu__sluchanie_muzyki_i_radia: "-- Listening to music and radio",
+      dojazdy_i_dojscia_oraz_inne_niewymienion: "Travel and other unspecified activities",
+      dojazdy_i_dojscia_oraz_inne_niewymienion__dojazdy_dojscia_do_z_pracy: "-- Travel to/from work",
+      dojazdy_i_dojscia_oraz_inne_niewymienion__dojazdy_dojscia_do_ze_szkoly_lub_uczelni: "-- Travel to/from school or university, and free-time-study travel",
+      dojazdy_i_dojscia_oraz_inne_niewymienion__dojazdy_dojscia_zwiazane_z_zakupami_i_us: "-- Travel related to shopping and services",
+    },
+    measures: {
+      trwania: "Duration of the activity",
+      wykonywania: "Participation time in the activity",
+    },
+  },
   mammografia: {
     label: "Screening coverage -- Mammography",
     unit: "%",

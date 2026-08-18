@@ -1006,6 +1006,79 @@ const VARIABLE_META = {
       { key: "spent_total", label: "Suma wydatkowana z funduszu w roku", unit: "zł" },
     ],
   },
+  dobowy_budzet_czasu: {
+    label: "Dobowy budżet czasu",
+    unit: "min",
+    topic: "inne",
+    file: "data/dobowy_budzet_czasu.json",
+    agegroupLabel: "Czynność",
+    meaning:
+      "Przeciętny czas przeznaczany w ciągu doby na poszczególne czynności, wg płci. Dwie miary: " +
+      "\"Czas trwania czynności\" to średnia liczona dla CAŁEJ populacji (łącznie z osobami, które " +
+      "danej czynności wcale nie wykonały tego dnia) – wartości tej miary dla kategorii poziomu 1 " +
+      "sumują się w przybliżeniu do 24 godzin. \"Czas wykonywania czynności\" to średnia liczona " +
+      "TYLKO wśród osób, które danego dnia faktycznie wykonały daną czynność – te wartości NIE " +
+      "sumują się do 24 godzin.\n" +
+      "\"Czynność\" to lista kategorii dwóch poziomów – np. \"Sen\" to podkategoria \"Potrzeb " +
+      "fizjologicznych\".\n" +
+      "Wartości podane w minutach (GUS zapisuje czas w notacji „H.MM\").\n" +
+      "Dostępne tylko na poziomie województwa (16 jednostek) – dane GUS publikuje dodatkowo podział " +
+      "na \"region warszawski stołeczny\" i \"region mazowiecki\".",
+    source: "Główny Urząd Statystyczny (GUS)",
+    accessNote:
+      "Plik \"Załącznik_Budżet Czasu Ludności 2023 wg województw i płci.xlsx\" (Tablica 9), " +
+      "jednorazowe badanie budżetu czasu za 2023 r., wgrywany ręcznie, nie z API – " +
+      "https://stat.gov.pl/obszary-tematyczne/warunki-zycia/dochody-wydatki-i-warunki-zycia-ludnosci/dobowy-budzet-czasu-ludnosci-w-2023r-,35,1.html. " +
+      "Konwersja: etl/convert_dobowy_budzet_czasu.py.",
+    levels: [{ key: "wojewodztwo", label: "Województwo" }],
+    ageGroups: [
+      { key: "potrzeby_fizjologiczne", label: "Potrzeby fizjologiczne" },
+      { key: "potrzeby_fizjologiczne__sen", label: "— Sen" },
+      { key: "potrzeby_fizjologiczne__jedzenie_i_picie", label: "— Jedzenie i picie" },
+      { key: "potrzeby_fizjologiczne__inne_potrzeby_osobiste", label: "— Inne potrzeby osobiste" },
+      { key: "praca_zawodowa_glowna_i_dodatkowa", label: "Praca zawodowa (główna i dodatkowa)" },
+      { key: "nauka", label: "Nauka" },
+      { key: "nauka__nauka_w_szkole_na_uczelni", label: "— Nauka w szkole/na uczelni" },
+      { key: "nauka__samoksztalcenie_szkolenia_kursy_w_czasie", label: "— Samokształcenie, szkolenia, kursy w czasie wolnym" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp", label: "Prace domowe i opieka nad członkami gospodarstwa domowego" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__obrobka_zywnosci", label: "— Obróbka żywności" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__utrzymanie_porzadku", label: "— Utrzymanie porządku" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__przygotowanie_i_utrzymanie_odziezy", label: "— Przygotowanie i utrzymanie odzieży" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__ogrodnictwo_i_opieka_nad_zwierzetami_dom", label: "— Ogrodnictwo i opieka nad zwierzętami domowymi (nie związane z prowadzeniem gospodarstwa rolnego)" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__budowa_remonty_naprawy", label: "— Budowa, remonty, naprawy" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__zakupy_i_korzystanie_z_uslug", label: "— Zakupy i korzystanie z usług" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__zarzadzanie_gospodarstwem_domowym", label: "— Zarządzanie gospodarstwem domowym" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__opieka_nad_dziecmi", label: "— Opieka nad dziećmi" },
+      { key: "prace_domowe_i_opieka_nad_czlonkami_gosp__opieka_nad_doroslymi_czlonkami_gospodars", label: "— Opieka nad dorosłymi członkami gospodarstwa domowego" },
+      { key: "wolontariat_pomoc_innym_praktyki_religij", label: "Wolontariat, pomoc innym, praktyki religijne" },
+      { key: "wolontariat_pomoc_innym_praktyki_religij__wolontariat_praca_spoleczna_w_ramach_org", label: "— Wolontariat, praca społeczna (w ramach organizacji lub instytucji)" },
+      { key: "wolontariat_pomoc_innym_praktyki_religij__nieformalna_pomoc_dla_innych_gospodarstw", label: "— Nieformalna pomoc dla innych gospodarstw domowych" },
+      { key: "wolontariat_pomoc_innym_praktyki_religij__zorganizowane_spotkania_praktyki_religij", label: "— Zorganizowane spotkania, praktyki religijne" },
+      { key: "zycie_towarzyskie_uczestnictwo_w_rozrywc", label: "Życie towarzyskie, uczestnictwo w rozrywce i kulturze" },
+      { key: "zycie_towarzyskie_uczestnictwo_w_rozrywc__zycie_towarzyskie", label: "— Życie towarzyskie" },
+      { key: "zycie_towarzyskie_uczestnictwo_w_rozrywc__uczestnictwo_w_rozrywce_i_kulturze_jako_", label: "— Uczestnictwo w rozrywce i kulturze (jako widz/słuchacz)" },
+      { key: "zycie_towarzyskie_uczestnictwo_w_rozrywc__odpoczynek_bierny", label: "— Odpoczynek bierny" },
+      { key: "uczestnictwo_w_sporcie_i_rekreacji", label: "Uczestnictwo w sporcie i rekreacji" },
+      { key: "uczestnictwo_w_sporcie_i_rekreacji__cwiczenia_fizyczne", label: "— Ćwiczenia fizyczne" },
+      { key: "uczestnictwo_w_sporcie_i_rekreacji__zbieractwo_lowiectwo_wedkarstwo", label: "— Zbieractwo, łowiectwo, wędkarstwo" },
+      { key: "zamilowania_osobiste_hobby_zainteresowan", label: "Zamiłowania osobiste – hobby/zainteresowania i korzystanie z komputera/internetu" },
+      { key: "zamilowania_osobiste_hobby_zainteresowan__zamilowania_artystyczne_hobby", label: "— Zamiłowania artystyczne, hobby" },
+      { key: "zamilowania_osobiste_hobby_zainteresowan__korzystanie_z_komputera_smartfona_intern", label: "— Korzystanie z komputera, smartfona, Internetu" },
+      { key: "zamilowania_osobiste_hobby_zainteresowan__gry_i_zabawy", label: "— Gry i zabawy" },
+      { key: "korzystanie_ze_srodkow_masowego_przekazu", label: "Korzystanie ze środków masowego przekazu" },
+      { key: "korzystanie_ze_srodkow_masowego_przekazu__czytanie", label: "— Czytanie" },
+      { key: "korzystanie_ze_srodkow_masowego_przekazu__ogladanie_telewizji_i_filmow", label: "— Oglądanie telewizji i filmów" },
+      { key: "korzystanie_ze_srodkow_masowego_przekazu__sluchanie_muzyki_i_radia", label: "— Słuchanie muzyki i radia" },
+      { key: "dojazdy_i_dojscia_oraz_inne_niewymienion", label: "Dojazdy i dojścia oraz inne niewymienione czynności" },
+      { key: "dojazdy_i_dojscia_oraz_inne_niewymienion__dojazdy_dojscia_do_z_pracy", label: "— Dojazdy (dojścia) do/z pracy" },
+      { key: "dojazdy_i_dojscia_oraz_inne_niewymienion__dojazdy_dojscia_do_ze_szkoly_lub_uczelni", label: "— Dojazdy (dojścia) do/ze szkoły lub uczelni oraz związane z nauką w czasie wolnym" },
+      { key: "dojazdy_i_dojscia_oraz_inne_niewymienion__dojazdy_dojscia_zwiazane_z_zakupami_i_us", label: "— Dojazdy (dojścia) związane z zakupami i usługami" },
+    ],
+    measures: [
+      { key: "trwania", label: "Czas trwania czynności" },
+      { key: "wykonywania", label: "Czas wykonywania czynności" },
+    ],
+  },
   mammografia: {
     label: "Pokrycie badaniami przesiewowymi – Mammografia",
     unit: "%",
