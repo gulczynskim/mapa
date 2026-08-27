@@ -60,6 +60,31 @@ PER_100K = [
     ("wypadki_przy_pracy.json", "default", ["default"], PRACUJACY_JUNE_REF),
 ]
 
+# Absencja chorobowa per employed person -- scale 1, not 100 000: "ile dni
+# zwolnienia przypada na jednego pracującego" is directly readable (roughly
+# 10-25 days), where a per-100k version would not be.
+#
+# December, not the June used by wypadki_przy_pracy above: pkd_zatrudnienie
+# only carries December for 2022 and 2023 (every month exists from 2024 on),
+# so June would restrict these two measures to 2024 alone while December
+# gives 2022-2024. Absencje itself starts in 2017, so 2017-2021 have no
+# employment denominator at all in this project yet and stay empty -- see
+# the variable's own description. Swapping in a longer annual "pracujący"
+# series here is the one change needed to fill them.
+PRACUJACY_DEC_REF = ("pkd_zatrudnienie.json", "ogolem", "12_default")
+
+ABSENCJE_AGE_GROUPS = [
+    "ogolem_bez_ciazy", "ogolem", "zakazne", "nowotwory", "krwi", "wydzielania", "psychiczne",
+    "nerwowy", "oko", "ucho", "krazenie", "oddechowy", "pokarmowy", "skora",
+    "miesniowo_szkieletowy", "moczowo_plciowy", "ciaza", "okoloporodowe", "wady_wrodzone",
+    "objawy", "urazy", "przyczyny_zewnetrzne", "czynniki_zdrowotne", "cele_specjalne",
+]
+
+PER_EMPLOYED = [
+    ("absencje.json", age_group, ["dni", "zaswiadczenia"], PRACUJACY_DEC_REF)
+    for age_group in ABSENCJE_AGE_GROUPS
+]
+
 SHARE_OF_WHOLE = [
     # (data_file, reference ageGroup, [every ageGroup key incl. reference], measure key, new measure key)
     (
@@ -102,11 +127,18 @@ def _divide(numerator, denominator, scale):
     return numerator / denominator * scale
 
 
-def add_per_100k(data_file, age_group, measure_keys, reference):
+def add_per_100k(data_file, age_group, measure_keys, reference, scale=100_000, suffix="_per100k"):
     """For each measure in `measure_keys` under `age_group` in `data_file`,
     joins against `reference`'s own {teryt, year} slice (same sex-for-sex)
     and adds a new "..._per100k" sibling measure, then overwrites
-    `data_file` in place."""
+    `data_file` in place.
+
+    `scale`/`suffix` cover the per-ONE-person case as well (absencje's
+    "na 1 pracującego", scale=1) -- same join, same sex-for-sex matching,
+    only the multiplier and the measure-key suffix differ. Sex-for-sex is
+    what makes these worth having here: women's absence days over women's
+    employment, so the result isn't reading off where women are employed at
+    all, the way the raw day counts partly do."""
     reference_file, reference_age_group, reference_measure = reference
     data = json.load(open(os.path.join(OUT_DIR, data_file), encoding="utf-8"))
     reference_data = json.load(open(os.path.join(OUT_DIR, reference_file), encoding="utf-8"))
@@ -123,15 +155,15 @@ def add_per_100k(data_file, age_group, measure_keys, reference):
                 if key not in slices:
                     continue
                 vals = slices[key]
-                slices[f"{age_group}__{measure}_per100k"] = {
-                    "t": _divide(vals["t"], pop_slice["t"], 100_000),
-                    "m": _divide(vals["m"], pop_slice["m"], 100_000),
-                    "k": _divide(vals["k"], pop_slice["k"], 100_000),
+                slices[f"{age_group}__{measure}{suffix}"] = {
+                    "t": _divide(vals["t"], pop_slice["t"], scale),
+                    "m": _divide(vals["m"], pop_slice["m"], scale),
+                    "k": _divide(vals["k"], pop_slice["k"], scale),
                 }
 
     path = os.path.join(OUT_DIR, data_file)
     json.dump(data, open(path, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
-    print(f"  {data_file}: added _per100k for {measure_keys}")
+    print(f"  {data_file}: added {suffix} for {measure_keys}")
 
 
 def add_share_of_whole(data_file, reference_age_group, age_groups, measure, new_measure):
@@ -166,6 +198,10 @@ if __name__ == "__main__":
     print("--- per-100k measures ---")
     for data_file, age_group, measure_keys, reference in PER_100K:
         add_per_100k(data_file, age_group, measure_keys, reference)
+
+    print("--- per-employed-person measures ---")
+    for data_file, age_group, measure_keys, reference in PER_EMPLOYED:
+        add_per_100k(data_file, age_group, measure_keys, reference, scale=1, suffix="_na_pracujacego")
 
     print("--- share-of-whole (odsetek) measures ---")
     for data_file, reference_age_group, age_groups, measure, new_measure in SHARE_OF_WHOLE:

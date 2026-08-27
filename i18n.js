@@ -177,7 +177,7 @@ const STRINGS = {
     err_corr_level_mismatch: (x, y) => `Wybrane zmienne mają różne poziomy (${x} vs ${y}) i nie można ich porównać -- wybierz dwie zmienne na tym samym poziomie.`,
 
     // View-gating explanatory notes
-    gate_women_only: "Zmienna dotyczy wyłącznie kobiet -- dostępny jest tylko widok Kobiety",
+    gate_women_only: "Te dane dotyczą wyłącznie kobiet -- dostępny jest tylko widok Kobiety",
     gate_total_unavailable: "Ogółem niedostępne dla tej grupy wieku/miary (patrz opis zmiennej)",
     gate_single_winner: "Zmienna ma dokładnie jednego zwycięzcę -- proporcja K/M dzieli przez zero w większości gmin. Użyj Różnicy lub % kobiet/mężczyzn",
     gate_no_sex_breakdown: "Ta zmienna nie ma danych w podziale na płeć -- dostępne jest tylko Ogółem",
@@ -350,7 +350,7 @@ const STRINGS = {
     csv_filename_main: "map_data.csv",
     csv_filename_unit_prefix: "data_",
 
-    gate_women_only: "This variable applies only to women -- only the Women view is available",
+    gate_women_only: "This data applies only to women -- only the Women view is available",
     gate_total_unavailable: "Total is not available for this age group/measure (see variable description)",
     gate_single_winner: "This variable has exactly one winner -- the Women/Men ratio divides by zero in most municipalities. Use Difference or % Women/% Men instead",
     gate_no_sex_breakdown: "This variable has no breakdown by sex -- only Total is available",

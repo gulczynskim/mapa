@@ -865,4 +865,63 @@ const VARIABLE_META_EN = {
     ageGroups: { default: "Total" },
     measures: { default: "Share screened" },
   },
+  absencje: {
+    label: "Sickness absence",
+    unit: "days",
+    agegroupLabel: "Diagnosis",
+    meaning:
+      "Number of sickness absence days and of medical certificates issued (ZLA), by sex and diagnosis. " +
+      "Sickness absence means inability to work because of illness or the need to personally care for a " +
+      "sick family member. Covers people insured with ZUS, the Social Insurance Institution.\n" +
+      "\"Diagnosis\" is the 22 ICD-10 chapters (level 1) plus two totals: \"All causes\" and \"All causes " +
+      "excluding pregnancy and childbirth\". The \"Pregnancy, childbirth and the puerperium\" chapter is " +
+      "about a third of women's absence days and does not occur among men -- with it included women " +
+      "record more absence days than men, without it fewer. The \"Codes for special purposes (COVID-19)\" " +
+      "chapter only appears from 2020 on.\n" +
+      "The \"Average length of one certificate\" measure is days divided by certificates. The \"per " +
+      "employed person\" measures divide by the number of people employed in the county (December of that " +
+      "year, separately for women and men) -- available from 2022 on, since earlier years have no " +
+      "employment figures on this map.\n" +
+      "Data broken down by finer categories and by individual ICD-10 codes (levels 2 and 3) is available " +
+      "from the Ministry of Health on request.",
+    source: "Ministry of Health (BASiW), ZUS data",
+    accessNote:
+      "Files supplied on request by the Department of Analyses and Strategy of the Ministry of " +
+      "Health (letter AST.461.50.2026.BA of 20 Aug 2026), 8 files covering 2017-2024 -- " +
+      "https://basiw.mz.gov.pl/mapy-informacje/mapa-2022-2026/analizy/absencje-chorobowe/. " +
+      "Conversion: etl/convert_absencje.py.",
+    ageGroups: {
+      ogolem_bez_ciazy: "All causes excluding pregnancy and childbirth",
+      ogolem: "All causes",
+      zakazne: "Certain infectious and parasitic diseases",
+      nowotwory: "Neoplasms",
+      krwi: "Diseases of the blood and blood-forming organs and certain disorders involving the immune mechanism",
+      wydzielania: "Endocrine, nutritional and metabolic diseases",
+      psychiczne: "Mental and behavioural disorders",
+      nerwowy: "Diseases of the nervous system",
+      oko: "Diseases of the eye and adnexa",
+      ucho: "Diseases of the ear and mastoid process",
+      krazenie: "Diseases of the circulatory system",
+      oddechowy: "Diseases of the respiratory system",
+      pokarmowy: "Diseases of the digestive system",
+      skora: "Diseases of the skin and subcutaneous tissue",
+      miesniowo_szkieletowy: "Diseases of the musculoskeletal system and connective tissue",
+      moczowo_plciowy: "Diseases of the genitourinary system",
+      ciaza: "Pregnancy, childbirth and the puerperium",
+      okoloporodowe: "Certain conditions originating in the perinatal period",
+      wady_wrodzone: "Congenital malformations, deformations and chromosomal abnormalities",
+      objawy: "Symptoms, signs and abnormal clinical and laboratory findings, not elsewhere classified",
+      urazy: "Injury, poisoning and certain other consequences of external causes",
+      przyczyny_zewnetrzne: "External causes of morbidity and mortality",
+      czynniki_zdrowotne: "Factors influencing health status and contact with health services",
+      cele_specjalne: "Codes for special purposes (COVID-19)",
+    },
+    measures: {
+      dni: { label: "Absence days", unit: "days" },
+      zaswiadczenia: { label: "Certificates issued", unit: "certificates" },
+      dlugosc_srednia: { label: "Average length of one certificate", unit: "days" },
+      dni_na_pracujacego: { label: "Absence days per employed person", unit: "days" },
+      zaswiadczenia_na_pracujacego: { label: "Certificates per employed person", unit: "certificates" },
+    },
+  },
 };

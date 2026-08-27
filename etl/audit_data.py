@@ -113,6 +113,7 @@ def audit_variable(vmeta, boundary_teryts):
                     or measure_key.endswith("_odsetek")
                     or measure_key == "odsetek"
                     or measure_key.endswith("_srednia")
+                    or measure_key.endswith("_na_pracujacego")
                 )
                 if shares_meaningful and not is_rate_measure and all(isinstance(v, (int, float)) for v in (tt, mm, kk)):
                     diff = abs((mm + kk) - tt)

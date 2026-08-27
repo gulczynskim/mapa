@@ -80,7 +80,8 @@ def is_rate_measure(measure_key):
     "_srednia" are excluded from shares, "_odsetek" is not (matches the
     app's own actual behavior, an existing quirk rather than something this
     export should second-guess)."""
-    return measure_key.endswith("_per100k") or measure_key.endswith("_udzial") or measure_key.endswith("_srednia")
+    return (measure_key.endswith("_per100k") or measure_key.endswith("_udzial")
+            or measure_key.endswith("_srednia") or measure_key.endswith("_na_pracujacego"))
 
 
 def safe_div(a, b):

@@ -17,8 +17,13 @@
 //   sexScope: "women" -- for a variable that ONLY conceptually exists for
 //     one sex (e.g. a screening program covering only women), not merely
 //     one where the other sex's data happens to be missing. Forces every
-//     view except Kobiety off (Ogółem, Mężczyźni, Różnica, Proporcje),
-//     store the value under "k" (see mammografia/cytologia below).
+//     view except Kobiety off (Ogółem, Mężczyźni, Różnica, Proporcje,
+//     %kobiet/%mężczyzn), store the value under "k" (see mammografia/
+//     cytologia below). Also valid on a single ageGroup option, for a
+//     variable that is two-sex overall but has one one-sex slice --
+//     absencje's "Ciąża, poród i okres połogu", where men have no rows in
+//     that ICD chapter at all while the other 21 chapters compare normally.
+//     Resolved by sexScopeFor() in app.js; a variable-level scope wins.
 //   topic: one of the TOPICS keys below -- groups the variable under
 //     "Temat" in both the map controls and the download panel.
 const TOPICS = {
@@ -1091,5 +1096,69 @@ const VARIABLE_META = {
     ageGroups: [{ key: "default", label: "Ogółem" }],
     measures: [{ key: "default", label: "Odsetek przebadanych" }],
     sexScope: "women",
+  },
+  absencje: {
+    label: "Absencje chorobowe",
+    unit: "dni",
+    topic: "zdrowie",
+    file: "data/absencje.json",
+    agegroupLabel: "Rozpoznanie",
+    meaning:
+      "Liczba dni absencji chorobowej i liczba wystawionych zaświadczeń lekarskich (ZLA), wg płci i " +
+      "rozpoznania. Absencja chorobowa to niezdolność do pracy z powodu choroby albo konieczności " +
+      "osobistego sprawowania opieki nad chorym członkiem rodziny. Dane obejmują osoby ubezpieczone w " +
+      "ZUS.\n" +
+      "\"Rozpoznanie\" to 22 rozdziały klasyfikacji ICD-10 (poziom 1) oraz dwie sumy: \"Ogółem\" i " +
+      "\"Ogółem bez ciąży i porodu\". Rozdział \"Ciąża, poród i okres połogu\" to około jedna trzecia dni " +
+      "absencji kobiet i nie występuje u mężczyzn – łącznie z nim kobiety mają więcej dni absencji niż " +
+      "mężczyźni, bez niego mniej. Rozdział \"Kody do celów specjalnych (COVID-19)\" występuje dopiero od " +
+      "2020 r.\n" +
+      "Miara \"Przeciętna długość zwolnienia\" to liczba dni podzielona przez liczbę zaświadczeń. Miary " +
+      "\"na 1 pracującego\" dzielą wartość przez liczbę pracujących w powiecie (grudzień danego roku, " +
+      "osobno dla kobiet i mężczyzn) – dostępne od 2022 r., bo wcześniejsze lata nie mają na tej mapie " +
+      "danych o liczbie pracujących.\n" +
+      "Dane w podziale na bardziej szczegółowe kategorie i pojedyncze kody ICD-10 (poziom 2 i 3) " +
+      "Ministerstwo Zdrowia udostępnia na wniosek.",
+    source: "Ministerstwo Zdrowia (BASiW), dane ZUS",
+    accessNote:
+      "Pliki przekazane na wniosek przez Departament Analiz i Strategii Ministerstwa Zdrowia " +
+      "(pismo AST.461.50.2026.BA z 20.08.2026 r.), 8 plików za lata 2017-2024 – " +
+      "https://basiw.mz.gov.pl/mapy-informacje/mapa-2022-2026/analizy/absencje-chorobowe/. " +
+      "Konwersja: etl/convert_absencje.py.",
+    levels: [{ key: "powiat", label: "Powiat" }],
+    ageGroups: [
+      { key: "ogolem_bez_ciazy", label: "Ogółem bez ciąży i porodu" },
+      { key: "ogolem", label: "Ogółem" },
+      { key: "zakazne", label: "Wybrane choroby zakaźne i pasożytnicze" },
+      { key: "nowotwory", label: "Nowotwory" },
+      { key: "krwi", label: "Choroby krwi i narządów krwiotwórczych oraz wybrane choroby przebiegające z udziałem mechanizmów immunologicznych" },
+      { key: "wydzielania", label: "Zaburzenia wydzielania wewnętrznego, stanu odżywienia i przemian metabolicznych" },
+      { key: "psychiczne", label: "Zaburzenia psychiczne i zaburzenia zachowania" },
+      { key: "nerwowy", label: "Choroby układu nerwowego" },
+      { key: "oko", label: "Choroby oka i przydatków oka" },
+      { key: "ucho", label: "Choroby ucha i wyrostka sutkowatego" },
+      { key: "krazenie", label: "Choroby układu krążenia" },
+      { key: "oddechowy", label: "Choroby układu oddechowego" },
+      { key: "pokarmowy", label: "Choroby układu pokarmowego" },
+      { key: "skora", label: "Choroby skóry i tkanki podskórnej" },
+      { key: "miesniowo_szkieletowy", label: "Choroby układu mięśniowo-szkieletowego i tkanki łącznej" },
+      { key: "moczowo_plciowy", label: "Choroby układu moczowo-płciowego" },
+      { key: "ciaza", label: "Ciąża, poród i okres połogu", sexScope: "women" },
+      { key: "okoloporodowe", label: "Wybrane stany rozpoczynające się w okresie okołoporodowym" },
+      { key: "wady_wrodzone", label: "Wady rozwojowe wrodzone, zniekształcenia i aberracje chromosomowe" },
+      { key: "objawy", label: "Objawy, cechy chorobowe oraz nieprawidłowe wyniki badań klinicznych i laboratoryjnych niesklasyfikowane gdzie indziej" },
+      { key: "urazy", label: "Urazy, zatrucia i inne określone skutki działania czynników zewnętrznych" },
+      { key: "przyczyny_zewnetrzne", label: "Zewnętrzne przyczyny zachorowania i zgonu" },
+      { key: "czynniki_zdrowotne", label: "Czynniki wpływające na stan zdrowia i kontakt ze służbą zdrowia" },
+      { key: "cele_specjalne", label: "Kody do celów specjalnych (COVID-19)" },
+    ],
+    measures: [
+      { key: "dni", label: "Liczba dni absencji", unit: "dni" },
+      { key: "zaswiadczenia", label: "Liczba zaświadczeń", unit: "zaświadczeń" },
+      { key: "dlugosc_srednia", label: "Przeciętna długość zwolnienia", unit: "dni" },
+      { key: "dni_na_pracujacego", label: "Dni absencji na 1 pracującego", unit: "dni" },
+      { key: "zaswiadczenia_na_pracujacego", label: "Zaświadczenia na 1 pracującego", unit: "zaświadczeń" },
+    ],
+    sharesMeaningful: true,
   },
 };

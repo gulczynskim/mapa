@@ -3068,7 +3068,7 @@ function hasTotalFor(meta, ageGroup, measure) {
 // variable-level sharesMeaningful flag, in both the map's own view buttons
 // and the correlation tool's per-axis view list.
 function isRateMeasure(measure) {
-  return measure.endsWith("_per100k") || measure.endsWith("_udzial") || measure.endsWith("_srednia");
+  return measure.endsWith("_per100k") || measure.endsWith("_udzial") || measure.endsWith("_srednia") || measure.endsWith("_na_pracujacego");
 }
 
 // Single source of truth for "does %kobiet/%mężczyzn make sense here" --
@@ -3113,12 +3113,14 @@ function numOrBlank(v) {
 function applicableViewKeys(variable, meta, ageGroup, measure) {
   const totalOk = hasTotalFor(meta, ageGroup, measure);
   const sharesOk = canShowShares(meta, measure);
-  const womenOnly = meta.sexScope === "women";
+  const womenOnly = sexScopeFor(meta, ageGroup) === "women";
   const sexOk = hasSexData(variable);
   const binaryOk = !isBinaryMeasure(meta, measure);
   return Object.keys(VIEWS).filter((key) => {
     if (key === "total") return totalOk && !womenOnly;
-    if (key === "shareWomen" || key === "shareMen") return sharesOk;
+    // A one-sex slice makes these constant (100% / 0%) rather than
+    // informative, so they go off with the rest of the comparisons.
+    if (key === "shareWomen" || key === "shareMen") return sharesOk && !womenOnly;
     if (key === "women") return sexOk;
     if (key === "men" || key === "diff") return sexOk && !womenOnly;
     if (key === "ratio" || key === "ratioInverse") return sexOk && !womenOnly && binaryOk;
@@ -3151,6 +3153,23 @@ function unitFor(meta, measure) {
 // or %kobiet/%mężczyzn instead, which both handle a zero side correctly.
 function isBinaryMeasure(meta, measure) {
   return meta.measures.find((o) => o.key === measure)?.binary === true;
+}
+
+// "This only conceptually exists for one sex", resolved for the CURRENT
+// ageGroup rather than the variable as a whole. Two shapes feed in:
+//   meta.sexScope            -- the whole variable (mammografia, cytologia)
+//   ageGroup.sexScope        -- one option within an otherwise two-sex
+//                               variable (absencje's "Ciąża, poród i okres
+//                               połogu": men have no rows in that ICD
+//                               chapter at all, so Ogółem/Mężczyźni/Różnica/
+//                               Proporcje/% are all meaningless there while
+//                               staying perfectly meaningful for the same
+//                               variable's other 21 chapters).
+// An ageGroup-level scope is a narrowing only -- it can't widen a variable
+// already scoped to one sex, so the variable-level flag wins when both are
+// set. Same lookup pattern as hasTotalFor/unitFor above.
+function sexScopeFor(meta, ageGroup) {
+  return meta.sexScope ?? meta.ageGroups.find((o) => o.key === ageGroup)?.sexScope ?? null;
 }
 
 // Cached per variable (scanning every row is only worth doing once, same
@@ -3233,10 +3252,11 @@ function updateViewAvailability() {
   if (!totalBtn) return;
   const meta = VARIABLE_META[state.variable];
   // Not "the other sex's data happens to be missing" (that's hasSexData
-  // below) -- this variable only conceptually exists for women (e.g. a
-  // screening program), so Ogółem/Mężczyźni/diverging views are wrong to
-  // even offer, not just currently empty.
-  const womenOnly = meta.sexScope === "women";
+  // below) -- this only conceptually exists for women (a screening
+  // programme; or, per-ageGroup, an ICD chapter like pregnancy/childbirth),
+  // so Ogółem/Mężczyźni/diverging views are wrong to even offer, not just
+  // currently empty. Resolved per ageGroup -- see sexScopeFor().
+  const womenOnly = sexScopeFor(meta, state.ageGroup) === "women";
 
   const totalOk = hasTotalForCurrentSelection() && !womenOnly;
   totalBtn.disabled = !totalOk;
@@ -3280,12 +3300,14 @@ function updateViewAvailability() {
   // disabled unless the variable opts in with sharesMeaningful: true --
   // and even then, disabled again for this variable's own "_per100k"
   // measures specifically, which are themselves already a rate.
-  const sharesOk = canShowShares(meta, state.measure);
+  // ...and off entirely for a one-sex slice, where they'd be a constant
+  // 100%/0% rather than a share worth mapping.
+  const sharesOk = canShowShares(meta, state.measure) && !womenOnly;
   for (const key of ["shareWomen", "shareMen"]) {
     const btn = document.querySelector(`#view-buttons button[data-view-key="${key}"]`);
     if (!btn) continue;
     btn.disabled = !sharesOk;
-    btn.title = sharesOk ? "" : t("gate_shares_not_applicable");
+    btn.title = sharesOk ? "" : womenOnly ? t("gate_women_only") : t("gate_shares_not_applicable");
   }
 
   // Read back off the DOM rather than re-deriving which of the three
